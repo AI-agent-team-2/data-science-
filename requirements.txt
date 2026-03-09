@@ -1,0 +1,10 @@
+langchain
+langchain-core
+langchain-openai
+langgraph
+langchain-text-splitters
+chromadb
+sentence-transformers
+pyTelegramBotAPI
+python-dotenv
+typing-extensions
