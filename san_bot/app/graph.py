@@ -11,11 +11,10 @@ from app.state import AgentState
 from app.tools.rag_search import rag_search
 from app.tools.web_search import web_search
 from app.tools.product_lookup import product_lookup
-from app.tools.compatibility_check import compatibility_check
 
 
 # Регистрируем инструменты, к которым LLM может обратиться через tool-calls.
-tools = [rag_search, web_search, product_lookup, compatibility_check]
+tools = [rag_search, web_search, product_lookup]
 
 # Инициализируем чат-модель через OpenAI-compatible API.
 # По умолчанию это локальный Ollama на http://localhost:11434/v1.

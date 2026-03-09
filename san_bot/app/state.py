@@ -20,7 +20,6 @@ class AgentState(TypedDict, total=False):
     retrieved_docs: list[dict[str, Any]]
     web_results: list[dict[str, Any]]
     product_results: list[dict[str, Any]]
-    compatibility_results: list[dict[str, Any]]
 
     # Финальный текст ответа (опционально, если решим хранить отдельно от messages).
     final_answer: str
