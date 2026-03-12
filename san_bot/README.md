@@ -56,10 +56,6 @@ COLLECTION_NAME=sanitary_goods
 
 # Сколько чанков возвращать из RAG-поиска.
 TOP_K=5
-
-# (Опционально) Tavily Web Search API.
-# Если не задано, web_search будет использовать DuckDuckGo (без токена).
-TAVILY_API_KEY=
 ```
 
 Если хотите использовать OpenAI вместо локальной модели:
@@ -103,20 +99,6 @@ ollama list
 
 ```powershell
 .\myenv\Scripts\python.exe -c "import app.graph; print('graph_ok')"
-```
-
-## Проверка web_search
-
-DuckDuckGo (без токена):
-
-```powershell
-.\myenv\Scripts\python.exe -c "from app.tools.web_search import web_search; print(web_search('что такое балансировочный клапан', 5))"
-```
-
-Tavily (нужен `TAVILY_API_KEY` в `.env`):
-
-```powershell
-.\myenv\Scripts\python.exe -c "import os; from app.tools.web_search import web_search; print(web_search('что такое балансировочный клапан', 5))"
 ```
 
 ## Структура проекта
