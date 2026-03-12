@@ -8,3 +8,5 @@ sentence-transformers
 pyTelegramBotAPI
 python-dotenv
 typing-extensions
+ddgs
+tavily-python
