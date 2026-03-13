@@ -41,6 +41,15 @@ def _normalize_results(items: List[Dict[str, Any]]) -> str:
     return json.dumps(normalized, ensure_ascii=False, indent=2)
 
 
+def _error_as_list(message: str) -> str:
+    # Всегда возвращаем JSON-массив того же формата, чтобы контракт инструмента был единым.
+    return json.dumps(
+        [{"title": "Ошибка web_search", "snippet": message, "url": ""}],
+        ensure_ascii=False,
+        indent=2,
+    )
+
+
 def _duckduckgo_search(query: str, max_results: int) -> str:
     try:
         try:
@@ -50,15 +59,9 @@ def _duckduckgo_search(query: str, max_results: int) -> str:
             # Обратная совместимость для старого названия библиотеки.
             from duckduckgo_search import DDGS  # type: ignore
     except Exception as e:
-        # Возвращаем диагностический JSON, чтобы агент мог корректно обработать ошибку.
-        return json.dumps(
-            {
-                "error": "DuckDuckGo search backend is not installed.",
-                "hint": "Install dependency: pip install ddgs",
-                "details": str(e),
-            },
-            ensure_ascii=False,
-            indent=2,
+        # Возвращаем ошибку в формате массива, без смены типа ответа инструмента.
+        return _error_as_list(
+            f"DuckDuckGo backend недоступен. Установите зависимость ddgs. Details: {e}"
         )
 
     items: List[Dict[str, Any]] = []
@@ -79,12 +82,8 @@ def _duckduckgo_search(query: str, max_results: int) -> str:
                     }
                 )
     except Exception as e:
-        # Ошибку транспорта/API также возвращаем в JSON.
-        return json.dumps(
-            {"error": "DuckDuckGo search failed.", "details": str(e)},
-            ensure_ascii=False,
-            indent=2,
-        )
+        # Ошибку транспорта/API также возвращаем в едином формате.
+        return _error_as_list(f"DuckDuckGo search failed. Details: {e}")
 
     return _normalize_results(items)
 
@@ -93,15 +92,9 @@ def _tavily_search(query: str, max_results: int, api_key: str) -> str:
     try:
         from tavily import TavilyClient  # type: ignore
     except Exception as e:
-        # Подсказываем, какую зависимость установить, если Tavily-клиент отсутствует.
-        return json.dumps(
-            {
-                "error": "Tavily backend is not installed.",
-                "hint": "Install dependency: pip install tavily-python",
-                "details": str(e),
-            },
-            ensure_ascii=False,
-            indent=2,
+        # Подсказываем, какую зависимость установить, сохраняя единый формат ответа.
+        return _error_as_list(
+            f"Tavily backend недоступен. Установите зависимость tavily-python. Details: {e}"
         )
 
     try:
@@ -123,11 +116,7 @@ def _tavily_search(query: str, max_results: int, api_key: str) -> str:
             for r in results
         ]
     except Exception as e:
-        # Возвращаем структуру ошибки в JSON, а не исключение наружу.
-        return json.dumps(
-            {"error": "Tavily search failed.", "details": str(e)},
-            ensure_ascii=False,
-            indent=2,
-        )
+        # Возвращаем структуру ошибки в едином формате.
+        return _error_as_list(f"Tavily search failed. Details: {e}")
 
     return _normalize_results(items)
