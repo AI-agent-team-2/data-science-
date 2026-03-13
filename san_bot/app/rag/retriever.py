@@ -3,9 +3,9 @@ from __future__ import annotations
 from typing import Any
 
 import chromadb
-from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
 
 from app.config import settings
+from app.rag.embeddings import create_embedding_function
 
 
 class ChromaRetriever:
@@ -13,9 +13,7 @@ class ChromaRetriever:
         # Инициализируем persistent-клиент Chroma в локальной директории.
         self.client = chromadb.PersistentClient(path=settings.chroma_path)
         # Модель эмбеддингов должна совпадать с моделью на этапе индексации.
-        self.embedding_fn = SentenceTransformerEmbeddingFunction(
-            model_name="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
-        )
+        self.embedding_fn = create_embedding_function()
         # Получаем коллекцию, где лежат текстовые чанки и их векторы.
         self.collection = self.client.get_or_create_collection(
             name=settings.collection_name,

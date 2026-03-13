@@ -19,10 +19,10 @@ tools = [rag_search, web_search, product_lookup]
 # Инициализируем чат-модель через OpenAI-compatible API.
 # По умолчанию это локальный Ollama на http://localhost:11434/v1.
 model = ChatOpenAI(
-    model=settings.model_name,
+    model=settings.resolved_model_name,
     temperature=0,
-    api_key=settings.openai_api_key,
-    base_url=settings.openai_base_url,
+    api_key=settings.resolved_openai_api_key,
+    base_url=settings.resolved_openai_base_url,
 )
 
 # Оборачиваем модель в режим tool-calling.
