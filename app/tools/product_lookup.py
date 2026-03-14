@@ -129,6 +129,46 @@ def product_lookup(query: str, limit: int = 5) -> str:
 
     query_tokens = _tokenize(query)
     query_skus = {s.lower() for s in SKU_RE.findall(query.upper())}
+    top_n = max(1, min(limit, 20))
+
+    # SKU-first: если пользователь прислал артикул, сначала отдаем точные SKU-совпадения.
+    if query_skus:
+        sku_ranked: list[tuple[float, dict]] = []
+        for item in catalog:
+            item_skus = {s.lower() for s in item["sku_list"]}
+            matched_count = len(query_skus.intersection(item_skus))
+            if matched_count == 0:
+                continue
+            # Бонус за совпадение токенов помогает сортировать при нескольких SKU-кандидатах.
+            token_overlap = len(query_tokens.intersection(item["tokens"]))
+            score = matched_count * 100 + token_overlap * 3
+            sku_ranked.append((score, item))
+
+        if sku_ranked:
+            sku_ranked.sort(key=lambda x: x[0], reverse=True)
+            top = sku_ranked[:top_n]
+            results = []
+            for score, item in top:
+                results.append(
+                    {
+                        "name": item["name"],
+                        "brand": item["brand"],
+                        "category": item["category"],
+                        "sku_list": item["sku_list"][:20],
+                        "source": item["source"],
+                        "score": round(score, 2),
+                    }
+                )
+            return json.dumps(
+                {
+                    "query": query,
+                    "count": len(results),
+                    "mode": "sku_first",
+                    "results": results,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
 
     ranked: list[tuple[float, dict]] = []
     for item in catalog:
@@ -137,7 +177,7 @@ def product_lookup(query: str, limit: int = 5) -> str:
             ranked.append((score, item))
 
     ranked.sort(key=lambda x: x[0], reverse=True)
-    top = ranked[: max(1, min(limit, 20))]
+    top = ranked[:top_n]
 
     results = []
     for score, item in top:
@@ -156,6 +196,7 @@ def product_lookup(query: str, limit: int = 5) -> str:
         {
             "query": query,
             "count": len(results),
+            "mode": "text_ranked",
             "results": results,
         },
         ensure_ascii=False,

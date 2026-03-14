@@ -35,9 +35,12 @@ class Settings:
     # Имя коллекции с векторами и текстовыми чанками.
     collection_name: str = os.getenv("COLLECTION_NAME", "sanitary_goods")
     # Количество документов, которое retriever вернет на запрос.
-    top_k: int = int(os.getenv("TOP_K", "5"))
+    top_k: int = int(os.getenv("TOP_K", "6"))
     # Размер батча на вставку в Chroma (актуально для cloud embeddings).
     embedding_batch_size: int = int(os.getenv("EMBEDDING_BATCH_SIZE", "64"))
+    # Параметры разбиения документов на чанки для RAG.
+    chunk_size: int = int(os.getenv("CHUNK_SIZE", "900"))
+    chunk_overlap: int = int(os.getenv("CHUNK_OVERLAP", "140"))
     # Путь к SQLite-файлу с историей диалогов.
     history_db_path: str = os.getenv("HISTORY_DB_PATH", "./history.db")
     # Сколько последних сообщений хранить и передавать в модель на каждый запрос.
