@@ -1,0 +1,7 @@
+myvenv/
+.env
+chroma_db*
+src/__pycache__/chunk_strategy.cpython-312.pyc
+src/__pycache__/product_lookup.cpython-312.pyc
+src/__pycache__/rag.cpython-312.pyc
+src/__pycache__/web_search.cpython-312.pyc
