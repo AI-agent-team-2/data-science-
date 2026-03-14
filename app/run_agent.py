@@ -15,6 +15,10 @@ from app.tools.rag_search import rag_search
 from app.tools.web_search import web_search
 
 SKU_RE = re.compile(r"\b[A-Z][A-Z0-9]{4,}\b")
+FOLLOWUP_MARKERS_RE = re.compile(
+    r"\b(они|их|них|него|нее|эт(от|а|о|и)|так(ой|ая|ое|ие)|эти|тот|та|то|те)\b",
+    re.IGNORECASE,
+)
 TOOL_TIMEOUT_SEC = 20
 MODEL_TIMEOUT_SEC = 45
 
@@ -24,6 +28,7 @@ def run_agent(user_text: str, user_id: str = "unknown") -> str:
     session_id = user_id or "unknown"
     # Загружаем ограниченную историю диалога из SQLite (с учетом TTL).
     history = load_messages(session_id=session_id)
+    tool_query = _build_tool_query(user_text=user_text, history=history)
 
     # Жесткая fallback-цепочка:
     # 1) product_lookup (для SKU/конкретной позиции),
@@ -32,7 +37,7 @@ def run_agent(user_text: str, user_id: str = "unknown") -> str:
     # 4) уточняющий вопрос.
     context_block = ""
     lookup_raw = _invoke_with_timeout(
-        product_lookup.invoke, {"query": user_text, "limit": 5}, TOOL_TIMEOUT_SEC
+        product_lookup.invoke, {"query": tool_query, "limit": 5}, TOOL_TIMEOUT_SEC
     )
     lookup_data = _parse_object_json(lookup_raw)
     lookup_results = _extract_lookup_results(lookup_data)
@@ -40,7 +45,7 @@ def run_agent(user_text: str, user_id: str = "unknown") -> str:
     if _should_prefer_lookup(user_text) and _is_lookup_useful(lookup_results):
         context_block = _format_lookup_context(lookup_data, lookup_results)
     else:
-        rag_raw = _invoke_with_timeout(rag_search.invoke, {"query": user_text}, TOOL_TIMEOUT_SEC)
+        rag_raw = _invoke_with_timeout(rag_search.invoke, {"query": tool_query}, TOOL_TIMEOUT_SEC)
         rag_data = _parse_object_json(rag_raw)
         rag_results = _extract_rag_results(rag_data)
         if _is_rag_useful(rag_results):
@@ -49,7 +54,7 @@ def run_agent(user_text: str, user_id: str = "unknown") -> str:
             context_block = _format_lookup_context(lookup_data, lookup_results)
         else:
             web_raw = _invoke_with_timeout(
-                web_search.invoke, {"query": user_text, "max_results": 5}, TOOL_TIMEOUT_SEC
+                web_search.invoke, {"query": tool_query, "max_results": 5}, TOOL_TIMEOUT_SEC
             )
             web_data = _parse_object_json(web_raw)
             web_results = _extract_web_results(web_data)
@@ -139,6 +144,35 @@ def _should_prefer_lookup(query: str) -> bool:
     lowered = query.lower()
     markers = ("артикул", "sku", "модель", "код", "позици", "товар")
     return any(m in lowered for m in markers)
+
+
+def _build_tool_query(user_text: str, history: list[Any]) -> str:
+    current = user_text.strip()
+    if not current:
+        return current
+
+    # Если запрос содержит явный SKU, ничего не дополняем.
+    if SKU_RE.search(current.upper()):
+        return current
+
+    lowered = current.lower()
+    short_query = len(current.split()) <= 6
+    looks_followup = short_query or bool(FOLLOWUP_MARKERS_RE.search(lowered))
+    if not looks_followup:
+        return current
+
+    # Берем последний вопрос пользователя из истории как тему уточнения.
+    prev_user = ""
+    for msg in reversed(history):
+        if isinstance(msg, HumanMessage):
+            prev_user = str(msg.content).strip()
+            if prev_user:
+                break
+
+    if not prev_user:
+        return current
+
+    return f"{prev_user}. Уточнение: {current}"
 
 
 def _is_lookup_useful(items: list[dict[str, Any]]) -> bool:
