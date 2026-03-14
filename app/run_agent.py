@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
@@ -8,8 +9,11 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from app.graph import model
 from app.history_store import load_messages, save_turn
 from app.prompts import SYSTEM_PROMPT
+from app.tools.product_lookup import product_lookup
 from app.tools.rag_search import rag_search
 from app.tools.web_search import web_search
+
+SKU_RE = re.compile(r"\b[A-Z][A-Z0-9]{4,}\b")
 
 
 def run_agent(user_text: str, user_id: str = "unknown") -> str:
@@ -19,24 +23,33 @@ def run_agent(user_text: str, user_id: str = "unknown") -> str:
     history = load_messages(session_id=session_id)
 
     # Жесткая fallback-цепочка:
-    # 1) сначала внутренний RAG;
-    # 2) если пусто/слабо — web_search;
-    # 3) если снова пусто — уточняющий вопрос пользователю.
-    rag_raw = rag_search.invoke({"query": user_text})
-    rag_results = _parse_list_json(rag_raw)
-
+    # 1) product_lookup (для SKU/конкретной позиции),
+    # 2) rag_search,
+    # 3) web_search,
+    # 4) уточняющий вопрос.
     context_block = ""
-    if _is_rag_useful(rag_results):
-        context_block = _format_rag_context(rag_results)
+    lookup_raw = product_lookup.invoke({"query": user_text, "limit": 5})
+    lookup_data = _parse_object_json(lookup_raw)
+    lookup_results = _extract_lookup_results(lookup_data)
+
+    if _should_prefer_lookup(user_text) and _is_lookup_useful(lookup_results):
+        context_block = _format_lookup_context(lookup_data, lookup_results)
     else:
-        web_raw = web_search.invoke({"query": user_text, "max_results": 5})
-        web_results = _parse_list_json(web_raw)
-        if _is_web_useful(web_results):
-            context_block = _format_web_context(web_results)
+        rag_raw = rag_search.invoke({"query": user_text})
+        rag_results = _parse_list_json(rag_raw)
+        if _is_rag_useful(rag_results):
+            context_block = _format_rag_context(rag_results)
+        elif _is_lookup_useful(lookup_results):
+            context_block = _format_lookup_context(lookup_data, lookup_results)
         else:
-            assistant_text = _clarifying_question()
-            save_turn(session_id=session_id, user_text=user_text, assistant_text=assistant_text)
-            return assistant_text
+            web_raw = web_search.invoke({"query": user_text, "max_results": 5})
+            web_results = _parse_list_json(web_raw)
+            if _is_web_useful(web_results):
+                context_block = _format_web_context(web_results)
+            else:
+                assistant_text = _clarifying_question()
+                save_turn(session_id=session_id, user_text=user_text, assistant_text=assistant_text)
+                return assistant_text
 
     final_prompt = (
         f"Вопрос пользователя:\n{user_text}\n\n"
@@ -73,6 +86,37 @@ def _parse_list_json(raw: Any) -> list[dict[str, Any]]:
     if isinstance(payload, list):
         return [p for p in payload if isinstance(p, dict)]
     return []
+
+
+def _parse_object_json(raw: Any) -> dict[str, Any]:
+    if not isinstance(raw, str):
+        return {}
+    try:
+        payload = json.loads(raw)
+    except Exception:
+        return {}
+    if isinstance(payload, dict):
+        return payload
+    return {}
+
+
+def _extract_lookup_results(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    items = payload.get("results")
+    if isinstance(items, list):
+        return [p for p in items if isinstance(p, dict)]
+    return []
+
+
+def _should_prefer_lookup(query: str) -> bool:
+    if SKU_RE.search(query.upper()):
+        return True
+    lowered = query.lower()
+    markers = ("артикул", "sku", "модель", "код", "позици", "товар")
+    return any(m in lowered for m in markers)
+
+
+def _is_lookup_useful(items: list[dict[str, Any]]) -> bool:
+    return len(items) > 0
 
 
 def _is_rag_useful(items: list[dict[str, Any]]) -> bool:
@@ -118,6 +162,23 @@ def _format_web_context(items: list[dict[str, Any]]) -> str:
         snippet = str(item.get("snippet", "")).strip().replace("\n", " ")
         url = str(item.get("url", "")).strip()
         lines.append(f"[WEB {idx}] {title} | {snippet} | {url}")
+    return "\n".join(lines).strip()
+
+
+def _format_lookup_context(payload: dict[str, Any], items: list[dict[str, Any]]) -> str:
+    mode = str(payload.get("mode", "lookup"))
+    lines: list[str] = [f"[LOOKUP] mode={mode} count={len(items)}"]
+    for idx, item in enumerate(items[:5], start=1):
+        name = str(item.get("name", "")).strip()
+        brand = str(item.get("brand", "")).strip()
+        category = str(item.get("category", "")).strip()
+        source = str(item.get("source", "")).strip()
+        score = item.get("score", "")
+        skus = item.get("sku_list") or []
+        sku_preview = ", ".join([str(s) for s in skus[:5]])
+        lines.append(
+            f"[LOOKUP {idx}] {name} | brand={brand} | category={category} | sku={sku_preview} | source={source} | score={score}"
+        )
     return "\n".join(lines).strip()
 
 
