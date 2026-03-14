@@ -7,7 +7,7 @@ from pathlib import Path
 
 from langchain_core.tools import tool
 
-SKU_RE = re.compile(r"\b[A-Z][A-Z0-9]{4,}\b")
+SKU_RE = re.compile(r"\b[A-Z0-9][A-Z0-9\-_]{4,}\b")
 WORD_RE = re.compile(r"[a-zA-Zа-яА-Я0-9]+")
 
 
@@ -27,12 +27,17 @@ def _extract_field(text: str, field_name: str) -> str:
 
 def _extract_skus(text: str) -> list[str]:
     # Берем только латинские артикулы/коды, чтобы не тащить шум вроде ГОСТ.
-    skus = {
-        token
-        for token in (m.group(0) for m in SKU_RE.finditer(text))
-        if any(ch.isdigit() for ch in token)
-    }
+    skus = set()
+    for raw in (m.group(0) for m in SKU_RE.finditer(text.upper())):
+        token = _canonical_sku(raw)
+        if token and any(ch.isdigit() for ch in token):
+            skus.add(token)
     return sorted(skus)
+
+
+def _canonical_sku(value: str) -> str:
+    # Приводим SKU к сопоставимому виду: убираем разделители вроде "-" и "_".
+    return re.sub(r"[^A-Z0-9]+", "", value.upper())
 
 
 def _build_title(doc_name: str, product: str, product_type: str, document: str) -> str:
@@ -85,7 +90,7 @@ def _load_catalog() -> list[dict]:
 def _score_item(query: str, query_tokens: set[str], query_skus: set[str], item: dict) -> float:
     score = 0.0
 
-    item_skus = {s.lower() for s in item["sku_list"]}
+    item_skus = {_canonical_sku(s) for s in item["sku_list"]}
     matched_skus = sorted(query_skus.intersection(item_skus))
     if matched_skus:
         score += 100 + 25 * len(matched_skus)
@@ -128,14 +133,14 @@ def product_lookup(query: str, limit: int = 5) -> str:
         )
 
     query_tokens = _tokenize(query)
-    query_skus = {s.lower() for s in SKU_RE.findall(query.upper())}
+    query_skus = {_canonical_sku(s) for s in SKU_RE.findall(query.upper())}
     top_n = max(1, min(limit, 20))
 
     # SKU-first: если пользователь прислал артикул, сначала отдаем точные SKU-совпадения.
     if query_skus:
         sku_ranked: list[tuple[float, dict]] = []
         for item in catalog:
-            item_skus = {s.lower() for s in item["sku_list"]}
+            item_skus = {_canonical_sku(s) for s in item["sku_list"]}
             matched_count = len(query_skus.intersection(item_skus))
             if matched_count == 0:
                 continue
