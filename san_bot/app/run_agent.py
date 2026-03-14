@@ -6,12 +6,14 @@ from app.graph import graph
 
 def run_agent(user_text: str, user_id: str = "unknown") -> str:
     # Передаем в граф стартовое сообщение пользователя и базовый контекст сессии.
+    session_id = user_id or "unknown"
     result = graph.invoke(
         {
             "messages": [HumanMessage(content=user_text)],
-            "user_id": user_id,
-            "session_id": user_id,
-        }
+            "user_id": session_id,
+            "session_id": session_id,
+        },
+        config={"configurable": {"thread_id": session_id}},
     )
 
     # Достаем итоговую историю и берем последний ответ ассистента.

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage
+from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import StateGraph, START, END
 from langgraph.prebuilt import ToolNode, tools_condition
 
@@ -66,8 +67,8 @@ def build_graph():
     # После инструментов повторно возвращаемся к модели для финализации ответа.
     builder.add_edge("tools", "agent")
 
-    # Компилируем граф в исполняемый объект.
-    return builder.compile()
+    # Включаем in-memory checkpointing, чтобы хранить историю диалога по thread_id.
+    return builder.compile(checkpointer=MemorySaver())
 
 
 # Глобальный граф: используется run_agent и telegram-обработчиком.
