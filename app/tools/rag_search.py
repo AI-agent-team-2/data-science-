@@ -20,9 +20,14 @@ def rag_search(query: str) -> str:
     # Выполняем семантический поиск по Chroma.
     results = retriever.search(query=query)
 
-    # Возвращаем честный ответ, если контекст не найден.
-    if not results:
-        return "Ничего не найдено во внутренней базе знаний."
-
-    # Инструменты возвращают строку; сериализуем структурированные данные в JSON.
-    return json.dumps(results, ensure_ascii=False, indent=2)
+    # Всегда возвращаем JSON-объект единого формата.
+    return json.dumps(
+        {
+            "query": query,
+            "count": len(results),
+            "results": results,
+            "note": "" if results else "Ничего не найдено во внутренней базе знаний.",
+        },
+        ensure_ascii=False,
+        indent=2,
+    )

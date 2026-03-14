@@ -36,14 +36,16 @@ def run_agent(user_text: str, user_id: str = "unknown") -> str:
         context_block = _format_lookup_context(lookup_data, lookup_results)
     else:
         rag_raw = rag_search.invoke({"query": user_text})
-        rag_results = _parse_list_json(rag_raw)
+        rag_data = _parse_object_json(rag_raw)
+        rag_results = _extract_rag_results(rag_data)
         if _is_rag_useful(rag_results):
             context_block = _format_rag_context(rag_results)
         elif _is_lookup_useful(lookup_results):
             context_block = _format_lookup_context(lookup_data, lookup_results)
         else:
             web_raw = web_search.invoke({"query": user_text, "max_results": 5})
-            web_results = _parse_list_json(web_raw)
+            web_data = _parse_object_json(web_raw)
+            web_results = _extract_web_results(web_data)
             if _is_web_useful(web_results):
                 context_block = _format_web_context(web_results)
             else:
@@ -76,18 +78,6 @@ def _extract_ai_text(message: Any) -> str:
     return "Не удалось получить ответ."
 
 
-def _parse_list_json(raw: Any) -> list[dict[str, Any]]:
-    if not isinstance(raw, str):
-        return []
-    try:
-        payload = json.loads(raw)
-    except Exception:
-        return []
-    if isinstance(payload, list):
-        return [p for p in payload if isinstance(p, dict)]
-    return []
-
-
 def _parse_object_json(raw: Any) -> dict[str, Any]:
     if not isinstance(raw, str):
         return {}
@@ -101,6 +91,20 @@ def _parse_object_json(raw: Any) -> dict[str, Any]:
 
 
 def _extract_lookup_results(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    items = payload.get("results")
+    if isinstance(items, list):
+        return [p for p in items if isinstance(p, dict)]
+    return []
+
+
+def _extract_rag_results(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    items = payload.get("results")
+    if isinstance(items, list):
+        return [p for p in items if isinstance(p, dict)]
+    return []
+
+
+def _extract_web_results(payload: dict[str, Any]) -> list[dict[str, Any]]:
     items = payload.get("results")
     if isinstance(items, list):
         return [p for p in items if isinstance(p, dict)]

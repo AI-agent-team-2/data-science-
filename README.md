@@ -82,7 +82,7 @@ python -m app.bot.telegram_bot
 ## Быстрые проверки
 
 ```bash
-python -c "import app.graph; print('graph_ok')"
+python -c "import app.graph; print('model_ok')"
 python -c "from app.tools.web_search import web_search; print(web_search('что такое балансировочный клапан', 5))"
 ```
 
@@ -90,6 +90,7 @@ python -c "from app.tools.web_search import web_search; print(web_search('что
 
 - `app/config.py` - настройки проекта
 - `app/run_agent.py` - основная логика ответа и fallback-цепочка
+- `app/graph.py` - инициализация LLM-клиента
 - `app/tools/` - инструменты (`product_lookup`, `rag_search`, `web_search`)
 - `app/rag/` - индексация и retrieval
 - `data/knowledge_base/` - исходные документы
