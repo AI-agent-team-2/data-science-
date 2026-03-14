@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
@@ -14,6 +15,8 @@ from app.tools.rag_search import rag_search
 from app.tools.web_search import web_search
 
 SKU_RE = re.compile(r"\b[A-Z][A-Z0-9]{4,}\b")
+TOOL_TIMEOUT_SEC = 20
+MODEL_TIMEOUT_SEC = 45
 
 
 def run_agent(user_text: str, user_id: str = "unknown") -> str:
@@ -28,14 +31,16 @@ def run_agent(user_text: str, user_id: str = "unknown") -> str:
     # 3) web_search,
     # 4) уточняющий вопрос.
     context_block = ""
-    lookup_raw = product_lookup.invoke({"query": user_text, "limit": 5})
+    lookup_raw = _invoke_with_timeout(
+        product_lookup.invoke, {"query": user_text, "limit": 5}, TOOL_TIMEOUT_SEC
+    )
     lookup_data = _parse_object_json(lookup_raw)
     lookup_results = _extract_lookup_results(lookup_data)
 
     if _should_prefer_lookup(user_text) and _is_lookup_useful(lookup_results):
         context_block = _format_lookup_context(lookup_data, lookup_results)
     else:
-        rag_raw = rag_search.invoke({"query": user_text})
+        rag_raw = _invoke_with_timeout(rag_search.invoke, {"query": user_text}, TOOL_TIMEOUT_SEC)
         rag_data = _parse_object_json(rag_raw)
         rag_results = _extract_rag_results(rag_data)
         if _is_rag_useful(rag_results):
@@ -43,7 +48,9 @@ def run_agent(user_text: str, user_id: str = "unknown") -> str:
         elif _is_lookup_useful(lookup_results):
             context_block = _format_lookup_context(lookup_data, lookup_results)
         else:
-            web_raw = web_search.invoke({"query": user_text, "max_results": 5})
+            web_raw = _invoke_with_timeout(
+                web_search.invoke, {"query": user_text, "max_results": 5}, TOOL_TIMEOUT_SEC
+            )
             web_data = _parse_object_json(web_raw)
             web_results = _extract_web_results(web_data)
             if _is_web_useful(web_results):
@@ -58,12 +65,27 @@ def run_agent(user_text: str, user_id: str = "unknown") -> str:
         f"Контекст для ответа:\n{context_block}\n\n"
         "Ответь кратко и по делу, не выдумывай данные и не ссылайся на скрытые служебные поля."
     )
-    response = model.invoke([SystemMessage(content=SYSTEM_PROMPT)] + history + [HumanMessage(content=final_prompt)])
+    response = _invoke_with_timeout(
+        model.invoke,
+        [SystemMessage(content=SYSTEM_PROMPT)] + history + [HumanMessage(content=final_prompt)],
+        MODEL_TIMEOUT_SEC,
+    )
     assistant_text = _extract_ai_text(response)
 
     # Сохраняем текущий turn в persistent history.
     save_turn(session_id=session_id, user_text=user_text, assistant_text=assistant_text)
     return assistant_text
+
+
+def _invoke_with_timeout(func, arg, timeout_sec: int):
+    with ThreadPoolExecutor(max_workers=1) as ex:
+        fut = ex.submit(func, arg)
+        try:
+            return fut.result(timeout=max(1, timeout_sec))
+        except FuturesTimeoutError:
+            return ""
+        except Exception:
+            return ""
 
 
 def _extract_ai_text(message: Any) -> str:
