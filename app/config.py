@@ -10,16 +10,18 @@ load_dotenv()
 
 @dataclass(frozen=True)
 class Settings:
-    # Провайдер LLM: ollama | openrouter | openai.
-    model_provider: str = os.getenv("MODEL_PROVIDER", "ollama").strip().lower()
-    # Ключ для OpenAI-compatible API (для Ollama можно оставить "ollama").
+    # Провайдер LLM: openrouter | openai.
+    model_provider: str = os.getenv("MODEL_PROVIDER", "openrouter").strip().lower()
+    # Ключ для OpenAI-compatible API.
     openai_api_key: str = os.getenv("OPENAI_API_KEY", "").strip()
-    # Имя модели, которую будет вызывать агент (локально через Ollama по умолчанию).
+    # Имя модели, которую будет вызывать агент.
     model_name: str = os.getenv("MODEL_NAME", "").strip()
-    # Базовый URL OpenAI-compatible API (Ollama по умолчанию).
+    # Базовый URL OpenAI-compatible API.
     openai_base_url: str = os.getenv("OPENAI_BASE_URL", "").strip()
-    # Бэкенд эмбеддингов: auto | local | openai_compatible.
-    embedding_backend: str = os.getenv("EMBEDDING_BACKEND", "auto").strip().lower()
+    # Бэкенд эмбеддингов: openai_compatible.
+    embedding_backend: str = os.getenv(
+        "EMBEDDING_BACKEND", "openai_compatible"
+    ).strip().lower()
     # Имя модели эмбеддингов.
     embedding_model_name: str = os.getenv("EMBEDDING_MODEL_NAME", "").strip()
     # Опционально: отдельный ключ для embedding API (если не задан, используется OPENAI_API_KEY).
@@ -33,15 +35,24 @@ class Settings:
     # Имя коллекции с векторами и текстовыми чанками.
     collection_name: str = os.getenv("COLLECTION_NAME", "sanitary_goods")
     # Количество документов, которое retriever вернет на запрос.
-    top_k: int = int(os.getenv("TOP_K", "5"))
+    top_k: int = int(os.getenv("TOP_K", "6"))
     # Размер батча на вставку в Chroma (актуально для cloud embeddings).
     embedding_batch_size: int = int(os.getenv("EMBEDDING_BATCH_SIZE", "64"))
+    # Параметры разбиения документов на чанки для RAG.
+    chunk_size: int = int(os.getenv("CHUNK_SIZE", "900"))
+    chunk_overlap: int = int(os.getenv("CHUNK_OVERLAP", "140"))
+    # Путь к SQLite-файлу с историей диалогов.
+    history_db_path: str = os.getenv("HISTORY_DB_PATH", "./history.db")
+    # Сколько последних сообщений хранить и передавать в модель на каждый запрос.
+    history_max_messages: int = int(os.getenv("HISTORY_MAX_MESSAGES", "24"))
+    # TTL истории диалогов в днях.
+    history_ttl_days: int = int(os.getenv("HISTORY_TTL_DAYS", "30"))
 
     @property
     def resolved_model_provider(self) -> str:
-        if self.model_provider in {"ollama", "openrouter", "openai"}:
+        if self.model_provider in {"openrouter", "openai"}:
             return self.model_provider
-        return "ollama"
+        return "openrouter"
 
     @property
     def resolved_openai_base_url(self) -> str:
@@ -51,15 +62,11 @@ class Settings:
             return "https://openrouter.ai/api/v1"
         if self.resolved_model_provider == "openai":
             return "https://api.openai.com/v1"
-        return "http://localhost:11434/v1"
+        return "https://openrouter.ai/api/v1"
 
     @property
     def resolved_openai_api_key(self) -> str:
-        if self.openai_api_key:
-            return self.openai_api_key
-        if self.resolved_model_provider == "ollama":
-            return "ollama"
-        return ""
+        return self.openai_api_key
 
     @property
     def resolved_model_name(self) -> str:
@@ -69,22 +76,18 @@ class Settings:
             return "openai/gpt-4o-mini"
         if self.resolved_model_provider == "openai":
             return "gpt-4o-mini"
-        return "qwen3.5:4b"
+        return "openai/gpt-4o-mini"
 
     @property
     def resolved_embedding_backend(self) -> str:
-        if self.embedding_backend in {"local", "openai_compatible"}:
+        if self.embedding_backend == "openai_compatible":
             return self.embedding_backend
-        if self.resolved_model_provider == "ollama":
-            return "local"
         return "openai_compatible"
 
     @property
     def resolved_embedding_model_name(self) -> str:
         if self.embedding_model_name:
             return self.embedding_model_name
-        if self.resolved_embedding_backend == "local":
-            return "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
         return "text-embedding-3-small"
 
     @property

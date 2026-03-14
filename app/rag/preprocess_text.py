@@ -1,31 +1,34 @@
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
-_MULTISPACE_RE = re.compile(r"\s+")
+_TRAILING_SPACES_RE = re.compile(r"[ \t]+$")
+_INLINE_SPACES_RE = re.compile(r"[ \t]{2,}")
+_EXCESSIVE_BLANKS_RE = re.compile(r"\n{3,}")
 
 
 def clean_text(text: str) -> str:
-    # Убираем HTML-теги и нормализуем пробелы, сохраняя знаки препинания.
-    without_html = _HTML_TAG_RE.sub(" ", text)
-    return _MULTISPACE_RE.sub(" ", without_html).strip()
+    # Бережная очистка для RAG-каталога:
+    # - сохраняем переносы строк и блоки таблиц;
+    # - убираем HTML-теги;
+    # - убираем хвостовые пробелы и избыточные пустые строки.
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+    without_html = _HTML_TAG_RE.sub(" ", normalized)
 
+    cleaned_lines = []
+    for line in without_html.split("\n"):
+        line = _TRAILING_SPACES_RE.sub("", line)
+        line = _INLINE_SPACES_RE.sub(" ", line)
+        cleaned_lines.append(line)
 
-def struct_data(text: str, source_path: str) -> str:
-    # Добавляем минимальную структуру по имени файла как в legacy-реализации.
-    title = Path(source_path).stem
-    return (
-        f"Название:\n{title}\n\n"
-        f"Описание:\n{text}\n\n"
-        "Характеристики:\n-\n\n"
-        "Применение:\n-"
-    )
+    cleaned = "\n".join(cleaned_lines)
+    cleaned = _EXCESSIVE_BLANKS_RE.sub("\n\n", cleaned)
+    return cleaned.strip()
 
 
 def preprocess_for_rag(text: str, source_path: str) -> str:
     cleaned = clean_text(text)
     if not cleaned:
         return ""
-    return struct_data(cleaned, source_path)
+    return cleaned
