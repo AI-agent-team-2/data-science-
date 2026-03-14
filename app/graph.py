@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage
-from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import StateGraph, START, END
 from langgraph.prebuilt import ToolNode, tools_condition
 
@@ -18,7 +17,7 @@ from app.tools.product_lookup import product_lookup
 tools = [rag_search, web_search, product_lookup]
 
 # Инициализируем чат-модель через OpenAI-compatible API.
-# По умолчанию это локальный Ollama на http://localhost:11434/v1.
+# По умолчанию используется OpenRouter endpoint.
 model = ChatOpenAI(
     model=settings.resolved_model_name,
     temperature=0,
@@ -67,8 +66,8 @@ def build_graph():
     # После инструментов повторно возвращаемся к модели для финализации ответа.
     builder.add_edge("tools", "agent")
 
-    # Включаем in-memory checkpointing, чтобы хранить историю диалога по thread_id.
-    return builder.compile(checkpointer=MemorySaver())
+    # Граф выполняется stateless; историю диалога храним отдельно в SQLite.
+    return builder.compile()
 
 
 # Глобальный граф: используется run_agent и telegram-обработчиком.
