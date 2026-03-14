@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import sys
 from pathlib import Path
 
@@ -12,6 +13,10 @@ if __package__ is None or __package__ == "":
 
 from app.config import settings
 from app.run_agent import run_agent
+
+# Базовое логирование ошибок бота (без утечки деталей пользователю).
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Инициализация Telegram-бота через токен из .env.
 bot = telebot.TeleBot(settings.telegram_token)
@@ -34,8 +39,13 @@ def text_handler(message):
         answer = run_agent(message.text, user_id=str(message.from_user.id))
         bot.reply_to(message, answer)
     except Exception as e:
-        # TODO: заменить на безопасное сообщение пользователю + логирование в файл/мониторинг.
-        bot.reply_to(message, f"Ошибка: {e}")
+        # Логируем техническую ошибку для разработчика.
+        logger.exception("Failed to process Telegram message: %s", e)
+        # Пользователю отдаем безопасный текст без внутренних деталей.
+        bot.reply_to(
+            message,
+            "Не удалось обработать запрос. Попробуйте еще раз через минуту.",
+        )
 
 
 if __name__ == "__main__":

@@ -7,13 +7,17 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from app.config import settings
 from app.rag.embeddings import create_embedding_function
+from app.rag.preprocess_text import preprocess_for_rag
 
 
 def load_documents(data_dir: str) -> list[dict]:
     # Загружаем все txt-файлы рекурсивно (включая вложенные каталоги cat/qe/tp).
     docs = []
     for path in Path(data_dir).rglob("*.txt"):
-        text = path.read_text(encoding="utf-8")
+        raw_text = path.read_text(encoding="utf-8")
+        text = preprocess_for_rag(raw_text, str(path.relative_to(data_dir)))
+        if not text:
+            continue
         docs.append(
             {
                 # Храним относительный путь как источник для трассировки ответа.

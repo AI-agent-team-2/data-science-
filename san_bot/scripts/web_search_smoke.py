@@ -35,7 +35,6 @@ def main() -> None:
     # Печатаем первые 3 результата и валидируем ключевые поля.
     for i, item in enumerate(data[:3], start=1):
         title = item.get("title")
-        snippet = item.get("snippet")
         url = item.get("url")
         if not (title and url):
             raise SystemExit(f"Bad item #{i}: {item}")
