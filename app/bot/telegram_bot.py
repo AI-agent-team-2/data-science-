@@ -19,29 +19,8 @@ from app.run_agent import run_agent
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Настройка прокси, если она задана в .env.
-if settings.proxy_url:
-    # Устанавливаем прокси для библиотеки telebot (через apihelper)
-    telebot.apihelper.proxy = {'https': settings.proxy_url, 'http': settings.proxy_url}
-    # Также устанавливаем переменные окружения для requests, на случай если apihelper не подхватит
-    os.environ['HTTPS_PROXY'] = settings.proxy_url
-    os.environ['HTTP_PROXY'] = settings.proxy_url
-    logger.info("Using proxy for Telegram: %s", settings.proxy_url)
-
-# Увеличиваем глобальный таймаут сессии для всех запросов к API Telegram.
-telebot.apihelper.SESSION_TIME_OUT = 90
-
 # Инициализация Telegram-бота через токен из .env.
 bot = telebot.TeleBot(settings.telegram_token, threaded=True)
-
-# Проверяем соединение перед запуском
-try:
-    logger.info("Checking Telegram connection...")
-    user = bot.get_me()
-    logger.info("Bot connected successfully: @%s", user.username)
-except Exception as e:
-    logger.error("Failed to connect to Telegram: %s", e)
-    logger.warning("If you are in Russia, please ensure PROXY_URL is set in .env")
 
 @bot.message_handler(commands=["start"])
 
@@ -57,8 +36,6 @@ def start_handler(message):
 def text_handler(message):
     # Базовый обработчик любого текстового входа.
     try:
-        # Показываем статус "печать", пока агент думает.
-        bot.send_chat_action(message.chat.id, 'typing')
         
         # Отправляем текст в агент и получаем финальный ответ модели.
         answer = run_agent(message.text, user_id=str(message.from_user.id))
@@ -76,4 +53,4 @@ def text_handler(message):
 if __name__ == "__main__":
     # Запуск бесконечного long-polling цикла Telegram API.
     # Увеличиваем таймаут ожидания новых сообщений (timeout) и интервал между запросами (long_polling_timeout).
-    bot.infinity_polling(timeout=60, long_polling_timeout=60)
+    bot.infinity_polling()

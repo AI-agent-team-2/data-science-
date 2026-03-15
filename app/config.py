@@ -18,9 +18,9 @@ class Settings:
     model_name: str = os.getenv("MODEL_NAME", "").strip()
     # Базовый URL OpenAI-compatible API.
     openai_base_url: str = os.getenv("OPENAI_BASE_URL", "").strip()
-    # Бэкенд эмбеддингов: local | openai_compatible.
+    # Бэкенд эмбеддингов: openai_compatible.
     embedding_backend: str = os.getenv(
-        "EMBEDDING_BACKEND", "local"
+        "EMBEDDING_BACKEND", "openai_compatible"
     ).strip().lower()
     # Имя модели эмбеддингов.
     embedding_model_name: str = os.getenv("EMBEDDING_MODEL_NAME", "all-MiniLM-L6-v2").strip()    # Опционально: отдельный ключ для embedding API (если не задан, используется OPENAI_API_KEY).
