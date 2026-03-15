@@ -29,11 +29,19 @@ def main() -> None:
     except Exception:
         raise SystemExit("web_search returned non-JSON output")
 
-    if not isinstance(data, list):
-        raise SystemExit(f"Expected list, got: {type(data)}")
+    if not isinstance(data, dict):
+        raise SystemExit(f"Expected dict, got: {type(data)}")
+
+    results = data.get("results")
+    if not isinstance(results, list):
+        raise SystemExit(f"Expected 'results' list, got: {type(results)}")
+
+    error = str(data.get("error", "")).strip()
+    if error:
+        raise SystemExit(f"web_search returned error: {error}")
 
     # Печатаем первые 3 результата и валидируем ключевые поля.
-    for i, item in enumerate(data[:3], start=1):
+    for i, item in enumerate(results[:3], start=1):
         title = item.get("title")
         url = item.get("url")
         if not (title and url):
