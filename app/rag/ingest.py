@@ -69,11 +69,15 @@ def store_in_chroma(chunks: list[dict]) -> None:
     client = chromadb.PersistentClient(path=settings.chroma_path)
     embedding_fn = create_embedding_function()
     # Берем/создаем коллекцию и привязываем embedding-функцию.
-    collection = client.get_or_create_collection(
-        name=settings.collection_name,
-        embedding_function=embedding_fn,
-    )
-
+    try:
+        collection = client.get_collection(name=settings.collection_name)
+        # Если коллекция существует, проверяем/обновляем функцию эмбеддингов
+        collection._embedding_function = embedding_fn
+    except Exception:
+        collection = client.create_collection(
+            name=settings.collection_name,
+            embedding_function=embedding_fn,
+        )
     # Подготавливаем структуры для массовой вставки (с фильтрацией пустых текстов).
     filtered_chunks = [c for c in chunks if c.get("text", "").strip()]
     ids = [c["id"] for c in filtered_chunks]

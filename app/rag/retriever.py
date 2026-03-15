@@ -15,11 +15,15 @@ class ChromaRetriever:
         # Модель эмбеддингов должна совпадать с моделью на этапе индексации.
         self.embedding_fn = create_embedding_function()
         # Получаем коллекцию, где лежат текстовые чанки и их векторы.
-        self.collection = self.client.get_or_create_collection(
-            name=settings.collection_name,
-            embedding_function=self.embedding_fn,
-        )
-
+        try:
+            self.collection = self.client.get_collection(name=settings.collection_name)
+            # Если коллекция существует, проверяем/обновляем функцию эмбеддингов
+            self.collection._embedding_function = self.embedding_fn
+        except Exception:
+            self.collection = self.client.create_collection(
+                name=settings.collection_name,
+                embedding_function=self.embedding_fn,
+            )
     def search(self, query: str, top_k: int | None = None) -> list[dict[str, Any]]:
         # Приоритет у явно переданного top_k; иначе берем значение из настроек.
         n_results = top_k or settings.top_k

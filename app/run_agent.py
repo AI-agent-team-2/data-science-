@@ -26,6 +26,12 @@ TOOL_TIMEOUT_SEC = 20
 MODEL_TIMEOUT_SEC = 45
 
 
+def _should_prefer_rag(query: str) -> bool:
+    lowered = query.lower()
+    markers = ("как", "почему", "совместим", "подойдет", "монтаж", "установка", "инструкция", "выбрать", "отличие")
+    return any(m in lowered for m in markers)
+
+
 def run_agent(user_text: str, user_id: str = "unknown") -> str:
     # Стабильный идентификатор сессии: используем user_id Telegram.
     session_id = user_id or "unknown"
@@ -33,24 +39,15 @@ def run_agent(user_text: str, user_id: str = "unknown") -> str:
     history = load_messages(session_id=session_id)
     tool_query = _build_tool_query(user_text=user_text, history=history)
 
-    # Жесткая fallback-цепочка:
-    # 1) product_lookup (для SKU/конкретной позиции),
-    # 2) rag_search,
-    # 3) web_search,
-    # 4) уточняющий вопрос.
+    # Логика роутинга:
+    # 1. Если вопрос про знания (как, почему, совместимость) -> rag_search.
+    # 2. Если вопрос про товары (артикул, цена, наличие) -> product_lookup.
+    # 3. Если нет ответа -> web_search.
     context_block = ""
-    lookup_raw = _invoke_with_timeout(
-        product_lookup.invoke,
-        {"query": tool_query, "limit": 5},
-        TOOL_TIMEOUT_SEC,
-        op_name="product_lookup",
-    )
-    lookup_data = _parse_object_json(lookup_raw)
-    lookup_results = _extract_lookup_results(lookup_data)
-
-    if _should_prefer_lookup(user_text) and _is_lookup_useful(lookup_results):
-        context_block = _format_lookup_context(lookup_data, lookup_results)
-    else:
+    
+    # Сначала определяем приоритетный инструмент.
+    if _should_prefer_rag(user_text):
+        # Приоритет: Знания (RAG)
         rag_raw = _invoke_with_timeout(
             rag_search.invoke, {"query": tool_query}, TOOL_TIMEOUT_SEC, op_name="rag_search"
         )
@@ -58,26 +55,49 @@ def run_agent(user_text: str, user_id: str = "unknown") -> str:
         rag_results = _extract_rag_results(rag_data)
         if _is_rag_useful(rag_results):
             context_block = _format_rag_context(rag_results)
-        elif _is_lookup_useful(lookup_results):
+        else:
+            # Fallback на товары, если в знаниях пусто.
+            lookup_raw = _invoke_with_timeout(
+                product_lookup.invoke, {"query": tool_query, "limit": 5}, TOOL_TIMEOUT_SEC, op_name="product_lookup"
+            )
+            lookup_data = _parse_object_json(lookup_raw)
+            lookup_results = _extract_lookup_results(lookup_data)
+            if _is_lookup_useful(lookup_results):
+                context_block = _format_lookup_context(lookup_data, lookup_results)
+
+    else:
+        # Приоритет: Товары (LOOKUP)
+        lookup_raw = _invoke_with_timeout(
+            product_lookup.invoke, {"query": tool_query, "limit": 5}, TOOL_TIMEOUT_SEC, op_name="product_lookup"
+        )
+        lookup_data = _parse_object_json(lookup_raw)
+        lookup_results = _extract_lookup_results(lookup_data)
+        if _is_lookup_useful(lookup_results):
             context_block = _format_lookup_context(lookup_data, lookup_results)
         else:
-            web_raw = _invoke_with_timeout(
-                web_search.invoke,
-                {"query": tool_query, "max_results": 5},
-                TOOL_TIMEOUT_SEC,
-                op_name="web_search",
+            # Fallback на знания, если в товарах пусто.
+            rag_raw = _invoke_with_timeout(
+                rag_search.invoke, {"query": tool_query}, TOOL_TIMEOUT_SEC, op_name="rag_search"
             )
-            web_data = _parse_object_json(web_raw)
-            web_error = str(web_data.get("error", "")).strip()
-            if web_error:
-                logger.warning("web_search returned error: %s", web_error)
-            web_results = _extract_web_results(web_data)
-            if _is_web_useful(web_results):
-                context_block = _format_web_context(web_results)
-            else:
-                assistant_text = _clarifying_question()
-                save_turn(session_id=session_id, user_text=user_text, assistant_text=assistant_text)
-                return assistant_text
+            rag_data = _parse_object_json(rag_raw)
+            rag_results = _extract_rag_results(rag_data)
+            if _is_rag_useful(rag_results):
+                context_block = _format_rag_context(rag_results)
+
+    # Если после LOOKUP и RAG контекст все еще пуст -> идем в WEB.
+    if not context_block:
+        web_raw = _invoke_with_timeout(
+            web_search.invoke, {"query": tool_query, "max_results": 5}, TOOL_TIMEOUT_SEC, op_name="web_search"
+        )
+        web_data = _parse_object_json(web_raw)
+        web_results = _extract_web_results(web_data)
+        if _is_web_useful(web_results):
+            context_block = _format_web_context(web_results)
+        else:
+            # Если и в вебе ничего нет -> уточняющий вопрос.
+            assistant_text = _clarifying_question()
+            save_turn(session_id=session_id, user_text=user_text, assistant_text=assistant_text)
+            return assistant_text
 
     final_prompt = (
         f"Вопрос пользователя:\n{user_text}\n\n"
