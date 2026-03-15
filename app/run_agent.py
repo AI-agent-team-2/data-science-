@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from typing import Any
@@ -13,6 +14,8 @@ from app.prompts import SYSTEM_PROMPT
 from app.tools.product_lookup import product_lookup
 from app.tools.rag_search import rag_search
 from app.tools.web_search import web_search
+
+logger = logging.getLogger(__name__)
 
 SKU_RE = re.compile(r"\b[A-Z][A-Z0-9]{4,}\b")
 FOLLOWUP_MARKERS_RE = re.compile(
@@ -37,7 +40,10 @@ def run_agent(user_text: str, user_id: str = "unknown") -> str:
     # 4) уточняющий вопрос.
     context_block = ""
     lookup_raw = _invoke_with_timeout(
-        product_lookup.invoke, {"query": tool_query, "limit": 5}, TOOL_TIMEOUT_SEC
+        product_lookup.invoke,
+        {"query": tool_query, "limit": 5},
+        TOOL_TIMEOUT_SEC,
+        op_name="product_lookup",
     )
     lookup_data = _parse_object_json(lookup_raw)
     lookup_results = _extract_lookup_results(lookup_data)
@@ -45,7 +51,9 @@ def run_agent(user_text: str, user_id: str = "unknown") -> str:
     if _should_prefer_lookup(user_text) and _is_lookup_useful(lookup_results):
         context_block = _format_lookup_context(lookup_data, lookup_results)
     else:
-        rag_raw = _invoke_with_timeout(rag_search.invoke, {"query": tool_query}, TOOL_TIMEOUT_SEC)
+        rag_raw = _invoke_with_timeout(
+            rag_search.invoke, {"query": tool_query}, TOOL_TIMEOUT_SEC, op_name="rag_search"
+        )
         rag_data = _parse_object_json(rag_raw)
         rag_results = _extract_rag_results(rag_data)
         if _is_rag_useful(rag_results):
@@ -54,9 +62,15 @@ def run_agent(user_text: str, user_id: str = "unknown") -> str:
             context_block = _format_lookup_context(lookup_data, lookup_results)
         else:
             web_raw = _invoke_with_timeout(
-                web_search.invoke, {"query": tool_query, "max_results": 5}, TOOL_TIMEOUT_SEC
+                web_search.invoke,
+                {"query": tool_query, "max_results": 5},
+                TOOL_TIMEOUT_SEC,
+                op_name="web_search",
             )
             web_data = _parse_object_json(web_raw)
+            web_error = str(web_data.get("error", "")).strip()
+            if web_error:
+                logger.warning("web_search returned error: %s", web_error)
             web_results = _extract_web_results(web_data)
             if _is_web_useful(web_results):
                 context_block = _format_web_context(web_results)
@@ -74,6 +88,7 @@ def run_agent(user_text: str, user_id: str = "unknown") -> str:
         model.invoke,
         [SystemMessage(content=SYSTEM_PROMPT)] + history + [HumanMessage(content=final_prompt)],
         MODEL_TIMEOUT_SEC,
+        op_name="model_invoke",
     )
     assistant_text = _extract_ai_text(response)
 
@@ -82,14 +97,16 @@ def run_agent(user_text: str, user_id: str = "unknown") -> str:
     return assistant_text
 
 
-def _invoke_with_timeout(func, arg, timeout_sec: int):
+def _invoke_with_timeout(func, arg, timeout_sec: int, op_name: str = "operation"):
     with ThreadPoolExecutor(max_workers=1) as ex:
         fut = ex.submit(func, arg)
         try:
             return fut.result(timeout=max(1, timeout_sec))
         except FuturesTimeoutError:
+            logger.warning("%s timed out after %s sec", op_name, timeout_sec)
             return ""
-        except Exception:
+        except Exception as e:
+            logger.exception("%s failed: %s", op_name, e)
             return ""
 
 
