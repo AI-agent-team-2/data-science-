@@ -1,8 +1,0 @@
-telebot==0.0.5
-dotenv==0.9.9
-langchain_openai
-scikit-learn
-chromadb
-langchain
-langchain_text_splitters
-sentence_transformers
