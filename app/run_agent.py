@@ -22,6 +22,29 @@ TOOL_TIMEOUT_SEC = 20
 MODEL_TIMEOUT_SEC = 45
 
 
+def _should_prefer_web(query: str) -> bool:
+    lowered = query.lower()
+    markers = (
+        "сейчас",
+        "сегодня",
+        "в 2026",
+        "в 2025",
+        "новые требования",
+        "что изменилось",
+        "по отзывам",
+        "отзывы",
+        "где купить",
+        "в москве",
+        "в россии",
+        "средняя цена",
+        "цена",
+        "аналоги",
+        "сравни",
+        "новости",
+    )
+    return any(marker in lowered for marker in markers)
+
+
 def _should_prefer_lookup(query: str) -> bool:
     if SKU_RE.search(query.upper()):
         return True
@@ -33,16 +56,32 @@ def _should_prefer_lookup(query: str) -> bool:
 
 def run_agent(user_text: str, user_id: str = "unknown") -> str:
     # Активный runtime-пайплайн:
-    # SKU/товарный запрос -> product_lookup, иначе -> rag_search, затем web_search.
+    # актуальные/рыночные запросы -> web_search;
+    # SKU/товарный запрос -> product_lookup, иначе -> rag_search;
+    # затем fallback на оставшиеся источники.
     session_id = user_id or "unknown"
     history = load_messages(session_id=session_id)
     tool_query = user_text.strip()
 
     context_block = ""
+    prefer_web = _should_prefer_web(tool_query)
     prefer_lookup = _should_prefer_lookup(tool_query)
+    web_urls: list[str] = []
 
     # 1) Первый источник зависит от типа запроса.
-    if prefer_lookup:
+    if prefer_web:
+        web_raw = _invoke_with_timeout(
+            web_search.invoke,
+            {"query": tool_query, "max_results": 5},
+            TOOL_TIMEOUT_SEC,
+            op_name="web_search",
+        )
+        web_data = _parse_object_json(web_raw)
+        web_results = _extract_results(web_data)
+        web_urls = _extract_web_urls(web_results)
+        if _is_web_useful(web_results):
+            context_block = _format_web_context(web_results)
+    elif prefer_lookup:
         lookup_raw = _invoke_with_timeout(
             product_lookup.invoke,
             {"query": tool_query, "limit": 5},
@@ -65,9 +104,31 @@ def run_agent(user_text: str, user_id: str = "unknown") -> str:
         if _is_rag_useful(rag_results):
             context_block = _format_rag_context(rag_results)
 
-    # 2) Fallback на второй внутренний источник.
+    # 2) Fallback на второй/третий источник.
     if not context_block:
-        if prefer_lookup:
+        if prefer_web:
+            rag_raw = _invoke_with_timeout(
+                rag_search.invoke,
+                {"query": tool_query},
+                TOOL_TIMEOUT_SEC,
+                op_name="rag_search",
+            )
+            rag_data = _parse_object_json(rag_raw)
+            rag_results = _extract_results(rag_data)
+            if _is_rag_useful(rag_results):
+                context_block = _format_rag_context(rag_results)
+            if not context_block:
+                lookup_raw = _invoke_with_timeout(
+                    product_lookup.invoke,
+                    {"query": tool_query, "limit": 5},
+                    TOOL_TIMEOUT_SEC,
+                    op_name="product_lookup",
+                )
+                lookup_data = _parse_object_json(lookup_raw)
+                lookup_results = _extract_results(lookup_data)
+                if _is_lookup_useful(lookup_results):
+                    context_block = _format_lookup_context(lookup_data, lookup_results)
+        elif prefer_lookup:
             rag_raw = _invoke_with_timeout(
                 rag_search.invoke,
                 {"query": tool_query},
@@ -90,18 +151,20 @@ def run_agent(user_text: str, user_id: str = "unknown") -> str:
             if _is_lookup_useful(lookup_results):
                 context_block = _format_lookup_context(lookup_data, lookup_results)
 
-    # 3) Последний fallback — внешний поиск.
+    # 3) Последний fallback — внешний поиск (если не ходили в него первым).
     if not context_block:
-        web_raw = _invoke_with_timeout(
-            web_search.invoke,
-            {"query": tool_query, "max_results": 5},
-            TOOL_TIMEOUT_SEC,
-            op_name="web_search",
-        )
-        web_data = _parse_object_json(web_raw)
-        web_results = _extract_results(web_data)
-        if _is_web_useful(web_results):
-            context_block = _format_web_context(web_results)
+        if not prefer_web:
+            web_raw = _invoke_with_timeout(
+                web_search.invoke,
+                {"query": tool_query, "max_results": 5},
+                TOOL_TIMEOUT_SEC,
+                op_name="web_search",
+            )
+            web_data = _parse_object_json(web_raw)
+            web_results = _extract_results(web_data)
+            web_urls = _extract_web_urls(web_results)
+            if _is_web_useful(web_results):
+                context_block = _format_web_context(web_results)
 
     if not context_block:
         assistant_text = _clarifying_question()
@@ -120,6 +183,8 @@ def run_agent(user_text: str, user_id: str = "unknown") -> str:
         op_name="model_invoke",
     )
     assistant_text = _extract_ai_text(response)
+    if prefer_web:
+        assistant_text = _ensure_sources_block(assistant_text, web_urls)
 
     save_turn(session_id=session_id, user_text=user_text, assistant_text=assistant_text)
     return assistant_text
@@ -210,6 +275,34 @@ def _format_web_context(items: list[dict[str, Any]]) -> str:
         url = str(item.get("url", "")).strip()
         lines.append(f"[WEB {idx}] {title} | {snippet} | {url}")
     return "\n".join(lines).strip()
+
+
+def _extract_web_urls(items: list[dict[str, Any]]) -> list[str]:
+    urls: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        url = str(item.get("url", "")).strip()
+        if not (url.startswith("http://") or url.startswith("https://")):
+            continue
+        if url in seen:
+            continue
+        seen.add(url)
+        urls.append(url)
+    return urls
+
+
+def _ensure_sources_block(answer: str, urls: list[str]) -> str:
+    if "Источники:" in answer:
+        return answer
+
+    block_lines = ["", "Источники:"]
+    if urls:
+        for url in urls[:5]:
+            block_lines.append(f"- {url}")
+    else:
+        block_lines.append("- внешние ссылки не найдены")
+
+    return answer.rstrip() + "\n" + "\n".join(block_lines)
 
 
 def _format_lookup_context(payload: dict[str, Any], items: list[dict[str, Any]]) -> str:
