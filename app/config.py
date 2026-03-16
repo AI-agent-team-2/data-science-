@@ -18,12 +18,9 @@ class Settings:
     model_name: str = os.getenv("MODEL_NAME", "").strip()
     # Базовый URL OpenAI-compatible API.
     openai_base_url: str = os.getenv("OPENAI_BASE_URL", "").strip()
-    # Бэкенд эмбеддингов: openai_compatible.
-    embedding_backend: str = os.getenv(
-        "EMBEDDING_BACKEND", "openai_compatible"
-    ).strip().lower()
     # Имя модели эмбеддингов.
-    embedding_model_name: str = os.getenv("EMBEDDING_MODEL_NAME", "all-MiniLM-L6-v2").strip()    # Опционально: отдельный ключ для embedding API (если не задан, используется OPENAI_API_KEY).
+    embedding_model_name: str = os.getenv("EMBEDDING_MODEL_NAME", "text-embedding-3-small").strip()
+    # Опционально: отдельный ключ для embedding API (если не задан, используется OPENAI_API_KEY).
     embedding_api_key: str = os.getenv("EMBEDDING_API_KEY", "").strip()
     # Опционально: отдельный base URL для embedding API (если не задан, используется OPENAI_BASE_URL).
     embedding_base_url: str = os.getenv("EMBEDDING_BASE_URL", "").strip()
@@ -46,10 +43,6 @@ class Settings:
     history_max_messages: int = int(os.getenv("HISTORY_MAX_MESSAGES", "24"))
     # TTL истории диалогов в днях.
     history_ttl_days: int = int(os.getenv("HISTORY_TTL_DAYS", "30"))
-
-    # Настройки прокси для Telegram (опционально).
-    # Формат: http://user:password@host:port или http://host:port
-    proxy_url: str = os.getenv("PROXY_URL", "").strip()
 
     @property
     def resolved_model_provider(self) -> str:
@@ -80,12 +73,6 @@ class Settings:
         if self.resolved_model_provider == "openai":
             return "gpt-4o-mini"
         return "openai/gpt-4o-mini"
-
-    @property
-    def resolved_embedding_backend(self) -> str:
-        if self.embedding_backend == "openai_compatible":
-            return self.embedding_backend
-        return "openai_compatible"
 
     @property
     def resolved_embedding_model_name(self) -> str:

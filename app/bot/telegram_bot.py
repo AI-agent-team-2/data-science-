@@ -22,8 +22,8 @@ logger = logging.getLogger(__name__)
 # Инициализация Telegram-бота через токен из .env.
 bot = telebot.TeleBot(settings.telegram_token, threaded=True)
 
-@bot.message_handler(commands=["start"])
 
+@bot.message_handler(commands=["start"])
 def start_handler(message):
     # Приветственное сообщение при первом запуске диалога.
     bot.reply_to(
@@ -36,7 +36,6 @@ def start_handler(message):
 def text_handler(message):
     # Базовый обработчик любого текстового входа.
     try:
-        
         # Отправляем текст в агент и получаем финальный ответ модели.
         answer = run_agent(message.text, user_id=str(message.from_user.id))
         bot.reply_to(message, answer)
