@@ -50,39 +50,41 @@ def _build_title(doc_name: str, product: str, product_type: str, document: str) 
 @lru_cache(maxsize=1)
 def _load_catalog() -> list[dict]:
     root = Path(__file__).resolve().parents[2]
-    tp_dir = root / "data" / "knowledge_base" / "tp"
+    kb_root = root / "data" / "knowledge_base"
+    source_dirs = [kb_root / "tp", kb_root / "cat"]
     items: list[dict] = []
 
-    if not tp_dir.exists():
-        return items
-
-    for path in sorted(tp_dir.glob("*.txt")):
-        try:
-            text = path.read_text(encoding="utf-8", errors="ignore")
-        except OSError:
+    for source_dir in source_dirs:
+        if not source_dir.exists():
             continue
 
-        brand = _extract_field(text, "BRAND")
-        product = _extract_field(text, "PRODUCT")
-        product_type = _extract_field(text, "PRODUCT TYPE")
-        document = _extract_field(text, "DOCUMENT")
-        title = _build_title(path.stem, product, product_type, document)
-        skus = _extract_skus(text)
+        for path in sorted(source_dir.glob("*.txt")):
+            try:
+                text = path.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
 
-        searchable = _normalize(
-            " ".join([title, brand, product, product_type, document, " ".join(skus), text[:3500]])
-        )
-        items.append(
-            {
-                "name": title,
-                "brand": brand,
-                "category": product or product_type,
-                "sku_list": skus,
-                "source": str(path.relative_to(root)).replace("\\", "/"),
-                "searchable": searchable,
-                "tokens": _tokenize(searchable),
-            }
-        )
+            brand = _extract_field(text, "BRAND")
+            product = _extract_field(text, "PRODUCT")
+            product_type = _extract_field(text, "PRODUCT TYPE")
+            document = _extract_field(text, "DOCUMENT")
+            title = _build_title(path.stem, product, product_type, document)
+            skus = _extract_skus(text)
+
+            searchable = _normalize(
+                " ".join([title, brand, product, product_type, document, " ".join(skus), text[:3500]])
+            )
+            items.append(
+                {
+                    "name": title,
+                    "brand": brand,
+                    "category": product or product_type,
+                    "sku_list": skus,
+                    "source": str(path.relative_to(root)).replace("\\", "/"),
+                    "searchable": searchable,
+                    "tokens": _tokenize(searchable),
+                }
+            )
 
     return items
 
@@ -126,7 +128,7 @@ def product_lookup(query: str, limit: int = 5) -> str:
                 "query": query,
                 "count": 0,
                 "results": [],
-                "note": "Каталог не найден. Проверьте data/knowledge_base/tp.",
+                "note": "Каталог не найден. Проверьте data/knowledge_base/tp и data/knowledge_base/cat.",
             },
             ensure_ascii=False,
             indent=2,
