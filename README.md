@@ -1,11 +1,12 @@
 # SAN Bot
 
-Telegram-бот по сантехническим товарам на базе LangGraph + RAG (ChromaDB).
+Telegram-бот по сантехническим товарам на базе LLM + RAG (ChromaDB).
 
 ## Возможности
 
 - отвечает на вопросы из Telegram;
 - использует `product_lookup`, `rag_search`, `web_search`;
+- простой роутинг: SKU/товарный запрос -> `product_lookup`, технический/общий запрос -> `rag_search`, если не найдено -> `web_search`;
 - хранит векторный индекс в `chroma_db`;
 - хранит историю диалога в `history.db` (SQLite).
 
@@ -28,7 +29,15 @@ pip install -r requirements.txt
 
 ## Настройка `.env`
 
-Создайте файл `.env` в корне проекта:
+Скопируйте шаблон:
+
+```bash
+cp .env.example .env
+# Windows PowerShell:
+# Copy-Item .env.example .env
+```
+
+Минимальный пример:
 
 ```env
 TELEGRAM_TOKEN=
@@ -38,7 +47,6 @@ OPENAI_BASE_URL=https://openrouter.ai/api/v1
 OPENAI_API_KEY=
 MODEL_NAME=openai/gpt-4o-mini
 
-EMBEDDING_BACKEND=openai_compatible
 EMBEDDING_MODEL_NAME=text-embedding-3-small
 EMBEDDING_API_KEY=
 EMBEDDING_BASE_URL=
@@ -79,17 +87,27 @@ python app/bot/telegram_bot.py
 python -m app.bot.telegram_bot
 ```
 
-## Быстрые проверки
+## Ручная проверка
+
+1. Запустите бота и отправьте `/start`.
+2. Проверьте SKU-запрос (например артикул товара): должен сработать `product_lookup`.
+3. Проверьте технический вопрос по базе знаний (например про совместимость): должен сработать `rag_search`.
+4. Проверьте внешний вопрос, которого нет в базе: должен сработать `web_search`.
+
+## Мини-оценка Retrieval
 
 ```bash
-python -c "import app.graph; print('model_ok')"
-python -c "from app.tools.web_search import web_search; print(web_search('что такое балансировочный клапан', 5))"
+python scripts/retrieval_eval.py
+# или с другим k:
+# python scripts/retrieval_eval.py --top-k 8
 ```
+
+Скрипт печатает `hit@k` по небольшому фиксированному набору запросов.
 
 ## Структура
 
 - `app/config.py` - настройки проекта
-- `app/run_agent.py` - основная логика ответа и fallback-цепочка
+- `app/run_agent.py` - основная логика ответа и линейный роутинг
 - `app/graph.py` - инициализация LLM-клиента
 - `app/tools/` - инструменты (`product_lookup`, `rag_search`, `web_search`)
 - `app/rag/` - индексация и retrieval

@@ -24,6 +24,7 @@ class ChromaRetriever:
                 name=settings.collection_name,
                 embedding_function=self.embedding_fn,
             )
+
     def search(self, query: str, top_k: int | None = None) -> list[dict[str, Any]]:
         # Приоритет у явно переданного top_k; иначе берем значение из настроек.
         n_results = top_k or settings.top_k

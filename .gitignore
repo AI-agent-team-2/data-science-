@@ -28,3 +28,9 @@ history.db
 Thumbs.db
 .idea/
 .vscode/
+
+# Local notebooks
+rag_notebook.ipynb
+
+# Legacy archived code
+app/legacy/
