@@ -10,6 +10,56 @@ Telegram-бот по сантехническим товарам на базе L
 - хранит векторный индекс в `chroma_db`;
 - хранит историю диалога в `history.db` (SQLite).
 
+## Архитектура системы
+
+```text
+Telegram user
+   |
+   v
+telegram_bot.py
+   |
+   v
+run_agent.py (router)
+   |-- product_lookup (локальный каталог из data/knowledge_base/tp)
+   |-- rag_search (Chroma retriever по проиндексированным документам)
+   |-- web_search (Tavily/DuckDuckGo для внешних данных)
+   |
+   v
+LLM (app/graph.py + SYSTEM_PROMPT)
+   |
+   v
+Ответ в Telegram
+```
+
+- История диалога хранится в `history.db` (SQLite).
+- Векторный индекс хранится в `chroma_db`.
+- Индексация документов выполняется через `python -m app.rag.ingest`.
+
+## Data Pipeline
+
+```text
+data/knowledge_base/*.txt
+   |
+   v
+preprocess_for_rag (clean_text)
+   |
+   v
+chunk_documents (chunk_size/chunk_overlap)
+   |
+   v
+embedding (OpenAI-compatible)
+   |
+   v
+Chroma collection (chroma_db)
+   |
+   v
+rag_search -> top_k chunks -> контекст для LLM
+```
+
+- Шаги индексации реализованы в `app/rag/ingest.py`.
+- Поиск по векторной базе выполняет `app/rag/retriever.py`.
+- Очистка текста перед индексацией выполняется в `app/rag/preprocess_text.py`.
+
 ## Требования
 
 - Python 3.13+
