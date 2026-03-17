@@ -21,9 +21,16 @@ __pycache__/
 
 # Local vector DB and runtime data
 chroma_db/
+history.db
 
 # OS / IDE
 .DS_Store
 Thumbs.db
 .idea/
 .vscode/
+
+# Local notebooks
+rag_notebook.ipynb
+
+# Legacy archived code
+app/legacy/
