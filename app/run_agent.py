@@ -24,24 +24,28 @@ MODEL_TIMEOUT_SEC = 45
 
 def _should_prefer_web(query: str) -> bool:
     lowered = query.lower()
+    
+    # Всегда ищем в интернете, если запрос:
+    # 1. Содержит маркеры времени/цены/места
+    # 2. Спрашивает про новинки, тренды
+    # 3. Содержит вопрос про "что такое", "как работает"
+    # 4. Или просто всегда ищем для непонятных запросов
+    
     markers = (
-        "сейчас",
-        "сегодня",
-        "в 2026",
-        "в 2025",
-        "новые требования",
-        "что изменилось",
-        "по отзывам",
-        "отзывы",
-        "где купить",
-        "в москве",
-        "в россии",
-        "средняя цена",
-        "цена",
-        "аналоги",
-        "сравни",
-        "новости",
+        "сейчас", "сегодня", "в 2026", "в 2025", "в 2024",
+        "новые требования", "что изменилось", "по отзывам",
+        "отзывы", "где купить", "в москве", "в россии",
+        "средняя цена", "цена", "аналоги", "сравни", "новости",
+        "что такое", "как работает", "для чего", "зачем",
+        "лучший", "рейтинг", "топ", "популярный",
+        "актуальный", "последний", "новинки", "тренды"
     )
+    
+    # Всегда ищем для коротких запросов (меньше 3 слов)
+    words = lowered.split()
+    if len(words) < 3:
+        return True
+        
     return any(marker in lowered for marker in markers)
 
 
@@ -52,6 +56,38 @@ def _should_prefer_lookup(query: str) -> bool:
     lowered = query.lower()
     markers = ("артикул", "sku", "модель", "код", "товар", "бренд", "серия", "позици")
     return any(marker in lowered for marker in markers)
+
+
+def enhance_search_query(original_query: str, search_type: str = "general") -> str:
+    """Улучшает поисковый запрос для веб-поиска"""
+    lowered = original_query.lower()
+    
+    # Если запрос уже про сантехнику — оставляем как есть
+    if "сантехник" in lowered or "унитаз" in lowered or "смеситель" in lowered:
+        return original_query
+    
+    # Для запросов о новинках
+    if "новинк" in lowered or "новые" in lowered:
+        if "2026" in lowered:
+            return f"новинки сантехники 2026 каталог"
+        elif "2025" in lowered:
+            return f"новинки сантехники 2025 каталог"
+        else:
+            return f"новые сантехнические товары 2026 каталог"
+    
+    # Для запросов о ценах и бюджете
+    elif "бюджет" in lowered or "цен" in lowered or "стоит" in lowered or "сколько" in lowered:
+        return f"{original_query} сантехника"
+    
+    # Для запросов о покупке
+    elif "купить" in lowered or "где" in lowered:
+        return f"{original_query} сантехника интернет магазин"
+    
+    # Для общих запросов
+    elif search_type == "fallback":
+        return f"{original_query} сантехника"
+    else:
+        return f"{original_query} сантехника товары"
 
 
 def run_agent(user_text: str, user_id: str = "unknown") -> str:
@@ -70,17 +106,33 @@ def run_agent(user_text: str, user_id: str = "unknown") -> str:
 
     # 1) Первый источник зависит от типа запроса.
     if prefer_web:
+        # Улучшаем запрос для веб-поиска
+        enhanced_query = enhance_search_query(tool_query, "primary")
+        
         web_raw = _invoke_with_timeout(
             web_search.invoke,
-            {"query": tool_query, "max_results": 5},
+            {"query": enhanced_query, "max_results": 5},
             TOOL_TIMEOUT_SEC,
             op_name="web_search",
         )
         web_data = _parse_object_json(web_raw)
         web_results = _extract_results(web_data)
         web_urls = _extract_web_urls(web_results)
-        if _is_web_useful(web_results):
+        # Добавляем проверку на релевантность сантехнике
+        if _is_web_useful(web_results) and _is_sanitary_relevant(web_results):
             context_block = _format_web_context(web_results)
+        else:
+            # Если веб-поиск не дал результатов или не про сантехнику, пробуем RAG
+            rag_raw = _invoke_with_timeout(
+                rag_search.invoke,
+                {"query": tool_query},
+                TOOL_TIMEOUT_SEC,
+                op_name="rag_search",
+            )
+            rag_data = _parse_object_json(rag_raw)
+            rag_results = _extract_results(rag_data)
+            if _is_rag_useful(rag_results):
+                context_block = _format_rag_context(rag_results)
     elif prefer_lookup:
         lookup_raw = _invoke_with_timeout(
             product_lookup.invoke,
@@ -154,16 +206,20 @@ def run_agent(user_text: str, user_id: str = "unknown") -> str:
     # 3) Последний fallback — внешний поиск (если не ходили в него первым).
     if not context_block:
         if not prefer_web:
+            # Для fallback используем улучшенный запрос
+            enhanced_query = enhance_search_query(tool_query, "fallback")
+            
             web_raw = _invoke_with_timeout(
                 web_search.invoke,
-                {"query": tool_query, "max_results": 5},
+                {"query": enhanced_query, "max_results": 5},
                 TOOL_TIMEOUT_SEC,
                 op_name="web_search",
             )
             web_data = _parse_object_json(web_raw)
             web_results = _extract_results(web_data)
             web_urls = _extract_web_urls(web_results)
-            if _is_web_useful(web_results):
+            # Добавляем проверку на релевантность сантехнике
+            if _is_web_useful(web_results) and _is_sanitary_relevant(web_results):
                 context_block = _format_web_context(web_results)
 
     if not context_block:
@@ -174,7 +230,10 @@ def run_agent(user_text: str, user_id: str = "unknown") -> str:
     final_prompt = (
         f"Вопрос пользователя:\n{user_text}\n\n"
         f"Контекст для ответа:\n{context_block}\n\n"
-        "Ответь кратко и по делу, не выдумывай данные и не ссылайся на скрытые служебные поля."
+        "Ответь строго по вопросу пользователя. "
+        "Если вопрос только про сантехнику — отвечай только про сантехнику. "
+        "Не добавляй информацию про ремонт, стройматериалы, мебель и другие темы, "
+        "если пользователь о них не спрашивал. Будь краток и точен."
     )
     response = _invoke_with_timeout(
         model.invoke,
@@ -253,6 +312,25 @@ def _is_web_useful(items: list[dict[str, Any]]) -> bool:
         url = str(item.get("url", "")).strip().lower()
         if url.startswith("http://") or url.startswith("https://"):
             return True
+    return False
+
+
+def _is_sanitary_relevant(items: list[dict[str, Any]]) -> bool:
+    """Проверяет, что результаты поиска относятся к сантехнике"""
+    sanitary_keywords = ["унитаз", "ванна", "смеситель", "душ", "сантехник", 
+                         "раковина", "труба", "фитинг", "кран", "бойлер",
+                         "сантехника", "санфаянс", "кранбукс", "картридж",
+                         "гидробокс", "инсталляция", "поддон", "лейка"]
+    
+    for item in items:
+        title = str(item.get("title", "")).lower()
+        snippet = str(item.get("snippet", "")).lower()
+        combined = title + " " + snippet
+        
+        # Если есть хотя бы одно слово из сантехники — считаем релевантным
+        if any(keyword in combined for keyword in sanitary_keywords):
+            return True
+    
     return False
 
 
