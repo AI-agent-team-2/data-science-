@@ -44,6 +44,18 @@ class Settings:
     # TTL истории диалогов в днях.
     history_ttl_days: int = int(os.getenv("HISTORY_TTL_DAYS", "30"))
 
+    # Кэш для веб-поиска
+    web_cache_enabled: bool = os.getenv("WEB_CACHE_ENABLED", "true").lower() == "true"
+    web_cache_ttl_hours: int = int(os.getenv("WEB_CACHE_TTL_HOURS", "24"))
+    
+    # Максимальное количество результатов поиска
+    web_search_max_results: int = int(os.getenv("WEB_SEARCH_MAX_RESULTS", "5"))
+    
+    # Включение/отключение инструментов
+    enable_web_search: bool = os.getenv("ENABLE_WEB_SEARCH", "true").lower() == "true"
+    enable_rag: bool = os.getenv("ENABLE_RAG", "true").lower() == "true"
+    enable_product_lookup: bool = os.getenv("ENABLE_PRODUCT_LOOKUP", "true").lower() == "true"
+
     @property
     def resolved_model_provider(self) -> str:
         if self.model_provider in {"openrouter", "openai"}:

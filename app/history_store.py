@@ -1,95 +1,120 @@
 from __future__ import annotations
 
 import sqlite3
-import time
-from pathlib import Path
-
-from langchain_core.messages import AIMessage, HumanMessage
+from datetime import datetime, timedelta
+from typing import List, Dict, Any
 
 from app.config import settings
 
 
-def _connect() -> sqlite3.Connection:
-    db_path = Path(settings.history_db_path)
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(db_path), timeout=30)
-    conn.execute("PRAGMA journal_mode=WAL;")
-    conn.execute("PRAGMA synchronous=NORMAL;")
+def get_connection():
+    """Получить соединение с БД"""
+    conn = sqlite3.connect(settings.history_db_path)
+    conn.row_factory = sqlite3.Row
     return conn
 
 
-def init_history_store() -> None:
-    with _connect() as conn:
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS chat_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                session_id TEXT NOT NULL,
-                role TEXT NOT NULL CHECK(role IN ('user', 'assistant')),
-                content TEXT NOT NULL,
-                created_at INTEGER NOT NULL
-            )
-            """
+def init_db():
+    """Инициализировать базу данных"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL,
+            user_text TEXT NOT NULL,
+            assistant_text TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_chat_history_session_id ON chat_history(session_id)"
-        )
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_chat_history_created_at ON chat_history(created_at)"
-        )
+    ''')
+    # Индекс для быстрого поиска по session_id
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_session_id ON history(session_id)')
+    conn.commit()
+    conn.close()
 
 
-def prune_expired_history(ttl_days: int | None = None) -> None:
-    days = ttl_days if ttl_days is not None else settings.history_ttl_days
-    if days <= 0:
-        return
-    cutoff_ts = int(time.time()) - days * 24 * 60 * 60
-    with _connect() as conn:
-        conn.execute("DELETE FROM chat_history WHERE created_at < ?", (cutoff_ts,))
+def save_turn(session_id: str, user_text: str, assistant_text: str):
+    """Сохранить диалог"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO history (session_id, user_text, assistant_text) VALUES (?, ?, ?)",
+        (session_id, user_text, assistant_text)
+    )
+    conn.commit()
+    conn.close()
+    
+    # Очистка старых записей
+    _cleanup_old(session_id)
 
 
-def load_messages(session_id: str, limit: int | None = None) -> list:
-    max_messages = limit if limit is not None else settings.history_max_messages
-    max_messages = max(0, max_messages)
-    if max_messages == 0:
-        return []
-
-    prune_expired_history()
-    with _connect() as conn:
-        rows = conn.execute(
-            """
-            SELECT role, content
-            FROM chat_history
-            WHERE session_id = ?
-            ORDER BY id DESC
-            LIMIT ?
-            """,
-            (session_id, max_messages),
-        ).fetchall()
-
-    rows.reverse()
+def load_messages(session_id: str, limit: int = None) -> List[Dict[str, Any]]:
+    """Загрузить историю диалога в формате LangChain"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    if limit is None:
+        limit = settings.history_max_messages
+    
+    # Берем последние limit*2 сообщений (user + assistant)
+    cursor.execute(
+        "SELECT user_text, assistant_text FROM history WHERE session_id = ? ORDER BY created_at DESC LIMIT ?",
+        (session_id, limit * 2)
+    )
+    
+    rows = cursor.fetchall()
+    conn.close()
+    
+    # Преобразуем в формат LangChain (в хронологическом порядке)
     messages = []
-    for role, content in rows:
-        if role == "user":
-            messages.append(HumanMessage(content=content))
-        elif role == "assistant":
-            messages.append(AIMessage(content=content))
+    for row in reversed(rows):
+        messages.append(("human", row["user_text"]))
+        messages.append(("ai", row["assistant_text"]))
+    
     return messages
 
 
-def save_turn(session_id: str, user_text: str, assistant_text: str) -> None:
-    now = int(time.time())
-    prune_expired_history()
-    with _connect() as conn:
-        conn.execute(
-            "INSERT INTO chat_history(session_id, role, content, created_at) VALUES (?, 'user', ?, ?)",
-            (session_id, user_text, now),
-        )
-        conn.execute(
-            "INSERT INTO chat_history(session_id, role, content, created_at) VALUES (?, 'assistant', ?, ?)",
-            (session_id, assistant_text, now),
-        )
+def clear_history(session_id: str):
+    """Очистить историю для пользователя"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM history WHERE session_id = ?", (session_id,))
+    conn.commit()
+    conn.close()
 
 
-# Инициализируем таблицу при импорте, чтобы рантайм не зависел от ручной миграции.
-init_history_store()
+def get_history_stats(session_id: str) -> Dict[str, Any]:
+    """Получить статистику по истории пользователя"""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT COUNT(*) as count, MIN(created_at) as first, MAX(created_at) as last FROM history WHERE session_id = ?",
+        (session_id,)
+    )
+    row = cursor.fetchone()
+    conn.close()
+    
+    return {
+        'count': row['count'] if row else 0,
+        'first_message': row['first'] if row else None,
+        'last_message': row['last'] if row else None
+    }
+
+
+def _cleanup_old(session_id: str):
+    """Очистить старые записи по TTL"""
+    ttl_days = settings.history_ttl_days
+    cutoff = datetime.now() - timedelta(days=ttl_days)
+    
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "DELETE FROM history WHERE session_id = ? AND created_at < ?",
+        (session_id, cutoff.isoformat())
+    )
+    conn.commit()
+    conn.close()
+
+
+# Инициализация при импорте
+init_db()

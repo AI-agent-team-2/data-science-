@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import logging
-import os
 import sys
 from pathlib import Path
 
 import telebot
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 
 # Позволяет запускать файл напрямую как `python app\bot\telegram_bot.py`.
 # В этом режиме добавляем корень проекта в sys.path, чтобы импорт `app.*` работал стабильно.
@@ -28,8 +28,73 @@ def start_handler(message):
     # Приветственное сообщение при первом запуске диалога.
     bot.reply_to(
         message,
-        "Привет! Я ассистент по сантехническим товарам. Задай вопрос по товару, параметрам или совместимости."
+        "Привет! Я ассистент по сантехническим товарам. Задай вопрос по товару, параметрам или совместимости.\n\n"
+        "Используй /help для списка команд."
     )
+
+
+@bot.message_handler(commands=["help"])
+def help_handler(message):
+    """Показать помощь"""
+    help_text = """
+🤖 *Ассистент по сантехнике*
+
+*Команды:*
+/start - Начать диалог
+/help - Показать эту справку
+/clear - Очистить историю диалога
+
+*Как задавать вопросы:*
+- По артикулу: `O12345`
+- По модели: `смеситель Hansgrohe`
+- По цене: `сколько стоит унитаз`
+- По новинкам: `новинки 2026`
+
+*Источники информации:*
+- База товаров (по артикулам)
+- База знаний (характеристики, совместимость)
+- Интернет (цены, отзывы, новинки)
+"""
+    markup = InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        InlineKeyboardButton("🔍 Поиск в интернете", callback_data="search_web"),
+        InlineKeyboardButton("📚 Поиск в базе", callback_data="search_rag"),
+        InlineKeyboardButton("🗑 Очистить историю", callback_data="clear_history")
+    )
+    bot.reply_to(message, help_text, parse_mode="Markdown", reply_markup=markup)
+
+
+@bot.message_handler(commands=["clear"])
+def clear_handler(message):
+    """Очистить историю диалога"""
+    from app.history_store import clear_history
+    
+    user_id = str(message.from_user.id)
+    clear_history(session_id=user_id)
+    bot.reply_to(message, "✅ История диалога очищена!")
+
+
+@bot.callback_query_handler(func=lambda call: True)
+def callback_handler(call: CallbackQuery):
+    """Обработчик инлайн-кнопок"""
+    if call.data == "search_web":
+        bot.answer_callback_query(call.id, "🔍 Напиши свой запрос для поиска в интернете")
+        bot.send_message(call.message.chat.id, "Введи запрос, и я найду информацию в интернете:")
+    
+    elif call.data == "search_rag":
+        bot.answer_callback_query(call.id, "📚 Напиши свой запрос для поиска в базе знаний")
+        bot.send_message(call.message.chat.id, "Введи запрос, и я найду информацию в базе:")
+    
+    elif call.data == "clear_history":
+        from app.history_store import clear_history
+        user_id = str(call.from_user.id)
+        clear_history(session_id=user_id)
+        bot.answer_callback_query(call.id, "✅ История очищена")
+        bot.edit_message_text(
+            "✅ История диалога очищена!",
+            call.message.chat.id,
+            call.message.message_id
+        )
 
 
 @bot.message_handler(func=lambda _: True)
