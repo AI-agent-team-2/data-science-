@@ -8,6 +8,7 @@ from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
+from app.config import settings
 from app.graph import model
 from app.history_store import load_messages, save_turn
 from app.prompts import SYSTEM_PROMPT
@@ -25,11 +26,13 @@ MODEL_TIMEOUT_SEC = 45
 def _should_prefer_web(query: str) -> bool:
     lowered = query.lower()
     
-    # Всегда ищем в интернете, если запрос:
-    # 1. Содержит маркеры времени/цены/места
-    # 2. Спрашивает про новинки, тренды
-    # 3. Содержит вопрос про "что такое", "как работает"
-    # 4. Или просто всегда ищем для непонятных запросов
+    # Короткие запросы (меньше 3 слов) — но только если это НЕ SKU
+    words = lowered.split()
+    if len(words) < 3:
+        # Проверяем, не SKU ли это
+        if SKU_RE.search(query.upper()):
+            return False  # SKU-first!
+        return True
     
     markers = (
         "сейчас", "сегодня", "в 2026", "в 2025", "в 2024",
@@ -41,11 +44,6 @@ def _should_prefer_web(query: str) -> bool:
         "актуальный", "последний", "новинки", "тренды"
     )
     
-    # Всегда ищем для коротких запросов (меньше 3 слов)
-    words = lowered.split()
-    if len(words) < 3:
-        return True
-        
     return any(marker in lowered for marker in markers)
 
 
@@ -90,11 +88,27 @@ def enhance_search_query(original_query: str, search_type: str = "general") -> s
         return f"{original_query} сантехника товары"
 
 
+def _is_sanitary_relevant(items: list[dict[str, Any]]) -> bool:
+    """Проверяет, что результаты поиска относятся к сантехнике"""
+    sanitary_keywords = [
+        "унитаз", "ванна", "смеситель", "душ", "сантехник", 
+        "раковина", "труба", "фитинг", "кран", "бойлер",
+        "сантехника", "санфаянс", "кранбукс", "картридж",
+        "гидробокс", "инсталляция", "поддон", "лейка"
+    ]
+    
+    for item in items:
+        title = str(item.get("title", "")).lower()
+        snippet = str(item.get("snippet", "")).lower()
+        combined = title + " " + snippet
+        
+        if any(kw in combined for kw in sanitary_keywords):
+            return True
+    
+    return False
+
+
 def run_agent(user_text: str, user_id: str = "unknown") -> str:
-    # Активный runtime-пайплайн:
-    # актуальные/рыночные запросы -> web_search;
-    # SKU/товарный запрос -> product_lookup, иначе -> rag_search;
-    # затем fallback на оставшиеся источники.
     session_id = user_id or "unknown"
     history = load_messages(session_id=session_id)
     tool_query = user_text.strip()
@@ -103,26 +117,25 @@ def run_agent(user_text: str, user_id: str = "unknown") -> str:
     prefer_web = _should_prefer_web(tool_query)
     prefer_lookup = _should_prefer_lookup(tool_query)
     web_urls: list[str] = []
+    web_actually_used = False  # Флаг: действительно ли использовали web
 
     # 1) Первый источник зависит от типа запроса.
     if prefer_web:
-        # Улучшаем запрос для веб-поиска
         enhanced_query = enhance_search_query(tool_query, "primary")
         
         web_raw = _invoke_with_timeout(
             web_search.invoke,
-            {"query": enhanced_query, "max_results": 5},
+            {"query": enhanced_query, "max_results": settings.web_search_max_results},
             TOOL_TIMEOUT_SEC,
             op_name="web_search",
         )
         web_data = _parse_object_json(web_raw)
         web_results = _extract_results(web_data)
         web_urls = _extract_web_urls(web_results)
-        # Добавляем проверку на релевантность сантехнике
         if _is_web_useful(web_results) and _is_sanitary_relevant(web_results):
             context_block = _format_web_context(web_results)
+            web_actually_used = True
         else:
-            # Если веб-поиск не дал результатов или не про сантехнику, пробуем RAG
             rag_raw = _invoke_with_timeout(
                 rag_search.invoke,
                 {"query": tool_query},
@@ -206,21 +219,20 @@ def run_agent(user_text: str, user_id: str = "unknown") -> str:
     # 3) Последний fallback — внешний поиск (если не ходили в него первым).
     if not context_block:
         if not prefer_web:
-            # Для fallback используем улучшенный запрос
             enhanced_query = enhance_search_query(tool_query, "fallback")
             
             web_raw = _invoke_with_timeout(
                 web_search.invoke,
-                {"query": enhanced_query, "max_results": 5},
+                {"query": enhanced_query, "max_results": settings.web_search_max_results},
                 TOOL_TIMEOUT_SEC,
                 op_name="web_search",
             )
             web_data = _parse_object_json(web_raw)
             web_results = _extract_results(web_data)
             web_urls = _extract_web_urls(web_results)
-            # Добавляем проверку на релевантность сантехнике
             if _is_web_useful(web_results) and _is_sanitary_relevant(web_results):
                 context_block = _format_web_context(web_results)
+                web_actually_used = True
 
     if not context_block:
         assistant_text = _clarifying_question()
@@ -242,7 +254,9 @@ def run_agent(user_text: str, user_id: str = "unknown") -> str:
         op_name="model_invoke",
     )
     assistant_text = _extract_ai_text(response)
-    if prefer_web:
+    
+    # Добавляем источники только если реально использовали web
+    if web_actually_used:
         assistant_text = _ensure_sources_block(assistant_text, web_urls)
 
     save_turn(session_id=session_id, user_text=user_text, assistant_text=assistant_text)

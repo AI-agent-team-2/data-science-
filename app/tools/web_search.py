@@ -8,9 +8,17 @@ from typing import Any, Dict
 
 from langchain_core.tools import tool
 
+from app.config import settings
+
 # Кэш для результатов поиска
 CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".web_cache")
-CACHE_TTL = timedelta(hours=24)
+
+
+def _get_cache_ttl() -> timedelta:
+    """Получить TTL из настроек"""
+    if settings.web_cache_enabled:
+        return timedelta(hours=settings.web_cache_ttl_hours)
+    return timedelta(hours=0)  # кэш выключен
 
 
 def _get_cache_key(query: str, max_results: int) -> str:
@@ -21,6 +29,9 @@ def _get_cache_key(query: str, max_results: int) -> str:
 
 def _load_from_cache(key: str) -> Dict[str, Any] | None:
     """Загрузить из кэша"""
+    if not settings.web_cache_enabled:
+        return None
+    
     cache_file = os.path.join(CACHE_DIR, f"{key}.json")
     if not os.path.exists(cache_file):
         return None
@@ -30,7 +41,7 @@ def _load_from_cache(key: str) -> Dict[str, Any] | None:
             data = json.load(f)
         
         cache_time = datetime.fromisoformat(data['cached_at'])
-        if datetime.now() - cache_time > CACHE_TTL:
+        if datetime.now() - cache_time > _get_cache_ttl():
             os.remove(cache_file)
             return None
         
@@ -41,6 +52,9 @@ def _load_from_cache(key: str) -> Dict[str, Any] | None:
 
 def _save_to_cache(key: str, result: Dict[str, Any]) -> None:
     """Сохранить в кэш"""
+    if not settings.web_cache_enabled:
+        return
+    
     os.makedirs(CACHE_DIR, exist_ok=True)
     cache_file = os.path.join(CACHE_DIR, f"{key}.json")
     data = {
@@ -60,6 +74,12 @@ def web_search(query: str, max_results: int = 5) -> str:
     Поиск актуальной внешней информации в интернете.
     Используй только если вопрос требует внешних или изменяющихся данных.
     """
+    # Проверка включен ли веб-поиск
+    if not settings.enable_web_search:
+        return _error_object(query, "disabled", "Веб-поиск отключен в настройках.")
+    
+    # Используем max_results из настроек
+    max_results = min(max_results, settings.web_search_max_results)
     max_results = int(max(1, min(max_results, 10)))
     
     # Проверяем кэш

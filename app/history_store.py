@@ -27,7 +27,6 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
-    # Индекс для быстрого поиска по session_id
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_session_id ON history(session_id)')
     conn.commit()
     conn.close()
@@ -56,10 +55,16 @@ def load_messages(session_id: str, limit: int = None) -> List[Dict[str, Any]]:
     if limit is None:
         limit = settings.history_max_messages
     
-    # Берем последние limit*2 сообщений (user + assistant)
+    ttl_days = settings.history_ttl_days
+    
+    # Только сообщения не старше TTL, используем SQLite datetime функции
     cursor.execute(
-        "SELECT user_text, assistant_text FROM history WHERE session_id = ? ORDER BY created_at DESC LIMIT ?",
-        (session_id, limit * 2)
+        """
+        SELECT user_text, assistant_text FROM history 
+        WHERE session_id = ? AND created_at > datetime('now', ?)
+        ORDER BY created_at DESC LIMIT ?
+        """,
+        (session_id, f'-{ttl_days} days', limit * 2)
     )
     
     rows = cursor.fetchall()
@@ -104,13 +109,13 @@ def get_history_stats(session_id: str) -> Dict[str, Any]:
 def _cleanup_old(session_id: str):
     """Очистить старые записи по TTL"""
     ttl_days = settings.history_ttl_days
-    cutoff = datetime.now() - timedelta(days=ttl_days)
-    
     conn = get_connection()
     cursor = conn.cursor()
+    
+    # Используем SQLite datetime функции
     cursor.execute(
-        "DELETE FROM history WHERE session_id = ? AND created_at < ?",
-        (session_id, cutoff.isoformat())
+        "DELETE FROM history WHERE session_id = ? AND created_at < datetime('now', ?)",
+        (session_id, f'-{ttl_days} days')
     )
     conn.commit()
     conn.close()
