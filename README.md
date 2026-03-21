@@ -113,7 +113,7 @@ HISTORY_MAX_MESSAGES=24
 HISTORY_TTL_DAYS=30
 
 TAVILY_API_KEY=
-
+```
 ### Дополнительные настройки (версия 2.0)
 
 | Переменная | По умолчанию | Описание |
@@ -124,7 +124,6 @@ TAVILY_API_KEY=
 | `WEB_CACHE_ENABLED` | `true` | Включение кэша веб-поиска |
 | `WEB_CACHE_TTL_HOURS` | `24` | Время жизни кэша (часы) |
 | `WEB_SEARCH_MAX_RESULTS` | `5` | Максимальное количество результатов поиска |
-```
 
 ## Индексация RAG
 
