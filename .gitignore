@@ -36,3 +36,5 @@ rag_notebook.ipynb
 
 # Legacy archived code
 app/legacy/
+github_actions_deploy
+github_actions_deploy.pub
