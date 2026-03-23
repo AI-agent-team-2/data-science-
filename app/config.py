@@ -48,6 +48,7 @@ class Settings:
     model_provider: str = _get_env_str("MODEL_PROVIDER", DEFAULT_PROVIDER).lower()
     openai_api_key: str = _get_env_str("OPENAI_API_KEY")
     model_name: str = _get_env_str("MODEL_NAME")
+    model_fallback_name: str = _get_env_str("MODEL_FALLBACK_NAME")
     openai_base_url: str = _get_env_str("OPENAI_BASE_URL")
 
     embedding_model_name: str = _get_env_str("EMBEDDING_MODEL_NAME", DEFAULT_EMBEDDING_MODEL)
@@ -106,6 +107,12 @@ class Settings:
         if self.resolved_model_provider == "openai":
             return DEFAULT_OPENAI_MODEL
         return DEFAULT_OPENROUTER_MODEL
+
+    @property
+    def resolved_fallback_model_name(self) -> str | None:
+        """Возвращает имя fallback-модели (если задано в окружении)."""
+        fallback_name = self.model_fallback_name.strip()
+        return fallback_name or None
 
     @property
     def resolved_embedding_model_name(self) -> str:

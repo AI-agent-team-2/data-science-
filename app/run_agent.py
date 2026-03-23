@@ -10,7 +10,7 @@ from typing import Any, Callable, Literal
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 
 from app.config import settings
-from app.graph import model
+from app.graph import create_chat_model
 from app.history_store import load_messages, save_turn
 from app.prompts import SYSTEM_PROMPT
 from app.tools.product_lookup import product_lookup
@@ -29,6 +29,15 @@ MAX_RAG_CONTEXT_ITEMS = 4
 MAX_LOOKUP_CONTEXT_ITEMS = 5
 MAX_WEB_CONTEXT_ITEMS = 5
 MAX_SOURCE_URLS = 5
+QUOTA_ERROR_MARKERS: tuple[str, ...] = (
+    "insufficient",
+    "quota",
+    "rate limit",
+    "credit",
+    "payment",
+    "402",
+    "free",
+)
 
 WEB_PRIORITY_MARKERS: tuple[str, ...] = (
     "сейчас",
@@ -105,6 +114,9 @@ class ContextBuildResult:
 
 
 EMPTY_CONTEXT_RESULT = ContextBuildResult(context_text="", web_urls=[], used_web=False)
+PRIMARY_CHAT_MODEL = create_chat_model(settings.resolved_model_name)
+FALLBACK_MODEL_NAME = settings.resolved_fallback_model_name
+FALLBACK_CHAT_MODEL = create_chat_model(FALLBACK_MODEL_NAME) if FALLBACK_MODEL_NAME else None
 
 
 def run_agent(user_text: str, user_id: str = "unknown") -> str:
@@ -122,12 +134,7 @@ def run_agent(user_text: str, user_id: str = "unknown") -> str:
 
     final_prompt = _build_final_prompt(user_text=user_text, context_block=context.context_text)
     model_input = [SystemMessage(content=SYSTEM_PROMPT), *history_messages, HumanMessage(content=final_prompt)]
-    response = _invoke_with_timeout(
-        model.invoke,
-        model_input,
-        timeout_sec=MODEL_TIMEOUT_SEC,
-        op_name="model_invoke",
-    )
+    response = _invoke_model_with_fallback(model_input)
 
     assistant_text = _extract_ai_text(response)
     if context.used_web:
@@ -244,6 +251,44 @@ def _invoke_tool(func: Callable[[dict[str, Any]], Any], payload: dict[str, Any],
     return _parse_object_json(raw)
 
 
+def _invoke_model_with_fallback(messages: list[BaseMessage]) -> Any:
+    """
+    Вызывает primary-модель и, при ошибке квоты free-тарифа, переключается на fallback-модель.
+
+    Поведение:
+    1. Пытаемся вызвать `MODEL_NAME`.
+    2. Если ответ пустой/ошибочный и есть `MODEL_FALLBACK_NAME`, пробуем fallback.
+    """
+    primary_result, primary_error = _invoke_with_timeout_capture_error(
+        PRIMARY_CHAT_MODEL.invoke,
+        messages,
+        timeout_sec=MODEL_TIMEOUT_SEC,
+        op_name=f"model_invoke:{settings.resolved_model_name}",
+    )
+    if _is_non_empty_ai_response(primary_result):
+        return primary_result
+
+    if FALLBACK_CHAT_MODEL is None:
+        return primary_result
+
+    if not _should_switch_to_fallback(primary_error, settings.resolved_model_name):
+        return primary_result
+
+    logger.warning(
+        "Switching model fallback: primary='%s' -> fallback='%s' due to: %s",
+        settings.resolved_model_name,
+        FALLBACK_MODEL_NAME,
+        primary_error or "empty response",
+    )
+    fallback_result, _ = _invoke_with_timeout_capture_error(
+        FALLBACK_CHAT_MODEL.invoke,
+        messages,
+        timeout_sec=MODEL_TIMEOUT_SEC,
+        op_name=f"model_invoke:{FALLBACK_MODEL_NAME}",
+    )
+    return fallback_result
+
+
 def _invoke_with_timeout(func: Callable[[Any], Any], arg: Any, timeout_sec: int, op_name: str) -> Any:
     """Безопасно вызывает функцию в отдельном потоке с ограничением времени."""
     with ThreadPoolExecutor(max_workers=1) as executor:
@@ -256,6 +301,42 @@ def _invoke_with_timeout(func: Callable[[Any], Any], arg: Any, timeout_sec: int,
         except Exception:
             logger.exception("%s failed", op_name)
             return ""
+
+
+def _invoke_with_timeout_capture_error(
+    func: Callable[[Any], Any], arg: Any, timeout_sec: int, op_name: str
+) -> tuple[Any, str]:
+    """Аналог `_invoke_with_timeout`, но дополнительно возвращает текст ошибки."""
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(func, arg)
+        try:
+            return future.result(timeout=max(1, timeout_sec)), ""
+        except FuturesTimeoutError:
+            message = f"timeout after {timeout_sec} sec"
+            logger.warning("%s %s", op_name, message)
+            return "", message
+        except Exception as exc:
+            logger.exception("%s failed", op_name)
+            return "", str(exc)
+
+
+def _is_non_empty_ai_response(response: Any) -> bool:
+    """Проверяет, что response содержит непустой ответ модели."""
+    return _extract_ai_text(response) != "Не удалось получить ответ."
+
+
+def _should_switch_to_fallback(error_message: str, primary_model_name: str) -> bool:
+    """Определяет, нужно ли переключаться на fallback-модель."""
+    if not error_message.strip():
+        # Если free-модель вернула пустой/битый ответ без явной ошибки,
+        # тоже переключаемся на fallback.
+        return primary_model_name.endswith(":free")
+
+    lowered_error = error_message.lower()
+    if any(marker in lowered_error for marker in QUOTA_ERROR_MARKERS):
+        return True
+
+    return primary_model_name.endswith(":free")
 
 
 def _parse_object_json(raw: Any) -> dict[str, Any]:
