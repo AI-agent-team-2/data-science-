@@ -1,17 +1,19 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 from pathlib import Path
+from typing import Any
 
-# Allow running the script from any directory.
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from app.rag.retriever import ChromaRetriever  # noqa: E402
 
+logger = logging.getLogger(__name__)
 
-TEST_CASES = [
+TEST_CASES: list[dict[str, Any]] = [
     {
         "query": "ondo pressure reducer",
         "expected_any": [
@@ -211,64 +213,65 @@ TEST_CASES = [
 
 
 def _normalize(value: str) -> str:
+    """Нормализует path-like строку для сравнения."""
     return value.lower().replace("\\", "/").strip()
 
 
 def evaluate(top_k: int) -> int:
+    """Запускает hit@k-оценку качества retrieval на заранее заданных кейсах."""
     retriever = ChromaRetriever()
 
     total = len(TEST_CASES)
     hits = 0
-    misses: list[dict] = []
+    misses: list[dict[str, Any]] = []
 
-    print(f"Running retrieval eval: {total} cases, top_k={top_k}")
-    print("-" * 72)
+    logger.info("Running retrieval eval: %d cases, top_k=%d", total, top_k)
 
-    for idx, case in enumerate(TEST_CASES, start=1):
-        query = case["query"]
-        expected = [_normalize(x) for x in case["expected_any"]]
+    for index, case in enumerate(TEST_CASES, start=1):
+        query = str(case["query"])
+        expected = [_normalize(str(item)) for item in case["expected_any"]]
 
         results = retriever.search(query=query, top_k=top_k)
         sources = [_normalize(str((item.get("metadata") or {}).get("source", ""))) for item in results]
-        found = any(any(exp in src for src in sources) for exp in expected)
+        found = any(any(expected_name in source for source in sources) for expected_name in expected)
 
         if found:
             hits += 1
-            status = "HIT"
-        else:
-            status = "MISS"
-            misses.append(
-                {
-                    "query": query,
-                    "expected_any": expected,
-                    "got_sources": sources,
-                }
-            )
+            logger.info("[%02d] HIT | query='%s'", index, query)
+            continue
 
-        print(f"[{idx:02d}] {status} | query='{query}'")
+        logger.warning("[%02d] MISS | query='%s'", index, query)
+        misses.append(
+            {
+                "query": query,
+                "expected_any": expected,
+                "got_sources": sources,
+            }
+        )
 
     hit_rate = hits / total if total else 0.0
-    print("-" * 72)
-    print(f"hits={hits}/{total} | hit@{top_k}={hit_rate:.2%}")
+    logger.info("Summary: hits=%d/%d | hit@%d=%.2f%%", hits, total, top_k, hit_rate * 100)
 
     if misses:
-        print("\nMiss details:")
+        logger.info("Miss details:")
         for miss in misses:
-            print(f"- query: {miss['query']}")
-            print(f"  expected_any: {miss['expected_any']}")
-            print(f"  got_sources: {miss['got_sources'][:top_k]}")
+            logger.info("- query: %s", miss["query"])
+            logger.info("  expected_any: %s", miss["expected_any"])
+            logger.info("  got_sources: %s", miss["got_sources"][:top_k])
 
-    # Always return success for now: this script is for lightweight monitoring.
     return 0
 
 
 def parse_args() -> argparse.Namespace:
+    """Парсит аргументы CLI для retrieval evaluation."""
     parser = argparse.ArgumentParser(description="Simple hit@k evaluation for RAG retrieval.")
     parser.add_argument("--top-k", type=int, default=6, help="Number of retrieved chunks per query.")
     return parser.parse_args()
 
 
 def main() -> int:
+    """CLI entrypoint скрипта оценки retrieval."""
+    logging.basicConfig(level=logging.INFO)
     args = parse_args()
     top_k = max(1, int(args.top_k))
     return evaluate(top_k=top_k)

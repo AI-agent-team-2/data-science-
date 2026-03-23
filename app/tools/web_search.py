@@ -2,172 +2,144 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 from datetime import datetime, timedelta
-from typing import Any, Dict
+from pathlib import Path
+from typing import Any, Final
 
 from langchain_core.tools import tool
 
 from app.config import settings
 
-# Кэш для результатов поиска
-CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".web_cache")
+logger = logging.getLogger(__name__)
+
+CACHE_DIR: Final[Path] = Path(__file__).resolve().parents[2] / ".web_cache"
+MAX_RESULTS_HARD_LIMIT: Final[int] = 10
 
 
 def _get_cache_ttl() -> timedelta:
-    """Получить TTL из настроек"""
+    """Возвращает TTL кэша веб-поиска на основе настроек."""
     if settings.web_cache_enabled:
         return timedelta(hours=settings.web_cache_ttl_hours)
-    return timedelta(hours=0)  # кэш выключен
+    return timedelta(hours=0)
 
 
 def _get_cache_key(query: str, max_results: int) -> str:
-    """Создать ключ кэша"""
-    key_str = f"{query}_{max_results}"
-    return hashlib.md5(key_str.encode()).hexdigest()
+    """Создает стабильный ключ кэша по параметрам поиска."""
+    key_source = f"{query}_{max_results}"
+    return hashlib.md5(key_source.encode("utf-8")).hexdigest()
 
 
-def _load_from_cache(key: str) -> Dict[str, Any] | None:
-    """Загрузить из кэша"""
+def _to_json(payload: dict[str, Any]) -> str:
+    """Сериализует объект в JSON с читаемым форматированием."""
+    return json.dumps(payload, ensure_ascii=False, indent=2)
+
+
+def _load_from_cache(key: str) -> dict[str, Any] | None:
+    """Возвращает кэшированный результат, если кэш включен и не протух."""
     if not settings.web_cache_enabled:
         return None
-    
-    cache_file = os.path.join(CACHE_DIR, f"{key}.json")
-    if not os.path.exists(cache_file):
+
+    cache_file = CACHE_DIR / f"{key}.json"
+    if not cache_file.exists():
         return None
-    
+
     try:
-        with open(cache_file, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        
-        cache_time = datetime.fromisoformat(data['cached_at'])
+        payload = json.loads(cache_file.read_text(encoding="utf-8"))
+        cache_time = datetime.fromisoformat(str(payload.get("cached_at", "")))
+
         if datetime.now() - cache_time > _get_cache_ttl():
-            os.remove(cache_file)
+            cache_file.unlink(missing_ok=True)
             return None
-        
-        return data['result']
+
+        result = payload.get("result")
+        return result if isinstance(result, dict) else None
     except Exception:
+        logger.exception("Failed to load web cache from %s", cache_file)
         return None
 
 
-def _save_to_cache(key: str, result: Dict[str, Any]) -> None:
-    """Сохранить в кэш"""
+def _save_to_cache(key: str, result: dict[str, Any]) -> None:
+    """Сохраняет результат поиска в файловый кэш."""
     if not settings.web_cache_enabled:
         return
-    
-    os.makedirs(CACHE_DIR, exist_ok=True)
-    cache_file = os.path.join(CACHE_DIR, f"{key}.json")
-    data = {
-        'cached_at': datetime.now().isoformat(),
-        'result': result
+
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    cache_file = CACHE_DIR / f"{key}.json"
+    payload = {
+        "cached_at": datetime.now().isoformat(),
+        "result": result,
     }
+
     try:
-        with open(cache_file, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        cache_file.write_text(_to_json(payload), encoding="utf-8")
     except Exception:
-        pass
-
-
-@tool
-def web_search(query: str, max_results: int = 5) -> str:
-    """
-    Поиск актуальной внешней информации в интернете.
-    Используй только если вопрос требует внешних или изменяющихся данных.
-    """
-    # Проверка включен ли веб-поиск
-    if not settings.enable_web_search:
-        return _error_object(query, "disabled", "Веб-поиск отключен в настройках.")
-    
-    # Используем max_results из настроек
-    max_results = min(max_results, settings.web_search_max_results)
-    max_results = int(max(1, min(max_results, 10)))
-    
-    # Проверяем кэш
-    cache_key = _get_cache_key(query, max_results)
-    cached = _load_from_cache(cache_key)
-    if cached:
-        return json.dumps(cached, ensure_ascii=False, indent=2)
-
-    tavily_key = os.getenv("TAVILY_API_KEY", "").strip()
-    
-    # Приоритет отдаем Tavily, если ключ задан в окружении.
-    if tavily_key:
-        result = _tavily_search(query=query, max_results=max_results, api_key=tavily_key)
-    else:
-        # Fallback-путь: публичный поиск через DuckDuckGo.
-        result = _duckduckgo_search(query=query, max_results=max_results)
-    
-    # Сохраняем в кэш
-    try:
-        result_dict = json.loads(result) if isinstance(result, str) else result
-        if result_dict.get('results'):
-            _save_to_cache(cache_key, result_dict)
-    except Exception:
-        pass
-    
-    return result
+        logger.exception("Failed to save web cache to %s", cache_file)
 
 
 def _normalize_results(query: str, items: list[dict[str, Any]], provider: str) -> str:
-    # Приводим разные форматы провайдеров к единой схеме title/snippet/url.
-    normalized: list[dict[str, str]] = []
-    for it in items:
-        title = str(it.get("title") or "").strip()
-        snippet = str(it.get("snippet") or "").strip()
-        url = str(it.get("url") or "").strip()
-        # Пустые записи отбрасываем, чтобы не засорять ответ инструмента.
+    """Приводит результаты разных провайдеров к единому формату."""
+    normalized_items: list[dict[str, str]] = []
+
+    for item in items:
+        title = str(item.get("title") or "").strip()
+        snippet = str(item.get("snippet") or "").strip()
+        url = str(item.get("url") or "").strip()
+
         if not (title or snippet or url):
             continue
-        normalized.append({"title": title, "snippet": snippet, "url": url})
-    return json.dumps(
+
+        normalized_items.append(
+            {
+                "title": title,
+                "snippet": snippet,
+                "url": url,
+            }
+        )
+
+    return _to_json(
         {
             "query": query,
             "provider": provider,
-            "count": len(normalized),
-            "results": normalized,
+            "count": len(normalized_items),
+            "results": normalized_items,
             "error": "",
-        },
-        ensure_ascii=False,
-        indent=2,
+        }
     )
 
 
 def _error_object(query: str, provider: str, message: str) -> str:
-    # Возвращаем JSON-объект единого формата, даже при ошибке.
-    return json.dumps(
+    """Формирует JSON-ответ с ошибкой в едином формате."""
+    return _to_json(
         {
             "query": query,
             "provider": provider,
             "count": 0,
             "results": [],
             "error": message,
-        },
-        ensure_ascii=False,
-        indent=2,
+        }
     )
 
 
 def _duckduckgo_search(query: str, max_results: int) -> str:
+    """Выполняет веб-поиск через DDGS/DuckDuckGo backend."""
     try:
         try:
-            # Актуальное имя пакета.
             from ddgs import DDGS  # type: ignore
         except Exception:
-            # Обратная совместимость для старого названия библиотеки.
             from duckduckgo_search import DDGS  # type: ignore
-    except Exception as e:
-        # Возвращаем ошибку в формате массива, без смены типа ответа инструмента.
+    except Exception as exc:
         return _error_object(
             query=query,
             provider="duckduckgo",
-            message=f"DuckDuckGo backend недоступен. Установите зависимость ddgs. Details: {e}",
+            message=f"DuckDuckGo backend недоступен. Установите зависимость ddgs. Details: {exc}",
         )
 
     items: list[dict[str, Any]] = []
     try:
         with DDGS() as ddgs:
-            # Забираем короткую текстовую выдачу и нормализуем ключи в единый формат.
-            for r in ddgs.text(
+            for result in ddgs.text(
                 query,
                 max_results=max_results,
                 region="ru-ru",
@@ -175,57 +147,89 @@ def _duckduckgo_search(query: str, max_results: int) -> str:
             ):
                 items.append(
                     {
-                        "title": r.get("title", ""),
-                        "snippet": r.get("body", "") or r.get("snippet", ""),
-                        "url": r.get("href", "") or r.get("url", ""),
+                        "title": result.get("title", ""),
+                        "snippet": result.get("body", "") or result.get("snippet", ""),
+                        "url": result.get("href", "") or result.get("url", ""),
                     }
                 )
-    except Exception as e:
-        # Ошибку транспорта/API также возвращаем в едином формате.
+    except Exception as exc:
         return _error_object(
             query=query,
             provider="duckduckgo",
-            message=f"DuckDuckGo search failed. Details: {e}",
+            message=f"DuckDuckGo search failed. Details: {exc}",
         )
 
     return _normalize_results(query=query, items=items, provider="duckduckgo")
 
 
 def _tavily_search(query: str, max_results: int, api_key: str) -> str:
+    """Выполняет веб-поиск через Tavily."""
     try:
         from tavily import TavilyClient  # type: ignore
-    except Exception as e:
-        # Подсказываем, какую зависимость установить, сохраняя единый формат ответа.
+    except Exception as exc:
         return _error_object(
             query=query,
             provider="tavily",
-            message=f"Tavily backend недоступен. Установите зависимость tavily-python. Details: {e}",
+            message=f"Tavily backend недоступен. Установите зависимость tavily-python. Details: {exc}",
         )
 
     try:
         client = TavilyClient(api_key=api_key)
-        resp: dict[str, Any] = client.search(
+        response: dict[str, Any] = client.search(
             query=query,
             max_results=max_results,
             include_answer=False,
             include_raw_content=False,
         )
-        results = resp.get("results") or []
-        # Приводим поля Tavily к той же схеме, что и у DuckDuckGo.
+        results = response.get("results") or []
         items = [
             {
-                "title": r.get("title", ""),
-                "snippet": r.get("content", "") or r.get("snippet", ""),
-                "url": r.get("url", ""),
+                "title": item.get("title", ""),
+                "snippet": item.get("content", "") or item.get("snippet", ""),
+                "url": item.get("url", ""),
             }
-            for r in results
+            for item in results
+            if isinstance(item, dict)
         ]
-    except Exception as e:
-        # Возвращаем структуру ошибки в едином формате.
+    except Exception as exc:
         return _error_object(
             query=query,
             provider="tavily",
-            message=f"Tavily search failed. Details: {e}",
+            message=f"Tavily search failed. Details: {exc}",
         )
 
     return _normalize_results(query=query, items=items, provider="tavily")
+
+
+@tool
+def web_search(query: str, max_results: int = 5) -> str:
+    """
+    Ищет актуальную внешнюю информацию в интернете.
+
+    Используется для динамичных данных: цены, наличие, отзывы, рыночные новинки.
+    """
+    if not settings.enable_web_search:
+        return _error_object(query, "disabled", "Веб-поиск отключен в настройках.")
+
+    normalized_max_results = min(max_results, settings.web_search_max_results)
+    normalized_max_results = int(max(1, min(normalized_max_results, MAX_RESULTS_HARD_LIMIT)))
+
+    cache_key = _get_cache_key(query, normalized_max_results)
+    cached_result = _load_from_cache(cache_key)
+    if cached_result is not None:
+        return _to_json(cached_result)
+
+    tavily_key = os.getenv("TAVILY_API_KEY", "").strip()
+    if tavily_key:
+        raw_result = _tavily_search(query=query, max_results=normalized_max_results, api_key=tavily_key)
+    else:
+        raw_result = _duckduckgo_search(query=query, max_results=normalized_max_results)
+
+    try:
+        parsed_result = json.loads(raw_result)
+        if isinstance(parsed_result, dict) and parsed_result.get("results"):
+            _save_to_cache(cache_key, parsed_result)
+    except Exception:
+        logger.exception("Failed to parse web_search result for caching")
+
+    return raw_result

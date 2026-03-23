@@ -1,46 +1,98 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
+from typing import Any, Final, TypedDict
 
 from langchain_core.tools import tool
 
-SKU_RE = re.compile(r"\b[A-Z0-9][A-Z0-9\-_]{4,}\b")
-WORD_RE = re.compile(r"[a-zA-Zа-яА-Я0-9]+")
+logger = logging.getLogger(__name__)
+
+SKU_PATTERN: Final[re.Pattern[str]] = re.compile(r"\b[A-Z0-9][A-Z0-9\-_]{4,}\b")
+WORD_PATTERN: Final[re.Pattern[str]] = re.compile(r"[a-zA-Zа-яА-Я0-9]+")
+NON_ALNUM_PATTERN: Final[re.Pattern[str]] = re.compile(r"[^A-Z0-9]+")
+
+MAX_SEARCH_DOC_LENGTH: Final[int] = 3500
+MAX_SKU_IN_RESULT: Final[int] = 20
+MIN_RESULT_LIMIT: Final[int] = 1
+MAX_RESULT_LIMIT: Final[int] = 20
+
+EXACT_SKU_BASE_SCORE: Final[float] = 100.0
+EXACT_SKU_MATCH_BONUS: Final[float] = 25.0
+TOKEN_OVERLAP_SCORE: Final[float] = 5.0
+TOKEN_COVERAGE_BONUS: Final[float] = 20.0
+SUBSTRING_MATCH_BONUS: Final[float] = 15.0
+SKU_FIRST_MATCH_SCORE: Final[float] = 100.0
+SKU_FIRST_TOKEN_BONUS: Final[float] = 3.0
+
+
+class SearchResult(TypedDict):
+    """Структура одного результата поиска в JSON-ответе."""
+
+    name: str
+    brand: str
+    category: str
+    sku_list: list[str]
+    source: str
+    score: float
+
+
+@dataclass(frozen=True)
+class CatalogItem:
+    """Элемент локального каталога с предрасчитанными полями для ранжирования."""
+
+    name: str
+    brand: str
+    category: str
+    sku_list: list[str]
+    source: str
+    searchable: str
+    tokens: set[str]
 
 
 def _normalize(text: str) -> str:
+    """Приводит строку к нижнему регистру и нормализует пробелы."""
     return " ".join(text.lower().split())
 
 
 def _tokenize(text: str) -> set[str]:
-    return {t.lower() for t in WORD_RE.findall(text)}
+    """Разбивает текст на набор токенов для простого лексического поиска."""
+    return {token.lower() for token in WORD_PATTERN.findall(text)}
 
 
 def _extract_field(text: str, field_name: str) -> str:
+    """Извлекает значение поля вида `FIELD_NAME: value` из текстового документа."""
     pattern = re.compile(rf"^\s*{field_name}\s*:\s*(.+?)\s*$", re.MULTILINE)
     match = pattern.search(text)
     return match.group(1).strip() if match else ""
 
 
 def _extract_skus(text: str) -> list[str]:
-    # Берем только латинские артикулы/коды, чтобы не тащить шум вроде ГОСТ.
-    skus = set()
-    for raw in (m.group(0) for m in SKU_RE.finditer(text.upper())):
-        token = _canonical_sku(raw)
-        if token and any(ch.isdigit() for ch in token):
-            skus.add(token)
-    return sorted(skus)
+    """
+    Извлекает SKU из текста.
+
+    Возвращает только нормализованные латинские коды с цифрами,
+    чтобы уменьшить шум от технических обозначений.
+    """
+    normalized_skus: set[str] = set()
+    for raw_token in (match.group(0) for match in SKU_PATTERN.finditer(text.upper())):
+        canonical_token = _canonical_sku(raw_token)
+        if canonical_token and any(char.isdigit() for char in canonical_token):
+            normalized_skus.add(canonical_token)
+    return sorted(normalized_skus)
 
 
 def _canonical_sku(value: str) -> str:
-    # Приводим SKU к сопоставимому виду: убираем разделители вроде "-" и "_".
-    return re.sub(r"[^A-Z0-9]+", "", value.upper())
+    """Нормализует SKU: убирает разделители (`-`, `_`, пробелы и т.д.)."""
+    return NON_ALNUM_PATTERN.sub("", value.upper())
 
 
 def _build_title(doc_name: str, product: str, product_type: str, document: str) -> str:
+    """Выбирает наиболее информативный заголовок для карточки товара."""
     for candidate in (document, product, product_type):
         if candidate:
             return candidate
@@ -48,20 +100,23 @@ def _build_title(doc_name: str, product: str, product_type: str, document: str) 
 
 
 @lru_cache(maxsize=1)
-def _load_catalog() -> list[dict]:
+def _load_catalog() -> list[CatalogItem]:
+    """Загружает локальный каталог из `data/knowledge_base` и кеширует результат."""
     root = Path(__file__).resolve().parents[2]
     kb_root = root / "data" / "knowledge_base"
-    source_dirs = [kb_root / "tp", kb_root / "cat"]
-    items: list[dict] = []
+    source_dirs: tuple[Path, Path] = (kb_root / "tp", kb_root / "cat")
+    items: list[CatalogItem] = []
 
     for source_dir in source_dirs:
         if not source_dir.exists():
+            logger.warning("Catalog source directory does not exist: %s", source_dir)
             continue
 
         for path in sorted(source_dir.glob("*.txt")):
             try:
                 text = path.read_text(encoding="utf-8", errors="ignore")
             except OSError:
+                logger.exception("Failed to read catalog file: %s", path)
                 continue
 
             brand = _extract_field(text, "BRAND")
@@ -72,40 +127,101 @@ def _load_catalog() -> list[dict]:
             skus = _extract_skus(text)
 
             searchable = _normalize(
-                " ".join([title, brand, product, product_type, document, " ".join(skus), text[:3500]])
+                " ".join(
+                    [title, brand, product, product_type, document, " ".join(skus), text[:MAX_SEARCH_DOC_LENGTH]]
+                )
             )
-            items.append(
-                {
-                    "name": title,
-                    "brand": brand,
-                    "category": product or product_type,
-                    "sku_list": skus,
-                    "source": str(path.relative_to(root)).replace("\\", "/"),
-                    "searchable": searchable,
-                    "tokens": _tokenize(searchable),
-                }
+            item = CatalogItem(
+                name=title,
+                brand=brand,
+                category=product or product_type,
+                sku_list=skus,
+                source=str(path.relative_to(root)).replace("\\", "/"),
+                searchable=searchable,
+                tokens=_tokenize(searchable),
             )
+            items.append(item)
 
+    logger.info("Catalog loaded: %d items", len(items))
     return items
 
 
-def _score_item(query: str, query_tokens: set[str], query_skus: set[str], item: dict) -> float:
+def _score_item(query: str, query_tokens: set[str], query_skus: set[str], item: CatalogItem) -> float:
+    """Считает итоговый score документа для текстового ранжирования."""
     score = 0.0
 
-    item_skus = {_canonical_sku(s) for s in item["sku_list"]}
+    item_skus = {_canonical_sku(sku) for sku in item.sku_list}
     matched_skus = sorted(query_skus.intersection(item_skus))
     if matched_skus:
-        score += 100 + 25 * len(matched_skus)
+        score += EXACT_SKU_BASE_SCORE + EXACT_SKU_MATCH_BONUS * len(matched_skus)
 
-    overlap = len(query_tokens.intersection(item["tokens"]))
+    overlap = len(query_tokens.intersection(item.tokens))
     if overlap:
-        score += overlap * 5
-        score += (overlap / max(1, len(query_tokens))) * 20
+        score += overlap * TOKEN_OVERLAP_SCORE
+        score += (overlap / max(1, len(query_tokens))) * TOKEN_COVERAGE_BONUS
 
-    if query in item["searchable"]:
-        score += 15
+    if query in item.searchable:
+        score += SUBSTRING_MATCH_BONUS
 
     return score
+
+
+def _clamp_limit(limit: int) -> int:
+    """Ограничивает размер выдачи допустимым диапазоном."""
+    return max(MIN_RESULT_LIMIT, min(limit, MAX_RESULT_LIMIT))
+
+
+def _serialize_item(item: CatalogItem, score: float) -> SearchResult:
+    """Преобразует элемент каталога в формат JSON-ответа."""
+    return {
+        "name": item.name,
+        "brand": item.brand,
+        "category": item.category,
+        "sku_list": item.sku_list[:MAX_SKU_IN_RESULT],
+        "source": item.source,
+        "score": round(score, 2),
+    }
+
+
+def _to_json(payload: dict[str, Any]) -> str:
+    """Сериализует ответ в JSON с единым форматом."""
+    return json.dumps(payload, ensure_ascii=False, indent=2)
+
+
+def _build_empty_response(query: str, note: str) -> str:
+    """Формирует типовой пустой ответ для ошибок валидации/данных."""
+    return _to_json({"query": query, "count": 0, "results": [], "note": note})
+
+
+def _rank_sku_matches(catalog: list[CatalogItem], query_tokens: set[str], query_skus: set[str]) -> list[tuple[float, CatalogItem]]:
+    """Ранжирует элементы только по SKU-совпадениям (режим SKU-first)."""
+    ranked: list[tuple[float, CatalogItem]] = []
+    for item in catalog:
+        item_skus = {_canonical_sku(sku) for sku in item.sku_list}
+        matched_count = len(query_skus.intersection(item_skus))
+        if matched_count == 0:
+            continue
+
+        token_overlap = len(query_tokens.intersection(item.tokens))
+        score = matched_count * SKU_FIRST_MATCH_SCORE + token_overlap * SKU_FIRST_TOKEN_BONUS
+        ranked.append((score, item))
+
+    ranked.sort(key=lambda pair: pair[0], reverse=True)
+    return ranked
+
+
+def _rank_text_matches(
+    catalog: list[CatalogItem], query: str, query_tokens: set[str], query_skus: set[str]
+) -> list[tuple[float, CatalogItem]]:
+    """Ранжирует элементы по текстовой релевантности."""
+    ranked: list[tuple[float, CatalogItem]] = []
+    for item in catalog:
+        score = _score_item(query, query_tokens, query_skus, item)
+        if score > 0:
+            ranked.append((score, item))
+
+    ranked.sort(key=lambda pair: pair[0], reverse=True)
+    return ranked
 
 
 @tool
@@ -113,99 +229,51 @@ def product_lookup(query: str, limit: int = 5) -> str:
     """
     Поиск товара по названию, бренду, артикулу или параметрам в локальном каталоге.
     """
-    query = _normalize(query)
-    if not query:
-        return json.dumps(
-            {"query": query, "count": 0, "results": [], "note": "Пустой поисковый запрос."},
-            ensure_ascii=False,
-            indent=2,
-        )
+    normalized_query = _normalize(query)
+    if not normalized_query:
+        return _build_empty_response(normalized_query, "Пустой поисковый запрос.")
 
-    catalog = _load_catalog()
-    if not catalog:
-        return json.dumps(
-            {
-                "query": query,
-                "count": 0,
-                "results": [],
-                "note": "Каталог не найден. Проверьте data/knowledge_base/tp и data/knowledge_base/cat.",
-            },
-            ensure_ascii=False,
-            indent=2,
-        )
-
-    query_tokens = _tokenize(query)
-    query_skus = {_canonical_sku(s) for s in SKU_RE.findall(query.upper())}
-    top_n = max(1, min(limit, 20))
-
-    # SKU-first: если пользователь прислал артикул, сначала отдаем точные SKU-совпадения.
-    if query_skus:
-        sku_ranked: list[tuple[float, dict]] = []
-        for item in catalog:
-            item_skus = {_canonical_sku(s) for s in item["sku_list"]}
-            matched_count = len(query_skus.intersection(item_skus))
-            if matched_count == 0:
-                continue
-            # Бонус за совпадение токенов помогает сортировать при нескольких SKU-кандидатах.
-            token_overlap = len(query_tokens.intersection(item["tokens"]))
-            score = matched_count * 100 + token_overlap * 3
-            sku_ranked.append((score, item))
-
-        if sku_ranked:
-            sku_ranked.sort(key=lambda x: x[0], reverse=True)
-            top = sku_ranked[:top_n]
-            results = []
-            for score, item in top:
-                results.append(
-                    {
-                        "name": item["name"],
-                        "brand": item["brand"],
-                        "category": item["category"],
-                        "sku_list": item["sku_list"][:20],
-                        "source": item["source"],
-                        "score": round(score, 2),
-                    }
-                )
-            return json.dumps(
-                {
-                    "query": query,
-                    "count": len(results),
-                    "mode": "sku_first",
-                    "results": results,
-                },
-                ensure_ascii=False,
-                indent=2,
+    try:
+        catalog = _load_catalog()
+        if not catalog:
+            return _build_empty_response(
+                normalized_query,
+                "Каталог не найден. Проверьте data/knowledge_base/tp и data/knowledge_base/cat.",
             )
 
-    ranked: list[tuple[float, dict]] = []
-    for item in catalog:
-        score = _score_item(query, query_tokens, query_skus, item)
-        if score > 0:
-            ranked.append((score, item))
+        query_tokens = _tokenize(normalized_query)
+        query_skus = {_canonical_sku(sku) for sku in SKU_PATTERN.findall(normalized_query.upper())}
+        top_n = _clamp_limit(limit)
 
-    ranked.sort(key=lambda x: x[0], reverse=True)
-    top = ranked[:top_n]
+        # SKU-first: если пользователь прислал артикул, сначала отдаем точные SKU-совпадения.
+        if query_skus:
+            sku_ranked = _rank_sku_matches(catalog, query_tokens, query_skus)
+            if sku_ranked:
+                top_sku_matches = sku_ranked[:top_n]
+                results = [_serialize_item(item, score) for score, item in top_sku_matches]
+                return _to_json(
+                    {
+                        "query": normalized_query,
+                        "count": len(results),
+                        "mode": "sku_first",
+                        "results": results,
+                    }
+                )
 
-    results = []
-    for score, item in top:
-        results.append(
+        ranked = _rank_text_matches(catalog, normalized_query, query_tokens, query_skus)
+        top_text_matches = ranked[:top_n]
+        results = [_serialize_item(item, score) for score, item in top_text_matches]
+        return _to_json(
             {
-                "name": item["name"],
-                "brand": item["brand"],
-                "category": item["category"],
-                "sku_list": item["sku_list"][:20],
-                "source": item["source"],
-                "score": round(score, 2),
+                "query": normalized_query,
+                "count": len(results),
+                "mode": "text_ranked",
+                "results": results,
             }
         )
-
-    return json.dumps(
-        {
-            "query": query,
-            "count": len(results),
-            "mode": "text_ranked",
-            "results": results,
-        },
-        ensure_ascii=False,
-        indent=2,
-    )
+    except Exception:
+        logger.exception("Product lookup failed for query: %s", normalized_query)
+        return _build_empty_response(
+            normalized_query,
+            "Внутренняя ошибка поиска. Попробуйте повторить запрос позже.",
+        )

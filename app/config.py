@@ -2,108 +2,125 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from typing import Final
+
 from dotenv import load_dotenv
 
-# Загружаем переменные окружения из .env, чтобы настройки были доступны во всем проекте.
 load_dotenv()
+
+DEFAULT_PROVIDER: Final[str] = "openrouter"
+DEFAULT_OPENROUTER_BASE_URL: Final[str] = "https://openrouter.ai/api/v1"
+DEFAULT_OPENAI_BASE_URL: Final[str] = "https://api.openai.com/v1"
+DEFAULT_OPENROUTER_MODEL: Final[str] = "openai/gpt-4o-mini"
+DEFAULT_OPENAI_MODEL: Final[str] = "gpt-4o-mini"
+DEFAULT_EMBEDDING_MODEL: Final[str] = "text-embedding-3-small"
+SUPPORTED_PROVIDERS: Final[set[str]] = {"openrouter", "openai"}
+
+
+def _get_env_str(name: str, default: str = "") -> str:
+    """Возвращает строковое значение переменной окружения с trim."""
+    return os.getenv(name, default).strip()
+
+
+def _get_env_bool(name: str, default: bool) -> bool:
+    """Преобразует переменную окружения в bool (`true/false`, `1/0`, `yes/no`)."""
+    raw_value = _get_env_str(name, "true" if default else "false").lower()
+    return raw_value in {"1", "true", "yes", "y", "on"}
+
+
+def _get_env_int(name: str, default: int, min_value: int | None = None) -> int:
+    """Возвращает целое число из окружения с безопасным fallback."""
+    raw_value = _get_env_str(name, str(default))
+    try:
+        value = int(raw_value)
+    except ValueError:
+        value = default
+
+    if min_value is not None:
+        return max(min_value, value)
+    return value
 
 
 @dataclass(frozen=True)
 class Settings:
-    # Провайдер LLM: openrouter | openai.
-    model_provider: str = os.getenv("MODEL_PROVIDER", "openrouter").strip().lower()
-    # Ключ для OpenAI-compatible API.
-    openai_api_key: str = os.getenv("OPENAI_API_KEY", "").strip()
-    # Имя модели, которую будет вызывать агент.
-    model_name: str = os.getenv("MODEL_NAME", "").strip()
-    # Базовый URL OpenAI-compatible API.
-    openai_base_url: str = os.getenv("OPENAI_BASE_URL", "").strip()
-    # Имя модели эмбеддингов.
-    embedding_model_name: str = os.getenv("EMBEDDING_MODEL_NAME", "text-embedding-3-small").strip()
-    # Опционально: отдельный ключ для embedding API (если не задан, используется OPENAI_API_KEY).
-    embedding_api_key: str = os.getenv("EMBEDDING_API_KEY", "").strip()
-    # Опционально: отдельный base URL для embedding API (если не задан, используется OPENAI_BASE_URL).
-    embedding_base_url: str = os.getenv("EMBEDDING_BASE_URL", "").strip()
-    # Токен Telegram-бота для long polling.
-    telegram_token: str = os.getenv("TELEGRAM_TOKEN", "")
-    # Путь к локальной persistent-базе Chroma.
-    chroma_path: str = os.getenv("CHROMA_PATH", "./chroma_db")
-    # Имя коллекции с векторами и текстовыми чанками.
-    collection_name: str = os.getenv("COLLECTION_NAME", "sanitary_goods")
-    # Количество документов, которое retriever вернет на запрос.
-    top_k: int = int(os.getenv("TOP_K", "6"))
-    # Размер батча на вставку в Chroma (актуально для cloud embeddings).
-    embedding_batch_size: int = int(os.getenv("EMBEDDING_BATCH_SIZE", "64"))
-    # Параметры разбиения документов на чанки для RAG.
-    chunk_size: int = int(os.getenv("CHUNK_SIZE", "900"))
-    chunk_overlap: int = int(os.getenv("CHUNK_OVERLAP", "140"))
-    # Путь к SQLite-файлу с историей диалогов.
-    history_db_path: str = os.getenv("HISTORY_DB_PATH", "./history.db")
-    # Сколько последних сообщений хранить и передавать в модель на каждый запрос.
-    history_max_messages: int = int(os.getenv("HISTORY_MAX_MESSAGES", "24"))
-    # TTL истории диалогов в днях.
-    history_ttl_days: int = int(os.getenv("HISTORY_TTL_DAYS", "30"))
+    """Конфигурация приложения, загружаемая из `.env` и переменных окружения."""
 
-    # Кэш для веб-поиска
-    web_cache_enabled: bool = os.getenv("WEB_CACHE_ENABLED", "true").lower() == "true"
-    web_cache_ttl_hours: int = int(os.getenv("WEB_CACHE_TTL_HOURS", "24"))
-    
-    # Максимальное количество результатов поиска
-    web_search_max_results: int = int(os.getenv("WEB_SEARCH_MAX_RESULTS", "5"))
-    
-    # Включение/отключение инструментов
-    enable_web_search: bool = os.getenv("ENABLE_WEB_SEARCH", "true").lower() == "true"
-    enable_rag: bool = os.getenv("ENABLE_RAG", "true").lower() == "true"
-    enable_product_lookup: bool = os.getenv("ENABLE_PRODUCT_LOOKUP", "true").lower() == "true"
+    model_provider: str = _get_env_str("MODEL_PROVIDER", DEFAULT_PROVIDER).lower()
+    openai_api_key: str = _get_env_str("OPENAI_API_KEY")
+    model_name: str = _get_env_str("MODEL_NAME")
+    openai_base_url: str = _get_env_str("OPENAI_BASE_URL")
+
+    embedding_model_name: str = _get_env_str("EMBEDDING_MODEL_NAME", DEFAULT_EMBEDDING_MODEL)
+    embedding_api_key: str = _get_env_str("EMBEDDING_API_KEY")
+    embedding_base_url: str = _get_env_str("EMBEDDING_BASE_URL")
+
+    telegram_token: str = _get_env_str("TELEGRAM_TOKEN")
+    chroma_path: str = _get_env_str("CHROMA_PATH", "./chroma_db")
+    collection_name: str = _get_env_str("COLLECTION_NAME", "sanitary_goods")
+
+    top_k: int = _get_env_int("TOP_K", 6, min_value=1)
+    embedding_batch_size: int = _get_env_int("EMBEDDING_BATCH_SIZE", 64, min_value=1)
+    chunk_size: int = _get_env_int("CHUNK_SIZE", 900, min_value=200)
+    chunk_overlap: int = _get_env_int("CHUNK_OVERLAP", 140, min_value=0)
+
+    history_db_path: str = _get_env_str("HISTORY_DB_PATH", "./history.db")
+    history_max_messages: int = _get_env_int("HISTORY_MAX_MESSAGES", 24, min_value=1)
+    history_ttl_days: int = _get_env_int("HISTORY_TTL_DAYS", 30, min_value=1)
+
+    web_cache_enabled: bool = _get_env_bool("WEB_CACHE_ENABLED", True)
+    web_cache_ttl_hours: int = _get_env_int("WEB_CACHE_TTL_HOURS", 24, min_value=0)
+    web_search_max_results: int = _get_env_int("WEB_SEARCH_MAX_RESULTS", 5, min_value=1)
+
+    enable_web_search: bool = _get_env_bool("ENABLE_WEB_SEARCH", True)
+    enable_rag: bool = _get_env_bool("ENABLE_RAG", True)
+    enable_product_lookup: bool = _get_env_bool("ENABLE_PRODUCT_LOOKUP", True)
 
     @property
     def resolved_model_provider(self) -> str:
-        if self.model_provider in {"openrouter", "openai"}:
+        """Возвращает поддерживаемый провайдер LLM."""
+        if self.model_provider in SUPPORTED_PROVIDERS:
             return self.model_provider
-        return "openrouter"
+        return DEFAULT_PROVIDER
 
     @property
     def resolved_openai_base_url(self) -> str:
+        """Возвращает итоговый base URL OpenAI-compatible API."""
         if self.openai_base_url:
             return self.openai_base_url
-        if self.resolved_model_provider == "openrouter":
-            return "https://openrouter.ai/api/v1"
+
         if self.resolved_model_provider == "openai":
-            return "https://api.openai.com/v1"
-        return "https://openrouter.ai/api/v1"
+            return DEFAULT_OPENAI_BASE_URL
+        return DEFAULT_OPENROUTER_BASE_URL
 
     @property
     def resolved_openai_api_key(self) -> str:
+        """Возвращает ключ API для LLM."""
         return self.openai_api_key
 
     @property
     def resolved_model_name(self) -> str:
+        """Возвращает итоговое имя модели для чата."""
         if self.model_name:
             return self.model_name
-        if self.resolved_model_provider == "openrouter":
-            return "openai/gpt-4o-mini"
+
         if self.resolved_model_provider == "openai":
-            return "gpt-4o-mini"
-        return "openai/gpt-4o-mini"
+            return DEFAULT_OPENAI_MODEL
+        return DEFAULT_OPENROUTER_MODEL
 
     @property
     def resolved_embedding_model_name(self) -> str:
-        if self.embedding_model_name:
-            return self.embedding_model_name
-        return "text-embedding-3-small"
+        """Возвращает имя модели эмбеддингов."""
+        return self.embedding_model_name or DEFAULT_EMBEDDING_MODEL
 
     @property
     def resolved_embedding_api_key(self) -> str:
-        if self.embedding_api_key:
-            return self.embedding_api_key
-        return self.resolved_openai_api_key
+        """Возвращает ключ для embedding API (или общий API key)."""
+        return self.embedding_api_key or self.resolved_openai_api_key
 
     @property
     def resolved_embedding_base_url(self) -> str:
-        if self.embedding_base_url:
-            return self.embedding_base_url
-        return self.resolved_openai_base_url
+        """Возвращает base URL для embedding API (или общий base URL)."""
+        return self.embedding_base_url or self.resolved_openai_base_url
 
 
-# Единый объект настроек, который импортируют остальные модули.
 settings = Settings()

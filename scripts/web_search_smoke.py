@@ -1,37 +1,36 @@
 from __future__ import annotations
 
 import json
+import logging
 import sys
 from pathlib import Path
+from typing import Any
 
-# Добавляем корень проекта в путь импорта, чтобы скрипт запускался из любой директории.
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from app.tools.web_search import web_search  # noqa: E402
 
+logger = logging.getLogger(__name__)
 
-def main() -> None:
-    # Чтобы печать не падала на Windows-консолях со старой кодировкой.
-    if hasattr(sys.stdout, "reconfigure"):
-        try:
-            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-        except Exception:
-            pass
+TEST_QUERY = "что такое балансировочный клапан"
+MAX_RESULTS = 5
+PREVIEW_RESULTS = 3
 
-    # Тестовый запрос для быстрой smoke-проверки инструмента.
-    query = "что такое балансировочный клапан"
-    # Вызываем tool через стандартный интерфейс LangChain Tool.
-    raw = web_search.invoke({"query": query, "max_results": 5})
+
+def _configure_output() -> None:
+    """Настраивает UTF-8 вывод в консоль, если это поддерживается окружением."""
+    if not hasattr(sys.stdout, "reconfigure"):
+        return
+
     try:
-        # Проверяем, что инструмент вернул валидный JSON.
-        data = json.loads(raw)
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     except Exception:
-        raise SystemExit("web_search returned non-JSON output")
+        logger.exception("Failed to reconfigure stdout encoding")
 
-    if not isinstance(data, dict):
-        raise SystemExit(f"Expected dict, got: {type(data)}")
 
+def _validate_response(data: dict[str, Any]) -> list[dict[str, Any]]:
+    """Проверяет базовую структуру ответа инструмента веб-поиска."""
     results = data.get("results")
     if not isinstance(results, list):
         raise SystemExit(f"Expected 'results' list, got: {type(results)}")
@@ -40,15 +39,35 @@ def main() -> None:
     if error:
         raise SystemExit(f"web_search returned error: {error}")
 
-    # Печатаем первые 3 результата и валидируем ключевые поля.
-    for i, item in enumerate(results[:3], start=1):
-        title = item.get("title")
-        url = item.get("url")
+    return [item for item in results if isinstance(item, dict)]
+
+
+def main() -> int:
+    """Запускает smoke-проверку web_search и печатает первые результаты."""
+    logging.basicConfig(level=logging.INFO)
+    _configure_output()
+
+    raw = web_search.invoke({"query": TEST_QUERY, "max_results": MAX_RESULTS})
+    try:
+        parsed = json.loads(raw)
+    except Exception as exc:
+        raise SystemExit(f"web_search returned non-JSON output: {exc}") from exc
+
+    if not isinstance(parsed, dict):
+        raise SystemExit(f"Expected dict, got: {type(parsed)}")
+
+    results = _validate_response(parsed)
+    for index, item in enumerate(results[:PREVIEW_RESULTS], start=1):
+        title = str(item.get("title", "")).strip()
+        url = str(item.get("url", "")).strip()
         if not (title and url):
-            raise SystemExit(f"Bad item #{i}: {item}")
-        print(f"{i}. {title} — {url}")
+            raise SystemExit(f"Bad item #{index}: {item}")
+
+        logger.info("%d. %s - %s", index, title, url)
+
+    logger.info("Smoke check passed. Results: %d", len(results))
+    return 0
 
 
 if __name__ == "__main__":
-    main()
-
+    raise SystemExit(main())

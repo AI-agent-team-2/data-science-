@@ -4,9 +4,10 @@ import json
 import logging
 import re
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, Callable, Literal
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 
 from app.config import settings
 from app.graph import model
@@ -18,228 +19,414 @@ from app.tools.web_search import web_search
 
 logger = logging.getLogger(__name__)
 
-SKU_RE = re.compile(r"\b[A-Z][A-Z0-9]{4,}\b")
+ToolName = Literal["lookup", "rag", "web"]
+
+SKU_PATTERN = re.compile(r"\b[A-Z][A-Z0-9]{4,}\b")
 TOOL_TIMEOUT_SEC = 20
 MODEL_TIMEOUT_SEC = 45
+MIN_RAG_SCORE = 0.2
+MAX_RAG_CONTEXT_ITEMS = 4
+MAX_LOOKUP_CONTEXT_ITEMS = 5
+MAX_WEB_CONTEXT_ITEMS = 5
+MAX_SOURCE_URLS = 5
+
+WEB_PRIORITY_MARKERS: tuple[str, ...] = (
+    "сейчас",
+    "сегодня",
+    "в 2026",
+    "в 2025",
+    "в 2024",
+    "новые требования",
+    "что изменилось",
+    "по отзывам",
+    "отзывы",
+    "где купить",
+    "в москве",
+    "в россии",
+    "средняя цена",
+    "цена",
+    "аналоги",
+    "сравни",
+    "новости",
+    "что такое",
+    "как работает",
+    "для чего",
+    "зачем",
+    "лучший",
+    "рейтинг",
+    "топ",
+    "популярный",
+    "актуальный",
+    "последний",
+    "новинки",
+    "тренды",
+)
+
+LOOKUP_PRIORITY_MARKERS: tuple[str, ...] = (
+    "артикул",
+    "sku",
+    "модель",
+    "код",
+    "товар",
+    "бренд",
+    "серия",
+    "позици",
+)
+
+SANITARY_KEYWORDS: tuple[str, ...] = (
+    "унитаз",
+    "ванна",
+    "смеситель",
+    "душ",
+    "сантехник",
+    "раковина",
+    "труба",
+    "фитинг",
+    "кран",
+    "бойлер",
+    "сантехника",
+    "санфаянс",
+    "кранбукс",
+    "картридж",
+    "гидробокс",
+    "инсталляция",
+    "поддон",
+    "лейка",
+)
 
 
-def _should_prefer_web(query: str) -> bool:
-    lowered = query.lower()
-    
-    # Короткие запросы (меньше 3 слов) — но только если это НЕ SKU
-    words = lowered.split()
-    if len(words) < 3:
-        # Проверяем, не SKU ли это
-        if SKU_RE.search(query.upper()):
-            return False  # SKU-first!
-        return True
-    
-    markers = (
-        "сейчас", "сегодня", "в 2026", "в 2025", "в 2024",
-        "новые требования", "что изменилось", "по отзывам",
-        "отзывы", "где купить", "в москве", "в россии",
-        "средняя цена", "цена", "аналоги", "сравни", "новости",
-        "что такое", "как работает", "для чего", "зачем",
-        "лучший", "рейтинг", "топ", "популярный",
-        "актуальный", "последний", "новинки", "тренды"
-    )
-    
-    return any(marker in lowered for marker in markers)
+@dataclass(frozen=True)
+class ContextBuildResult:
+    """Результат получения контекста из инструментов."""
+
+    context_text: str
+    web_urls: list[str]
+    used_web: bool
 
 
-def _should_prefer_lookup(query: str) -> bool:
-    if SKU_RE.search(query.upper()):
-        return True
-
-    lowered = query.lower()
-    markers = ("артикул", "sku", "модель", "код", "товар", "бренд", "серия", "позици")
-    return any(marker in lowered for marker in markers)
-
-
-def enhance_search_query(original_query: str, search_type: str = "general") -> str:
-    """Улучшает поисковый запрос для веб-поиска"""
-    lowered = original_query.lower()
-    
-    # Если запрос уже про сантехнику — оставляем как есть
-    if "сантехник" in lowered or "унитаз" in lowered or "смеситель" in lowered:
-        return original_query
-    
-    # Для запросов о новинках
-    if "новинк" in lowered or "новые" in lowered:
-        if "2026" in lowered:
-            return f"новинки сантехники 2026 каталог"
-        elif "2025" in lowered:
-            return f"новинки сантехники 2025 каталог"
-        else:
-            return f"новые сантехнические товары 2026 каталог"
-    
-    # Для запросов о ценах и бюджете
-    elif "бюджет" in lowered or "цен" in lowered or "стоит" in lowered or "сколько" in lowered:
-        return f"{original_query} сантехника"
-    
-    # Для запросов о покупке
-    elif "купить" in lowered or "где" in lowered:
-        return f"{original_query} сантехника интернет магазин"
-    
-    # Для общих запросов
-    elif search_type == "fallback":
-        return f"{original_query} сантехника"
-    else:
-        return f"{original_query} сантехника товары"
-
-
-def _is_sanitary_relevant(items: list[dict[str, Any]]) -> bool:
-    """Проверяет, что результаты поиска относятся к сантехнике"""
-    sanitary_keywords = [
-        "унитаз", "ванна", "смеситель", "душ", "сантехник", 
-        "раковина", "труба", "фитинг", "кран", "бойлер",
-        "сантехника", "санфаянс", "кранбукс", "картридж",
-        "гидробокс", "инсталляция", "поддон", "лейка"
-    ]
-    
-    for item in items:
-        title = str(item.get("title", "")).lower()
-        snippet = str(item.get("snippet", "")).lower()
-        combined = title + " " + snippet
-        
-        if any(kw in combined for kw in sanitary_keywords):
-            return True
-    
-    return False
+EMPTY_CONTEXT_RESULT = ContextBuildResult(context_text="", web_urls=[], used_web=False)
 
 
 def run_agent(user_text: str, user_id: str = "unknown") -> str:
+    """Запускает full-pipeline ответа: tool routing -> LLM -> сохранение в историю."""
     session_id = user_id or "unknown"
-    history = load_messages(session_id=session_id)
-    tool_query = user_text.strip()
+    query = user_text.strip()
 
-    context_block = ""
-    prefer_web = _should_prefer_web(tool_query)
-    prefer_lookup = _should_prefer_lookup(tool_query)
-    web_urls: list[str] = []
-    web_actually_used = False  # Флаг: действительно ли использовали web
+    history_messages = _to_langchain_messages(load_messages(session_id=session_id))
+    context = _build_context(query)
 
-    # 1) Первый источник зависит от типа запроса.
-    if prefer_web:
-        enhanced_query = enhance_search_query(tool_query, "primary")
-        
-        web_raw = _invoke_with_timeout(
-            web_search.invoke,
-            {"query": enhanced_query, "max_results": settings.web_search_max_results},
-            TOOL_TIMEOUT_SEC,
-            op_name="web_search",
-        )
-        web_data = _parse_object_json(web_raw)
-        web_results = _extract_results(web_data)
-        web_urls = _extract_web_urls(web_results)
-        if _is_web_useful(web_results) and _is_sanitary_relevant(web_results):
-            context_block = _format_web_context(web_results)
-            web_actually_used = True
-        else:
-            rag_raw = _invoke_with_timeout(
-                rag_search.invoke,
-                {"query": tool_query},
-                TOOL_TIMEOUT_SEC,
-                op_name="rag_search",
-            )
-            rag_data = _parse_object_json(rag_raw)
-            rag_results = _extract_results(rag_data)
-            if _is_rag_useful(rag_results):
-                context_block = _format_rag_context(rag_results)
-    elif prefer_lookup:
-        lookup_raw = _invoke_with_timeout(
-            product_lookup.invoke,
-            {"query": tool_query, "limit": 5},
-            TOOL_TIMEOUT_SEC,
-            op_name="product_lookup",
-        )
-        lookup_data = _parse_object_json(lookup_raw)
-        lookup_results = _extract_results(lookup_data)
-        if _is_lookup_useful(lookup_results):
-            context_block = _format_lookup_context(lookup_data, lookup_results)
-    else:
-        rag_raw = _invoke_with_timeout(
-            rag_search.invoke,
-            {"query": tool_query},
-            TOOL_TIMEOUT_SEC,
-            op_name="rag_search",
-        )
-        rag_data = _parse_object_json(rag_raw)
-        rag_results = _extract_results(rag_data)
-        if _is_rag_useful(rag_results):
-            context_block = _format_rag_context(rag_results)
-
-    # 2) Fallback на второй/третий источник.
-    if not context_block:
-        if prefer_web:
-            rag_raw = _invoke_with_timeout(
-                rag_search.invoke,
-                {"query": tool_query},
-                TOOL_TIMEOUT_SEC,
-                op_name="rag_search",
-            )
-            rag_data = _parse_object_json(rag_raw)
-            rag_results = _extract_results(rag_data)
-            if _is_rag_useful(rag_results):
-                context_block = _format_rag_context(rag_results)
-            if not context_block:
-                lookup_raw = _invoke_with_timeout(
-                    product_lookup.invoke,
-                    {"query": tool_query, "limit": 5},
-                    TOOL_TIMEOUT_SEC,
-                    op_name="product_lookup",
-                )
-                lookup_data = _parse_object_json(lookup_raw)
-                lookup_results = _extract_results(lookup_data)
-                if _is_lookup_useful(lookup_results):
-                    context_block = _format_lookup_context(lookup_data, lookup_results)
-        elif prefer_lookup:
-            rag_raw = _invoke_with_timeout(
-                rag_search.invoke,
-                {"query": tool_query},
-                TOOL_TIMEOUT_SEC,
-                op_name="rag_search",
-            )
-            rag_data = _parse_object_json(rag_raw)
-            rag_results = _extract_results(rag_data)
-            if _is_rag_useful(rag_results):
-                context_block = _format_rag_context(rag_results)
-        else:
-            lookup_raw = _invoke_with_timeout(
-                product_lookup.invoke,
-                {"query": tool_query, "limit": 5},
-                TOOL_TIMEOUT_SEC,
-                op_name="product_lookup",
-            )
-            lookup_data = _parse_object_json(lookup_raw)
-            lookup_results = _extract_results(lookup_data)
-            if _is_lookup_useful(lookup_results):
-                context_block = _format_lookup_context(lookup_data, lookup_results)
-
-    # 3) Последний fallback — внешний поиск (если не ходили в него первым).
-    if not context_block:
-        if not prefer_web:
-            enhanced_query = enhance_search_query(tool_query, "fallback")
-            
-            web_raw = _invoke_with_timeout(
-                web_search.invoke,
-                {"query": enhanced_query, "max_results": settings.web_search_max_results},
-                TOOL_TIMEOUT_SEC,
-                op_name="web_search",
-            )
-            web_data = _parse_object_json(web_raw)
-            web_results = _extract_results(web_data)
-            web_urls = _extract_web_urls(web_results)
-            if _is_web_useful(web_results) and _is_sanitary_relevant(web_results):
-                context_block = _format_web_context(web_results)
-                web_actually_used = True
-
-    if not context_block:
+    if not context.context_text:
         assistant_text = _clarifying_question()
         save_turn(session_id=session_id, user_text=user_text, assistant_text=assistant_text)
         return assistant_text
 
-    final_prompt = (
+    final_prompt = _build_final_prompt(user_text=user_text, context_block=context.context_text)
+    model_input = [SystemMessage(content=SYSTEM_PROMPT), *history_messages, HumanMessage(content=final_prompt)]
+    response = _invoke_with_timeout(
+        model.invoke,
+        model_input,
+        timeout_sec=MODEL_TIMEOUT_SEC,
+        op_name="model_invoke",
+    )
+
+    assistant_text = _extract_ai_text(response)
+    if context.used_web:
+        assistant_text = _ensure_sources_block(assistant_text, context.web_urls)
+
+    save_turn(session_id=session_id, user_text=user_text, assistant_text=assistant_text)
+    return assistant_text
+
+
+def _to_langchain_messages(history: list[tuple[str, str]]) -> list[BaseMessage]:
+    """Преобразует сохраненную историю в объекты сообщений LangChain."""
+    messages: list[BaseMessage] = []
+
+    for role, content in history:
+        if role == "human":
+            messages.append(HumanMessage(content=content))
+        elif role == "ai":
+            messages.append(AIMessage(content=content))
+
+    return messages
+
+
+def _build_context(query: str) -> ContextBuildResult:
+    """Подбирает лучший доступный контекст согласно приоритету источников."""
+    source_order = _resolve_source_order(query)
+
+    for index, source in enumerate(source_order):
+        if source == "lookup" and not settings.enable_product_lookup:
+            continue
+        if source == "rag" and not settings.enable_rag:
+            continue
+        if source == "web" and not settings.enable_web_search:
+            continue
+
+        web_mode = "primary" if index == 0 else "fallback"
+        result = _context_from_source(source=source, query=query, web_mode=web_mode)
+        if result.context_text:
+            return result
+
+    return EMPTY_CONTEXT_RESULT
+
+
+def _resolve_source_order(query: str) -> list[ToolName]:
+    """Возвращает порядок источников в зависимости от типа пользовательского запроса."""
+    if _should_prefer_web(query):
+        return ["web", "rag", "lookup"]
+    if _should_prefer_lookup(query):
+        return ["lookup", "rag", "web"]
+    return ["rag", "lookup", "web"]
+
+
+def _context_from_source(source: ToolName, query: str, web_mode: str) -> ContextBuildResult:
+    """Строит контекст из указанного источника данных."""
+    if source == "lookup":
+        return _context_from_lookup(query)
+    if source == "rag":
+        return _context_from_rag(query)
+    return _context_from_web(query, mode=web_mode)
+
+
+def _context_from_lookup(query: str) -> ContextBuildResult:
+    """Пытается получить контекст из базы товаров (LOOKUP)."""
+    payload = _invoke_tool(product_lookup.invoke, {"query": query, "limit": 5}, "product_lookup")
+    items = _extract_results(payload)
+
+    if not items:
+        return EMPTY_CONTEXT_RESULT
+
+    return ContextBuildResult(
+        context_text=_format_lookup_context(payload, items),
+        web_urls=[],
+        used_web=False,
+    )
+
+
+def _context_from_rag(query: str) -> ContextBuildResult:
+    """Пытается получить контекст из RAG-базы знаний."""
+    payload = _invoke_tool(rag_search.invoke, {"query": query}, "rag_search")
+    items = _extract_results(payload)
+
+    if not _is_rag_useful(items):
+        return EMPTY_CONTEXT_RESULT
+
+    return ContextBuildResult(
+        context_text=_format_rag_context(items),
+        web_urls=[],
+        used_web=False,
+    )
+
+
+def _context_from_web(query: str, mode: str) -> ContextBuildResult:
+    """Пытается получить контекст из web-поиска."""
+    enhanced_query = enhance_search_query(query, mode)
+    payload = _invoke_tool(
+        web_search.invoke,
+        {"query": enhanced_query, "max_results": settings.web_search_max_results},
+        "web_search",
+    )
+    items = _extract_results(payload)
+
+    if not (_is_web_useful(items) and _is_sanitary_relevant(items)):
+        return EMPTY_CONTEXT_RESULT
+
+    return ContextBuildResult(
+        context_text=_format_web_context(items),
+        web_urls=_extract_web_urls(items),
+        used_web=True,
+    )
+
+
+def _invoke_tool(func: Callable[[dict[str, Any]], Any], payload: dict[str, Any], op_name: str) -> dict[str, Any]:
+    """Вызывает tool с таймаутом и возвращает JSON-object payload."""
+    raw = _invoke_with_timeout(func, payload, timeout_sec=TOOL_TIMEOUT_SEC, op_name=op_name)
+    return _parse_object_json(raw)
+
+
+def _invoke_with_timeout(func: Callable[[Any], Any], arg: Any, timeout_sec: int, op_name: str) -> Any:
+    """Безопасно вызывает функцию в отдельном потоке с ограничением времени."""
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(func, arg)
+        try:
+            return future.result(timeout=max(1, timeout_sec))
+        except FuturesTimeoutError:
+            logger.warning("%s timed out after %s sec", op_name, timeout_sec)
+            return ""
+        except Exception:
+            logger.exception("%s failed", op_name)
+            return ""
+
+
+def _parse_object_json(raw: Any) -> dict[str, Any]:
+    """Парсит JSON-строку в dict. Некорректные данные приводятся к пустому dict."""
+    if not isinstance(raw, str):
+        return {}
+
+    try:
+        payload = json.loads(raw)
+    except Exception:
+        return {}
+
+    return payload if isinstance(payload, dict) else {}
+
+
+def _extract_results(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """Возвращает список объектов результата из payload."""
+    items = payload.get("results")
+    if not isinstance(items, list):
+        return []
+    return [item for item in items if isinstance(item, dict)]
+
+
+def _should_prefer_web(query: str) -> bool:
+    """Определяет, когда web должен быть первым источником."""
+    lowered_query = query.lower()
+    words = lowered_query.split()
+
+    if len(words) < 3:
+        return SKU_PATTERN.search(query.upper()) is None
+
+    return any(marker in lowered_query for marker in WEB_PRIORITY_MARKERS)
+
+
+def _should_prefer_lookup(query: str) -> bool:
+    """Определяет, когда lookup должен быть первым источником."""
+    if SKU_PATTERN.search(query.upper()):
+        return True
+
+    lowered_query = query.lower()
+    return any(marker in lowered_query for marker in LOOKUP_PRIORITY_MARKERS)
+
+
+def enhance_search_query(original_query: str, search_type: str = "general") -> str:
+    """Улучшает формулировку запроса для внешнего web-поиска."""
+    lowered_query = original_query.lower()
+
+    if any(marker in lowered_query for marker in ("сантехник", "унитаз", "смеситель")):
+        return original_query
+
+    if "новинк" in lowered_query or "новые" in lowered_query:
+        if "2026" in lowered_query:
+            return "новинки сантехники 2026 каталог"
+        if "2025" in lowered_query:
+            return "новинки сантехники 2025 каталог"
+        return "новые сантехнические товары 2026 каталог"
+
+    if any(marker in lowered_query for marker in ("бюджет", "цен", "стоит", "сколько")):
+        return f"{original_query} сантехника"
+
+    if "купить" in lowered_query or "где" in lowered_query:
+        return f"{original_query} сантехника интернет магазин"
+
+    if search_type == "fallback":
+        return f"{original_query} сантехника"
+
+    return f"{original_query} сантехника товары"
+
+
+def _is_rag_useful(items: list[dict[str, Any]]) -> bool:
+    """Проверяет, что RAG-результаты содержат полезный текст с приемлемым score."""
+    for item in items:
+        text = str(item.get("text", "")).strip()
+        score = float(item.get("score", 0.0) or 0.0)
+        if text and score >= MIN_RAG_SCORE:
+            return True
+    return False
+
+
+def _is_web_useful(items: list[dict[str, Any]]) -> bool:
+    """Проверяет, что web-результаты содержат валидные ссылки."""
+    for item in items:
+        url = str(item.get("url", "")).strip().lower()
+        if url.startswith("https://") or url.startswith("http://"):
+            return True
+    return False
+
+
+def _is_sanitary_relevant(items: list[dict[str, Any]]) -> bool:
+    """Проверяет, что web-результаты действительно относятся к сантехнике."""
+    for item in items:
+        title = str(item.get("title", "")).lower()
+        snippet = str(item.get("snippet", "")).lower()
+        combined = f"{title} {snippet}"
+
+        if any(keyword in combined for keyword in SANITARY_KEYWORDS):
+            return True
+
+    return False
+
+
+def _format_rag_context(items: list[dict[str, Any]]) -> str:
+    """Форматирует контекстный блок из результатов RAG."""
+    lines: list[str] = []
+
+    for index, item in enumerate(items[:MAX_RAG_CONTEXT_ITEMS], start=1):
+        metadata = item.get("metadata") or {}
+        source = str(metadata.get("source", "unknown"))
+        score = float(item.get("score", 0.0) or 0.0)
+        text = str(item.get("text", "")).strip().replace("\n", " ")
+        lines.append(f"[RAG {index}] source={source} score={score:.3f} text={text[:800]}")
+
+    return "\n".join(lines).strip()
+
+
+def _format_lookup_context(payload: dict[str, Any], items: list[dict[str, Any]]) -> str:
+    """Форматирует контекстный блок из результатов lookup."""
+    mode = str(payload.get("mode", "lookup"))
+    lines = [f"[LOOKUP] mode={mode} count={len(items)}"]
+
+    for index, item in enumerate(items[:MAX_LOOKUP_CONTEXT_ITEMS], start=1):
+        name = str(item.get("name", "")).strip()
+        brand = str(item.get("brand", "")).strip()
+        category = str(item.get("category", "")).strip()
+        source = str(item.get("source", "")).strip()
+        score = item.get("score", "")
+        sku_list = item.get("sku_list") or []
+        sku_preview = ", ".join(str(value) for value in sku_list[:5])
+
+        lines.append(
+            f"[LOOKUP {index}] {name} | brand={brand} | category={category} | "
+            f"sku={sku_preview} | source={source} | score={score}"
+        )
+
+    return "\n".join(lines).strip()
+
+
+def _format_web_context(items: list[dict[str, Any]]) -> str:
+    """Форматирует контекстный блок из результатов web-поиска."""
+    lines: list[str] = []
+
+    for index, item in enumerate(items[:MAX_WEB_CONTEXT_ITEMS], start=1):
+        title = str(item.get("title", "")).strip()
+        snippet = str(item.get("snippet", "")).strip().replace("\n", " ")
+        url = str(item.get("url", "")).strip()
+        lines.append(f"[WEB {index}] {title} | {snippet} | {url}")
+
+    return "\n".join(lines).strip()
+
+
+def _extract_web_urls(items: list[dict[str, Any]]) -> list[str]:
+    """Собирает уникальные URL из web-результатов."""
+    urls: list[str] = []
+    seen: set[str] = set()
+
+    for item in items:
+        url = str(item.get("url", "")).strip()
+        if not (url.startswith("https://") or url.startswith("http://")):
+            continue
+        if url in seen:
+            continue
+
+        seen.add(url)
+        urls.append(url)
+
+    return urls
+
+
+def _build_final_prompt(user_text: str, context_block: str) -> str:
+    """Собирает финальный prompt для LLM на основе вопроса и контекста."""
+    return (
         f"Вопрос пользователя:\n{user_text}\n\n"
         f"Контекст для ответа:\n{context_block}\n\n"
         "Ответь строго по вопросу пользователя. "
@@ -247,174 +434,39 @@ def run_agent(user_text: str, user_id: str = "unknown") -> str:
         "Не добавляй информацию про ремонт, стройматериалы, мебель и другие темы, "
         "если пользователь о них не спрашивал. Будь краток и точен."
     )
-    response = _invoke_with_timeout(
-        model.invoke,
-        [SystemMessage(content=SYSTEM_PROMPT)] + history + [HumanMessage(content=final_prompt)],
-        MODEL_TIMEOUT_SEC,
-        op_name="model_invoke",
-    )
-    assistant_text = _extract_ai_text(response)
-    
-    # Добавляем источники только если реально использовали web
-    if web_actually_used:
-        assistant_text = _ensure_sources_block(assistant_text, web_urls)
-
-    save_turn(session_id=session_id, user_text=user_text, assistant_text=assistant_text)
-    return assistant_text
-
-
-def _invoke_with_timeout(func, arg, timeout_sec: int, op_name: str = "operation"):
-    with ThreadPoolExecutor(max_workers=1) as ex:
-        fut = ex.submit(func, arg)
-        try:
-            return fut.result(timeout=max(1, timeout_sec))
-        except FuturesTimeoutError:
-            logger.warning("%s timed out after %s sec", op_name, timeout_sec)
-            return ""
-        except Exception as e:
-            logger.exception("%s failed: %s", op_name, e)
-            return ""
 
 
 def _extract_ai_text(message: Any) -> str:
+    """Извлекает текст из ответа модели с учетом разных форматов content."""
     if isinstance(message, AIMessage) and isinstance(message.content, str) and message.content.strip():
         return message.content
+
     if isinstance(message, AIMessage) and isinstance(message.content, list):
-        parts = [str(p.get("text", "")) for p in message.content if isinstance(p, dict)]
-        text = "\n".join([p for p in parts if p.strip()]).strip()
+        parts = [str(part.get("text", "")) for part in message.content if isinstance(part, dict)]
+        text = "\n".join(part for part in parts if part.strip()).strip()
         if text:
             return text
+
     return "Не удалось получить ответ."
 
 
-def _parse_object_json(raw: Any) -> dict[str, Any]:
-    if not isinstance(raw, str):
-        return {}
-    try:
-        payload = json.loads(raw)
-    except Exception:
-        return {}
-    return payload if isinstance(payload, dict) else {}
-
-
-def _extract_results(payload: dict[str, Any]) -> list[dict[str, Any]]:
-    items = payload.get("results")
-    if isinstance(items, list):
-        return [p for p in items if isinstance(p, dict)]
-    return []
-
-
-def _is_lookup_useful(items: list[dict[str, Any]]) -> bool:
-    return len(items) > 0
-
-
-def _is_rag_useful(items: list[dict[str, Any]]) -> bool:
-    if not items:
-        return False
-    for item in items:
-        text = str(item.get("text", "")).strip()
-        score = float(item.get("score", 0.0) or 0.0)
-        if text and score >= 0.2:
-            return True
-    return False
-
-
-def _is_web_useful(items: list[dict[str, Any]]) -> bool:
-    if not items:
-        return False
-    for item in items:
-        url = str(item.get("url", "")).strip().lower()
-        if url.startswith("http://") or url.startswith("https://"):
-            return True
-    return False
-
-
-def _is_sanitary_relevant(items: list[dict[str, Any]]) -> bool:
-    """Проверяет, что результаты поиска относятся к сантехнике"""
-    sanitary_keywords = ["унитаз", "ванна", "смеситель", "душ", "сантехник", 
-                         "раковина", "труба", "фитинг", "кран", "бойлер",
-                         "сантехника", "санфаянс", "кранбукс", "картридж",
-                         "гидробокс", "инсталляция", "поддон", "лейка"]
-    
-    for item in items:
-        title = str(item.get("title", "")).lower()
-        snippet = str(item.get("snippet", "")).lower()
-        combined = title + " " + snippet
-        
-        # Если есть хотя бы одно слово из сантехники — считаем релевантным
-        if any(keyword in combined for keyword in sanitary_keywords):
-            return True
-    
-    return False
-
-
-def _format_rag_context(items: list[dict[str, Any]]) -> str:
-    lines: list[str] = []
-    for idx, item in enumerate(items[:4], start=1):
-        meta = item.get("metadata") or {}
-        source = str(meta.get("source", "unknown"))
-        score = float(item.get("score", 0.0) or 0.0)
-        text = str(item.get("text", "")).strip().replace("\n", " ")
-        lines.append(f"[RAG {idx}] source={source} score={score:.3f} text={text[:800]}")
-    return "\n".join(lines).strip()
-
-
-def _format_web_context(items: list[dict[str, Any]]) -> str:
-    lines: list[str] = []
-    for idx, item in enumerate(items[:5], start=1):
-        title = str(item.get("title", "")).strip()
-        snippet = str(item.get("snippet", "")).strip().replace("\n", " ")
-        url = str(item.get("url", "")).strip()
-        lines.append(f"[WEB {idx}] {title} | {snippet} | {url}")
-    return "\n".join(lines).strip()
-
-
-def _extract_web_urls(items: list[dict[str, Any]]) -> list[str]:
-    urls: list[str] = []
-    seen: set[str] = set()
-    for item in items:
-        url = str(item.get("url", "")).strip()
-        if not (url.startswith("http://") or url.startswith("https://")):
-            continue
-        if url in seen:
-            continue
-        seen.add(url)
-        urls.append(url)
-    return urls
-
-
 def _ensure_sources_block(answer: str, urls: list[str]) -> str:
+    """Добавляет блок `Источники`, если web использовался и блока еще нет."""
     if "Источники:" in answer:
         return answer
 
-    block_lines = ["", "Источники:"]
+    lines = ["", "Источники:"]
     if urls:
-        for url in urls[:5]:
-            block_lines.append(f"- {url}")
+        for url in urls[:MAX_SOURCE_URLS]:
+            lines.append(f"- {url}")
     else:
-        block_lines.append("- внешние ссылки не найдены")
+        lines.append("- внешние ссылки не найдены")
 
-    return answer.rstrip() + "\n" + "\n".join(block_lines)
-
-
-def _format_lookup_context(payload: dict[str, Any], items: list[dict[str, Any]]) -> str:
-    mode = str(payload.get("mode", "lookup"))
-    lines: list[str] = [f"[LOOKUP] mode={mode} count={len(items)}"]
-    for idx, item in enumerate(items[:5], start=1):
-        name = str(item.get("name", "")).strip()
-        brand = str(item.get("brand", "")).strip()
-        category = str(item.get("category", "")).strip()
-        source = str(item.get("source", "")).strip()
-        score = item.get("score", "")
-        skus = item.get("sku_list") or []
-        sku_preview = ", ".join([str(s) for s in skus[:5]])
-        lines.append(
-            f"[LOOKUP {idx}] {name} | brand={brand} | category={category} | sku={sku_preview} | source={source} | score={score}"
-        )
-    return "\n".join(lines).strip()
+    return answer.rstrip() + "\n" + "\n".join(lines)
 
 
 def _clarifying_question() -> str:
+    """Возвращает вопрос-уточнение, если контекст не найден."""
     return (
         "Пока не нашел достаточно надежных данных по вашему запросу. "
         "Уточните, пожалуйста, бренд, артикул (если есть) или ключевой параметр "
