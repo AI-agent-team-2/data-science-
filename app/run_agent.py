@@ -32,16 +32,45 @@ MAX_SOURCE_URLS = 5
 
 SMALLTALK_MARKERS: tuple[str, ...] = (
     "привет",
+    "здравствуйте",
     "здравствуй",
     "добрый день",
     "добрый вечер",
+    "доброе утро",
     "как дела",
     "что делаешь",
     "кто ты",
     "ты кто",
+    "как настроение",
+    "че как",
+    "норм работаешь",
+    "ты вообще шаришь",
     "спасибо",
     "ок",
     "понял",
+)
+
+IDENTITY_OR_CAPABILITY_MARKERS: tuple[str, ...] = (
+    "кто ты",
+    "ты кто",
+    "ты человек",
+    "ты чат-бот",
+    "что умеешь",
+    "чем ты можешь помочь",
+    "ты разбираешься в сантехнике",
+    "ты можешь подобрать оборудование",
+    "что ты знаешь про отопление",
+)
+
+OFFTOPIC_OR_RUDE_MARKERS: tuple[str, ...] = (
+    "ты тупой",
+    "ты бесполезный",
+    "ты ничего не понимаешь",
+    "дай нормальный ответ",
+    "кто выиграет чемпионат мира",
+    "напиши код на python",
+    "кто такой наполеон",
+    "расскажи анекдот",
 )
 
 WEB_PRIORITY_MARKERS: tuple[str, ...] = (
@@ -107,6 +136,16 @@ SANITARY_KEYWORDS: tuple[str, ...] = (
     "инсталляция",
     "поддон",
     "лейка",
+    "насос",
+    "отоплен",
+    "коллектор",
+    "редуктор",
+    "сервопривод",
+    "мультифлекс",
+    "радиатор",
+    "теплый пол",
+    "теплого пола",
+    "давлен",
 )
 
 DOMAIN_MARKERS: tuple[str, ...] = SANITARY_KEYWORDS + (
@@ -143,8 +182,18 @@ def run_agent(user_text: str, user_id: str = "unknown") -> str:
     session_id = user_id or "unknown"
     query = user_text.strip()
 
+    if _is_identity_or_capability_query(query):
+        assistant_text = _assistant_scope_response()
+        save_turn(session_id=session_id, user_text=user_text, assistant_text=assistant_text)
+        return assistant_text
+
     if _is_smalltalk(query):
         assistant_text = _smalltalk_response()
+        save_turn(session_id=session_id, user_text=user_text, assistant_text=assistant_text)
+        return assistant_text
+
+    if _is_noise_query(query) or _is_offtopic_or_rude_query(query):
+        assistant_text = _domain_redirect_response()
         save_turn(session_id=session_id, user_text=user_text, assistant_text=assistant_text)
         return assistant_text
 
@@ -191,14 +240,17 @@ def _build_context(query: str) -> ContextBuildResult:
     source_order = _resolve_source_order(query)
 
     for index, source in enumerate(source_order):
+        web_mode = "primary" if index == 0 else "fallback"
+
         if source == "lookup" and not settings.enable_product_lookup:
             continue
         if source == "rag" and not settings.enable_rag:
             continue
         if source == "web" and not settings.enable_web_search:
             continue
+        if source == "web" and not _should_use_web_source(query=query, web_mode=web_mode):
+            continue
 
-        web_mode = "primary" if index == 0 else "fallback"
         result = _context_from_source(source=source, query=query, web_mode=web_mode)
         if result.context_text:
             return result
@@ -329,7 +381,7 @@ def _should_prefer_web(query: str) -> bool:
 
     # Короткие общие фразы допустимо отправлять в web, если это не SKU/артикул.
     if len(words) < 3:
-        return not has_sku
+        return has_web_marker and not has_sku
 
     # Для остальных доменных вопросов web не должен иметь первичный приоритет.
     if _is_domain_query(lowered_query):
@@ -374,6 +426,54 @@ def _is_smalltalk(query: str) -> bool:
             return True
 
     return False
+
+
+def _is_identity_or_capability_query(query: str) -> bool:
+    """Проверяет вопросы о роли бота и его возможностях."""
+    lowered_query = query.lower().strip()
+    if not lowered_query:
+        return False
+    return any(marker in lowered_query for marker in IDENTITY_OR_CAPABILITY_MARKERS)
+
+
+def _is_noise_query(query: str) -> bool:
+    """Определяет шумовые/неинформативные сообщения, которые не нужно слать в WEB."""
+    lowered_query = query.lower().strip()
+    if not lowered_query:
+        return True
+    if _is_domain_query(lowered_query):
+        return False
+
+    alnum = re.sub(r"[\W_]+", "", lowered_query, flags=re.UNICODE)
+    if not alnum:
+        return True
+    if lowered_query in {"???", "...", "...."}:
+        return True
+    if alnum.isdigit():
+        return True
+    if len(alnum) <= 4 and not re.search(r"[а-яa-z]", alnum):
+        return True
+    if len(set(alnum)) <= 2 and len(alnum) >= 6:
+        return True
+    return False
+
+
+def _is_offtopic_or_rude_query(query: str) -> bool:
+    """Возвращает True для оффтопа/резких фраз без доменного контекста."""
+    lowered_query = query.lower()
+    if _is_domain_query(lowered_query):
+        return False
+    return any(marker in lowered_query for marker in OFFTOPIC_OR_RUDE_MARKERS)
+
+
+def _should_use_web_source(query: str, web_mode: str) -> bool:
+    """Ограничивает WEB: как fallback используем только для доменных запросов."""
+    lowered_query = query.lower()
+    if _is_noise_query(query):
+        return False
+    if web_mode == "fallback":
+        return _is_domain_query(lowered_query)
+    return _should_prefer_web(query) or _is_domain_query(lowered_query)
 
 
 def _is_domain_query(lowered_query: str) -> bool:
@@ -569,4 +669,22 @@ def _clarifying_question() -> str:
         "Пока не нашел достаточно надежных данных по вашему запросу. "
         "Уточните, пожалуйста, бренд, артикул (если есть) или ключевой параметр "
         "(например, диаметр/тип подключения/назначение)."
+    )
+
+
+def _domain_redirect_response() -> str:
+    """Мягко возвращает диалог в домен бота, не уводя в посторонние темы."""
+    return (
+        "Я помогаю по сантехническим товарам и отоплению. "
+        "Напишите, пожалуйста, что именно нужно: бренд, артикул или задачу "
+        "(например, подобрать насос, коллектор, редуктор, трубу или сервопривод)."
+    )
+
+
+def _assistant_scope_response() -> str:
+    """Отвечает на вопросы о роли ассистента и возвращает в целевой домен."""
+    return (
+        "Я чат-бот по сантехническим товарам и отоплению. "
+        "Помогаю подобрать оборудование, объяснить характеристики и совместимость, "
+        "а также найти варианты по артикулу или задаче."
     )
