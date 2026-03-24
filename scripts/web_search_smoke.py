@@ -26,18 +26,18 @@ def _configure_output() -> None:
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     except Exception:
-        logger.exception("Failed to reconfigure stdout encoding")
+        logger.exception("Не удалось переключить stdout в UTF-8")
 
 
 def _validate_response(data: dict[str, Any]) -> list[dict[str, Any]]:
     """Проверяет базовую структуру ответа инструмента веб-поиска."""
     results = data.get("results")
     if not isinstance(results, list):
-        raise SystemExit(f"Expected 'results' list, got: {type(results)}")
+        raise SystemExit(f"Ожидался список 'results', получено: {type(results)}")
 
     error = str(data.get("error", "")).strip()
     if error:
-        raise SystemExit(f"web_search returned error: {error}")
+        raise SystemExit(f"web_search вернул ошибку: {error}")
 
     return [item for item in results if isinstance(item, dict)]
 
@@ -51,21 +51,21 @@ def main() -> int:
     try:
         parsed = json.loads(raw)
     except Exception as exc:
-        raise SystemExit(f"web_search returned non-JSON output: {exc}") from exc
+        raise SystemExit(f"web_search вернул не-JSON ответ: {exc}") from exc
 
     if not isinstance(parsed, dict):
-        raise SystemExit(f"Expected dict, got: {type(parsed)}")
+        raise SystemExit(f"Ожидался dict, получено: {type(parsed)}")
 
     results = _validate_response(parsed)
     for index, item in enumerate(results[:PREVIEW_RESULTS], start=1):
         title = str(item.get("title", "")).strip()
         url = str(item.get("url", "")).strip()
         if not (title and url):
-            raise SystemExit(f"Bad item #{index}: {item}")
+            raise SystemExit(f"Некорректный элемент #{index}: {item}")
 
         logger.info("%d. %s - %s", index, title, url)
 
-    logger.info("Smoke check passed. Results: %d", len(results))
+    logger.info("Проверка пройдена. Результатов: %d", len(results))
     return 0
 
 

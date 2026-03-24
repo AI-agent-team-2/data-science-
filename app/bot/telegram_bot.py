@@ -8,7 +8,7 @@ from typing import Final
 import telebot
 from telebot.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 
-# Позволяет запускать файл напрямую как `python app\bot\telegram_bot.py`
+# Позволяет запускать файл напрямую: `python app\bot\telegram_bot.py`.
 if __package__ is None or __package__ == "":
     sys.path.append(str(Path(__file__).resolve().parents[2]))
 
@@ -56,7 +56,7 @@ GENERIC_PROCESS_ERROR_TEXT: Final[str] = (
     "❌ Не удалось обработать запрос. Попробуйте еще раз через минуту."
 )
 
-# Список всех поддерживаемых команд
+# Список поддерживаемых команд.
 KNOWN_COMMANDS: Final[list[str]] = ["start", "help", "clear", "status", "id"]
 
 bot = telebot.TeleBot(settings.telegram_token, threaded=True)
@@ -89,7 +89,7 @@ def _format_status_text() -> str:
         chunks_count = retriever.collection.count()
         rag_status = f"✅ ({chunks_count} чанков)"
     except Exception as exc:
-        logger.exception("Failed to load RAG retriever")
+        logger.exception("Не удалось инициализировать RAG-ретривер")
         rag_status = f"❌ ({_safe_error_text(exc)})"
 
     return (
@@ -229,11 +229,11 @@ def text_handler(message: Message) -> None:
     try:
         _handle_text_message(message)
     except Exception:
-        logger.exception("Failed to process Telegram message")
+        logger.exception("Не удалось обработать сообщение Telegram")
         bot.reply_to(message, GENERIC_PROCESS_ERROR_TEXT)
 
 
 if __name__ == "__main__":
-    logger.info("Starting SAN Bot v%s", BOT_VERSION)
-    logger.info("Known commands: %s", KNOWN_COMMANDS)
+    logger.info("Запуск SAN Bot v%s", BOT_VERSION)
+    logger.info("Доступные команды: %s", KNOWN_COMMANDS)
     bot.infinity_polling()

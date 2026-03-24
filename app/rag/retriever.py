@@ -48,7 +48,7 @@ class ChromaRetriever:
             self.collection = self.client.get_collection(name=settings.collection_name)
             self.collection._embedding_function = self.embedding_function
         except Exception:
-            logger.info("Collection '%s' not found. Creating a new one.", settings.collection_name)
+            logger.info("Коллекция '%s' не найдена. Создаю новую.", settings.collection_name)
             self.collection = self.client.create_collection(
                 name=settings.collection_name,
                 embedding_function=self.embedding_function,
@@ -62,7 +62,7 @@ class ChromaRetriever:
         try:
             result = self.collection.query(query_texts=[query], n_results=n_results)
         except Exception:
-            logger.exception("Chroma query failed for query=%s", query)
+            logger.exception("Ошибка запроса к Chroma для query=%s", query)
             return []
 
         documents = result.get("documents", [[]])[0]

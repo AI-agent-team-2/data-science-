@@ -268,7 +268,7 @@ OWASP_TEST_CASES: list[OwaspCase] = [
 
 
 def _normalize(value: str) -> str:
-    """Нормализует path-like строку для сравнения."""
+    """Нормализует строку пути для сравнения."""
     return value.lower().replace("\\", "/").strip()
 
 
@@ -286,7 +286,7 @@ def _evaluate_rag(top_k: int) -> tuple[int, int]:
     retriever = ChromaRetriever()
     total = len(RAG_TEST_CASES)
     hits = 0
-    logger.info("RAG eval: %d кейсов, top_k=%d", total, top_k)
+    logger.info("Проверка RAG: %d кейсов, top_k=%d", total, top_k)
 
     for index, case in enumerate(RAG_TEST_CASES, start=1):
         query = case["query"]
@@ -296,11 +296,11 @@ def _evaluate_rag(top_k: int) -> tuple[int, int]:
         found = any(any(expected_name in source for source in sources) for expected_name in expected)
         if found:
             hits += 1
-            logger.info("[RAG %02d] HIT | query='%s'", index, query)
+            logger.info("[RAG %02d] OK | query='%s'", index, query)
         else:
-            logger.warning("[RAG %02d] MISS | query='%s' | sources=%s", index, query, sources[:top_k])
+            logger.warning("[RAG %02d] MISS | query='%s' | источники=%s", index, query, sources[:top_k])
 
-    logger.info("RAG summary: %d/%d (%.2f%%)", hits, total, (hits / total * 100) if total else 0.0)
+    logger.info("Итог RAG: %d/%d (%.2f%%)", hits, total, (hits / total * 100) if total else 0.0)
     return hits, total
 
 
@@ -308,7 +308,7 @@ def _evaluate_lookup(top_k: int) -> tuple[int, int]:
     _ = top_k
     total = len(LOOKUP_TEST_CASES)
     hits = 0
-    logger.info("LOOKUP eval: %d кейсов", total)
+    logger.info("Проверка LOOKUP: %d кейсов", total)
 
     for index, case in enumerate(LOOKUP_TEST_CASES, start=1):
         query = case["query"]
@@ -319,11 +319,11 @@ def _evaluate_lookup(top_k: int) -> tuple[int, int]:
         found = any(any(expected_name in source for source in sources) for expected_name in expected)
         if found:
             hits += 1
-            logger.info("[LOOKUP %02d] HIT | query='%s'", index, query)
+            logger.info("[LOOKUP %02d] OK | query='%s'", index, query)
         else:
-            logger.warning("[LOOKUP %02d] MISS | query='%s' | sources=%s", index, query, sources[:5])
+            logger.warning("[LOOKUP %02d] MISS | query='%s' | источники=%s", index, query, sources[:5])
 
-    logger.info("LOOKUP summary: %d/%d (%.2f%%)", hits, total, (hits / total * 100) if total else 0.0)
+    logger.info("Итог LOOKUP: %d/%d (%.2f%%)", hits, total, (hits / total * 100) if total else 0.0)
     return hits, total
 
 
@@ -331,7 +331,7 @@ def _evaluate_web(top_k: int) -> tuple[int, int]:
     _ = top_k
     total = len(WEB_TEST_CASES)
     hits = 0
-    logger.info("WEB eval: %d кейсов", total)
+    logger.info("Проверка WEB: %d кейсов", total)
 
     for index, case in enumerate(WEB_TEST_CASES, start=1):
         query = case["query"]
@@ -348,17 +348,17 @@ def _evaluate_web(top_k: int) -> tuple[int, int]:
         passed = len(results) >= min_results and has_term
         if passed:
             hits += 1
-            logger.info("[WEB %02d] HIT | query='%s'", index, query)
+            logger.info("[WEB %02d] OK | query='%s'", index, query)
         else:
             logger.warning(
-                "[WEB %02d] MISS | query='%s' | results=%d | has_term=%s",
+                "[WEB %02d] MISS | query='%s' | результатов=%d | has_term=%s",
                 index,
                 query,
                 len(results),
                 has_term,
             )
 
-    logger.info("WEB summary: %d/%d (%.2f%%)", hits, total, (hits / total * 100) if total else 0.0)
+    logger.info("Итог WEB: %d/%d (%.2f%%)", hits, total, (hits / total * 100) if total else 0.0)
     return hits, total
 
 
@@ -366,7 +366,7 @@ def _evaluate_owasp(top_k: int) -> tuple[int, int]:
     retriever = ChromaRetriever()
     total = len(OWASP_TEST_CASES)
     hits = 0
-    logger.info("OWASP eval: %d кейсов, top_k=%d", total, top_k)
+    logger.info("Проверка OWASP: %d кейсов, top_k=%d", total, top_k)
 
     for index, case in enumerate(OWASP_TEST_CASES, start=1):
         tool_name = case["tool"]
@@ -388,11 +388,11 @@ def _evaluate_owasp(top_k: int) -> tuple[int, int]:
 
         if safe:
             hits += 1
-            logger.info("[OWASP %02d] HIT | tool=%s", index, tool_name)
+            logger.info("[OWASP %02d] OK | tool=%s", index, tool_name)
         else:
             logger.warning("[OWASP %02d] MISS | tool=%s | query='%s'", index, tool_name, query)
 
-    logger.info("OWASP summary: %d/%d (%.2f%%)", hits, total, (hits / total * 100) if total else 0.0)
+    logger.info("Итог OWASP: %d/%d (%.2f%%)", hits, total, (hits / total * 100) if total else 0.0)
     return hits, total
 
 
@@ -414,12 +414,18 @@ def evaluate(top_k: int, suite: str) -> int:
         total_cases += cases
 
     rate = (total_hits / total_cases * 100) if total_cases else 0.0
-    logger.info("TOTAL summary: %d/%d (%.2f%%) | suites=%s", total_hits, total_cases, rate, ",".join(selected_suites))
+    logger.info(
+        "Общий итог: %d/%d (%.2f%%) | наборы=%s",
+        total_hits,
+        total_cases,
+        rate,
+        ",".join(selected_suites),
+    )
     return 0
 
 
 def parse_args() -> argparse.Namespace:
-    """Парсит аргументы CLI для retrieval evaluation."""
+    """Разбирает аргументы CLI для проверки retrieval."""
     parser = argparse.ArgumentParser(description="Оценка качества RAG/LOOKUP/WEB и OWASP-кейсов.")
     parser.add_argument("--top-k", type=int, default=6, help="Количество результатов для RAG-поиска.")
     parser.add_argument(
@@ -432,7 +438,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
-    """CLI entrypoint скрипта оценки retrieval."""
+    """Точка входа CLI для проверки retrieval."""
     logging.basicConfig(level=logging.INFO)
     args = parse_args()
     top_k = max(1, int(args.top_k))

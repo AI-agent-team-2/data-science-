@@ -42,7 +42,7 @@ def init_db() -> None:
             cursor.execute(CREATE_SESSION_INDEX_SQL)
             connection.commit()
     except Exception:
-        logger.exception("Failed to initialize history database")
+        logger.exception("Не удалось инициализировать базу истории")
 
 
 def save_turn(session_id: str, user_text: str, assistant_text: str) -> None:
@@ -56,7 +56,7 @@ def save_turn(session_id: str, user_text: str, assistant_text: str) -> None:
             )
             connection.commit()
     except Exception:
-        logger.exception("Failed to save history turn for session_id=%s", session_id)
+        logger.exception("Не удалось сохранить шаг истории для session_id=%s", session_id)
         return
 
     _cleanup_old(session_id=session_id)
@@ -64,7 +64,7 @@ def save_turn(session_id: str, user_text: str, assistant_text: str) -> None:
 
 def load_messages(session_id: str, limit: int | None = None) -> list[HistoryMessage]:
     """
-    Загружает историю диалога в формате LangChain tuples.
+    Загружает историю диалога в формате пар сообщений.
 
     Возвращает список вида: [("human", text), ("ai", text), ...].
     """
@@ -87,7 +87,7 @@ def load_messages(session_id: str, limit: int | None = None) -> list[HistoryMess
             )
             rows = cursor.fetchall()
     except Exception:
-        logger.exception("Failed to load history for session_id=%s", session_id)
+        logger.exception("Не удалось загрузить историю для session_id=%s", session_id)
         return []
 
     messages: list[HistoryMessage] = []
@@ -106,7 +106,7 @@ def clear_history(session_id: str) -> None:
             cursor.execute("DELETE FROM history WHERE session_id = ?", (session_id,))
             connection.commit()
     except Exception:
-        logger.exception("Failed to clear history for session_id=%s", session_id)
+        logger.exception("Не удалось очистить историю для session_id=%s", session_id)
 
 
 def get_history_stats(session_id: str) -> HistoryStats:
@@ -133,7 +133,7 @@ def get_history_stats(session_id: str) -> HistoryStats:
             )
             row = cursor.fetchone()
     except Exception:
-        logger.exception("Failed to read history stats for session_id=%s", session_id)
+        logger.exception("Не удалось получить статистику истории для session_id=%s", session_id)
         return default_stats
 
     if row is None:
@@ -159,7 +159,7 @@ def _cleanup_old(session_id: str) -> None:
             )
             connection.commit()
     except Exception:
-        logger.exception("Failed to cleanup old history for session_id=%s", session_id)
+        logger.exception("Не удалось удалить устаревшую историю для session_id=%s", session_id)
 
 
 init_db()

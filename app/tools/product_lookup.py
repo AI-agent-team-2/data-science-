@@ -43,7 +43,7 @@ class SearchResult(TypedDict):
 
 @dataclass(frozen=True)
 class CatalogItem:
-    """Элемент локального каталога с предрасчитанными полями для ранжирования."""
+    """Элемент локального каталога с предрассчитанными полями для ранжирования."""
 
     name: str
     brand: str
@@ -107,13 +107,13 @@ def _load_catalog() -> list[CatalogItem]:
     items: list[CatalogItem] = []
     source_paths: list[Path] = []
 
-    # New KB layout: data/knowledge_base/*.txt
+    # Новый формат БЗ: data/knowledge_base/*.txt
     if kb_root.exists():
         source_paths.extend(sorted(kb_root.glob("*.txt")))
     else:
-        logger.warning("Catalog root does not exist: %s", kb_root)
+        logger.warning("Каталог базы знаний не найден: %s", kb_root)
 
-    # Backward compatibility: old layout under tp/cat.
+    # Обратная совместимость: старый формат в tp/cat.
     for legacy_dir in (kb_root / "tp", kb_root / "cat"):
         if not legacy_dir.exists():
             continue
@@ -123,7 +123,7 @@ def _load_catalog() -> list[CatalogItem]:
         try:
             text = path.read_text(encoding="utf-8", errors="ignore")
         except OSError:
-            logger.exception("Failed to read catalog file: %s", path)
+            logger.exception("Не удалось прочитать файл каталога: %s", path)
             continue
 
         brand = _extract_field(text, "BRAND")
@@ -150,11 +150,16 @@ def _load_catalog() -> list[CatalogItem]:
         )
         items.append(item)
 
-    logger.info("Catalog loaded: %d items", len(items))
+    logger.info("Каталог загружен: %d позиций", len(items))
     return items
 
 
-def _score_item(query: str, query_tokens: set[str], query_skus: set[str], item: CatalogItem) -> float:
+def _score_item(
+    query: str,
+    query_tokens: set[str],
+    query_skus: set[str],
+    item: CatalogItem,
+) -> float:
     """Считает итоговый score документа для текстового ранжирования."""
     score = 0.0
 
@@ -202,7 +207,7 @@ def _build_empty_response(query: str, note: str) -> str:
 
 
 def _rank_sku_matches(catalog: list[CatalogItem], query_tokens: set[str], query_skus: set[str]) -> list[tuple[float, CatalogItem]]:
-    """Ранжирует элементы только по SKU-совпадениям (режим SKU-first)."""
+    """Ранжирует элементы только по SKU-совпадениям (режим `sku_first`)."""
     ranked: list[tuple[float, CatalogItem]] = []
     for item in catalog:
         item_skus = {_canonical_sku(sku) for sku in item.sku_list}
@@ -253,7 +258,7 @@ def product_lookup(query: str, limit: int = 5) -> str:
         query_skus = {_canonical_sku(sku) for sku in SKU_PATTERN.findall(normalized_query.upper())}
         top_n = _clamp_limit(limit)
 
-        # SKU-first: если пользователь прислал артикул, сначала отдаем точные SKU-совпадения.
+        # Режим sku_first: при запросе с артикулом сначала возвращаем точные SKU-совпадения.
         if query_skus:
             sku_ranked = _rank_sku_matches(catalog, query_tokens, query_skus)
             if sku_ranked:
@@ -280,7 +285,7 @@ def product_lookup(query: str, limit: int = 5) -> str:
             }
         )
     except Exception:
-        logger.exception("Product lookup failed for query: %s", normalized_query)
+        logger.exception("Ошибка product_lookup для запроса: %s", normalized_query)
         return _build_empty_response(
             normalized_query,
             "Внутренняя ошибка поиска. Попробуйте повторить запрос позже.",

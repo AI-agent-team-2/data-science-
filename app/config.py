@@ -18,7 +18,7 @@ SUPPORTED_PROVIDERS: Final[set[str]] = {"openrouter", "openai"}
 
 
 def _get_env_str(name: str, default: str = "") -> str:
-    """Возвращает строковое значение переменной окружения с trim."""
+    """Возвращает строковое значение переменной окружения без лишних пробелов."""
     return os.getenv(name, default).strip()
 
 
@@ -114,12 +114,12 @@ class Settings:
 
     @property
     def resolved_embedding_api_key(self) -> str:
-        """Возвращает ключ для embedding API (или общий API key)."""
+        """Возвращает ключ embedding API (или общий API-ключ)."""
         return self.embedding_api_key or self.resolved_openai_api_key
 
     @property
     def resolved_embedding_base_url(self) -> str:
-        """Возвращает base URL для embedding API (или общий base URL)."""
+        """Возвращает base URL embedding API (или общий base URL)."""
         return self.embedding_base_url or self.resolved_openai_base_url
 
 

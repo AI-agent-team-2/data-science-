@@ -56,7 +56,7 @@ def _load_from_cache(key: str) -> dict[str, Any] | None:
         result = payload.get("result")
         return result if isinstance(result, dict) else None
     except Exception:
-        logger.exception("Failed to load web cache from %s", cache_file)
+        logger.exception("Не удалось загрузить кэш WEB-поиска из %s", cache_file)
         return None
 
 
@@ -75,7 +75,7 @@ def _save_to_cache(key: str, result: dict[str, Any]) -> None:
     try:
         cache_file.write_text(_to_json(payload), encoding="utf-8")
     except Exception:
-        logger.exception("Failed to save web cache to %s", cache_file)
+        logger.exception("Не удалось сохранить кэш WEB-поиска в %s", cache_file)
 
 
 def _normalize_results(query: str, items: list[dict[str, Any]], provider: str) -> str:
@@ -133,7 +133,7 @@ def _duckduckgo_search(query: str, max_results: int) -> str:
         return _error_object(
             query=query,
             provider="duckduckgo",
-            message=f"DuckDuckGo backend недоступен. Установите зависимость ddgs. Details: {exc}",
+            message=f"Бэкенд DuckDuckGo недоступен. Установите зависимость ddgs. Детали: {exc}",
         )
 
     items: list[dict[str, Any]] = []
@@ -156,7 +156,7 @@ def _duckduckgo_search(query: str, max_results: int) -> str:
         return _error_object(
             query=query,
             provider="duckduckgo",
-            message=f"DuckDuckGo search failed. Details: {exc}",
+            message=f"Ошибка поиска DuckDuckGo. Детали: {exc}",
         )
 
     return _normalize_results(query=query, items=items, provider="duckduckgo")
@@ -170,7 +170,7 @@ def _tavily_search(query: str, max_results: int, api_key: str) -> str:
         return _error_object(
             query=query,
             provider="tavily",
-            message=f"Tavily backend недоступен. Установите зависимость tavily-python. Details: {exc}",
+            message=f"Бэкенд Tavily недоступен. Установите зависимость tavily-python. Детали: {exc}",
         )
 
     try:
@@ -195,7 +195,7 @@ def _tavily_search(query: str, max_results: int, api_key: str) -> str:
         return _error_object(
             query=query,
             provider="tavily",
-            message=f"Tavily search failed. Details: {exc}",
+            message=f"Ошибка поиска Tavily. Детали: {exc}",
         )
 
     return _normalize_results(query=query, items=items, provider="tavily")
@@ -206,7 +206,7 @@ def web_search(query: str, max_results: int = 5) -> str:
     """
     Ищет актуальную внешнюю информацию в интернете.
 
-    Используется для динамичных данных: цены, наличие, отзывы, рыночные новинки.
+    Используется для динамичных данных: цены, наличие, отзывы и рыночные новинки.
     """
     if not settings.enable_web_search:
         return _error_object(query, "disabled", "Веб-поиск отключен в настройках.")
@@ -230,6 +230,6 @@ def web_search(query: str, max_results: int = 5) -> str:
         if isinstance(parsed_result, dict) and parsed_result.get("results"):
             _save_to_cache(cache_key, parsed_result)
     except Exception:
-        logger.exception("Failed to parse web_search result for caching")
+        logger.exception("Не удалось разобрать ответ web_search для кэширования")
 
     return raw_result

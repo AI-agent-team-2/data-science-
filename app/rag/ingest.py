@@ -61,7 +61,7 @@ def load_documents(data_dir: str) -> list[SourceDocument]:
         try:
             raw_text = path.read_text(encoding="utf-8")
         except OSError:
-            logger.exception("Failed to read document: %s", path)
+            logger.exception("Не удалось прочитать документ: %s", path)
             continue
 
         source = str(path.relative_to(data_path)).replace("\\", "/")
@@ -71,7 +71,7 @@ def load_documents(data_dir: str) -> list[SourceDocument]:
 
         documents.append(SourceDocument(source=source, text=cleaned_text))
 
-    logger.info("Loaded %d source documents from %s", len(documents), data_path)
+    logger.info("Загружено %d исходных документов из %s", len(documents), data_path)
     return documents
 
 
@@ -245,7 +245,7 @@ def chunk_documents(documents: list[SourceDocument]) -> list[TextChunk]:
                 )
                 global_index += 1
 
-    logger.info("Prepared %d chunks", len(chunks))
+    logger.info("Подготовлено %d чанков", len(chunks))
     return chunks
 
 
@@ -258,7 +258,7 @@ def _get_or_create_collection(client: chromadb.PersistentClient):
         collection._embedding_function = embedding_function
         return collection
     except Exception:
-        logger.info("Collection '%s' not found. Creating a new one.", settings.collection_name)
+        logger.info("Коллекция '%s' не найдена. Создаю новую.", settings.collection_name)
         return client.create_collection(
             name=settings.collection_name,
             embedding_function=embedding_function,
@@ -289,7 +289,7 @@ def store_in_chroma(chunks: list[TextChunk]) -> None:
 
     non_empty_chunks = [chunk for chunk in chunks if chunk.text.strip()]
     if not non_empty_chunks:
-        logger.warning("No non-empty chunks to index")
+        logger.warning("Нет непустых чанков для индексации")
         return
 
     chunk_ids = [chunk.chunk_id for chunk in non_empty_chunks]
@@ -321,7 +321,7 @@ def store_in_chroma(chunks: list[TextChunk]) -> None:
         collection.delete(ids=stale_ids[start : start + batch_size])
 
     logger.info(
-        "Chroma sync completed: upserted=%d, deleted=%d, total=%d",
+        "Синхронизация Chroma завершена: upsert=%d, удалено=%d, всего=%d",
         len(to_upsert_indices),
         len(stale_ids),
         len(non_empty_chunks),
@@ -329,13 +329,13 @@ def store_in_chroma(chunks: list[TextChunk]) -> None:
 
 
 def main() -> int:
-    """CLI-entrypoint для индексации локальной базы знаний."""
+    """Точка входа CLI для индексации локальной базы знаний."""
     logging.basicConfig(level=logging.INFO)
 
     documents = load_documents(str(DEFAULT_DATA_DIR))
     chunks = chunk_documents(documents)
     store_in_chroma(chunks)
-    logger.info("Indexed %d chunks", len(chunks))
+    logger.info("Проиндексировано %d чанков", len(chunks))
     return 0
 
 
