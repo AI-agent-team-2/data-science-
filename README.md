@@ -20,7 +20,7 @@ telegram_bot.py
    |
    v
 run_agent.py (router)
-   |-- product_lookup (локальный каталог из data/knowledge_base/tp)
+   |-- product_lookup (локальный каталог из data/knowledge_base/*.txt)
    |-- rag_search (Chroma retriever по проиндексированным документам)
    |-- web_search (Tavily/DuckDuckGo для внешних данных)
    |
@@ -57,6 +57,7 @@ rag_search -> top_k chunks -> контекст для LLM
 ```
 
 - Шаги индексации реализованы в `app/rag/ingest.py`.
+- Чанкование выполняется по секциям документа (например, `INSTALLATION`, `LIMITATIONS`, `WARRANTY`).
 - Поиск по векторной базе выполняет `app/rag/retriever.py`.
 - Очистка текста перед индексацией выполняется в `app/rag/preprocess_text.py`.
 
@@ -157,12 +158,19 @@ python -m app.bot.telegram_bot
 ## Мини-оценка Retrieval
 
 ```bash
-python scripts/retrieval_eval.py
-# или с другим k:
-# python scripts/retrieval_eval.py --top-k 8
+python scripts/retrieval_eval.py --suite all --top-k 6
+# отдельно по набору:
+# python scripts/retrieval_eval.py --suite rag
+# python scripts/retrieval_eval.py --suite lookup
+# python scripts/retrieval_eval.py --suite web
+# python scripts/retrieval_eval.py --suite owasp
 ```
 
-Скрипт печатает `hit@k` по небольшому фиксированному набору запросов.
+Скрипт содержит 4 набора по 15 кейсов:
+- `rag` (retrieval по базе знаний);
+- `lookup` (поиск по товарному каталогу);
+- `web` (внешний поиск);
+- `owasp` (базовые security-проверки).
 
 ## Структура
 
@@ -175,13 +183,15 @@ python scripts/retrieval_eval.py
 
 ## Последние изменения
 
-Актуальная версия: **2.0.1**
+Актуальная версия: **2.0.2**
 
 Основные улучшения:
 - 🔍 **Веб-поиск** — фильтрация по сантехнике, кэширование, улучшение запросов
 - 🤖 **Telegram бот** — новые команды `/help`, `/clear`, инлайн-кнопки
 - 🧭 **Контроль домена ответов** — системный prompt ограничивает ответы сантехнической тематикой
-- 📊 **Мониторинг** — замер времени выполнения, сбор метрик
+- 🧱 **Секционное RAG-чанкование** — метаданные `doc_id/brand/category/section/articles/model`
+- ✅ **Единые eval-наборы** — 60/60 (`rag`, `lookup`, `web`, `owasp`)
+- 🧹 **Упрощение кода** — удалены неиспользуемые `app/monitoring.py` и `app/legacy`
 - 🔄 **RAG** — гибридный поиск с бустингом по ключевым словам
 - 🛠️ **Рефакторинг кода** — типизация, docstring, декомпозиция функций, единый стиль логирования
 

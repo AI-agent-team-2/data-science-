@@ -105,19 +105,11 @@ def _load_catalog() -> list[CatalogItem]:
     root = Path(__file__).resolve().parents[2]
     kb_root = root / "data" / "knowledge_base"
     items: list[CatalogItem] = []
-    source_paths: list[Path] = []
-
-    # Новый формат БЗ: data/knowledge_base/*.txt
-    if kb_root.exists():
-        source_paths.extend(sorted(kb_root.glob("*.txt")))
-    else:
+    if not kb_root.exists():
         logger.warning("Каталог базы знаний не найден: %s", kb_root)
+        return items
 
-    # Обратная совместимость: старый формат в tp/cat.
-    for legacy_dir in (kb_root / "tp", kb_root / "cat"):
-        if not legacy_dir.exists():
-            continue
-        source_paths.extend(sorted(legacy_dir.glob("*.txt")))
+    source_paths = sorted(kb_root.glob("*.txt"))
 
     for path in source_paths:
         try:
