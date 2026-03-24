@@ -60,19 +60,11 @@ python app/bot/telegram_bot.py
 python -m app.bot.telegram_bot
 ```
 
-## Проверка качества поиска
+## Проверка качества ответов
 
-```bash
-python scripts/retrieval_eval.py --suite all --top-k 6
-```
-
-Поддерживаемые наборы:
-
-- `rag`
-- `lookup`
-- `web`
-- `owasp`
-- `all`
+Основной набор вопросов хранится в `TEST.txt`.
+Полный прогон выполняется локально через `app.run_agent` с сохранением отчета в `artifacts/`
+(например, `test_bot_full_report_rerun_v2.json`).
 
 ## Ключевые модули
 
