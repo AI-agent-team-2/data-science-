@@ -30,6 +30,20 @@ MAX_LOOKUP_CONTEXT_ITEMS = 5
 MAX_WEB_CONTEXT_ITEMS = 5
 MAX_SOURCE_URLS = 5
 
+SMALLTALK_MARKERS: tuple[str, ...] = (
+    "привет",
+    "здравствуй",
+    "добрый день",
+    "добрый вечер",
+    "как дела",
+    "что делаешь",
+    "кто ты",
+    "ты кто",
+    "спасибо",
+    "ок",
+    "понял",
+)
+
 WEB_PRIORITY_MARKERS: tuple[str, ...] = (
     "сейчас",
     "сегодня",
@@ -111,6 +125,11 @@ def run_agent(user_text: str, user_id: str = "unknown") -> str:
     """Запускает полный пайплайн ответа: инструменты -> LLM -> история."""
     session_id = user_id or "unknown"
     query = user_text.strip()
+
+    if _is_smalltalk(query):
+        assistant_text = _smalltalk_response()
+        save_turn(session_id=session_id, user_text=user_text, assistant_text=assistant_text)
+        return assistant_text
 
     history_messages = _to_langchain_messages(load_messages(session_id=session_id))
     context = _build_context(query)
@@ -297,6 +316,22 @@ def _should_prefer_lookup(query: str) -> bool:
 
     lowered_query = query.lower()
     return any(marker in lowered_query for marker in LOOKUP_PRIORITY_MARKERS)
+
+
+def _is_smalltalk(query: str) -> bool:
+    """Проверяет, что сообщение похоже на короткую бытовую реплику."""
+    lowered_query = query.lower().strip()
+    if not lowered_query:
+        return False
+    return any(marker in lowered_query for marker in SMALLTALK_MARKERS)
+
+
+def _smalltalk_response() -> str:
+    """Возвращает короткий ответ для бытовых реплик без запуска поиска."""
+    return (
+        "Привет! Я в порядке и готов помочь по сантехническим товарам. "
+        "Напишите, пожалуйста, бренд, модель, артикул или технический вопрос."
+    )
 
 
 def enhance_search_query(original_query: str, search_type: str = "general") -> str:
