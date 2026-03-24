@@ -62,10 +62,6 @@ WEB_PRIORITY_MARKERS: tuple[str, ...] = (
     "аналоги",
     "сравни",
     "новости",
-    "что такое",
-    "как работает",
-    "для чего",
-    "зачем",
     "лучший",
     "рейтинг",
     "топ",
@@ -74,6 +70,11 @@ WEB_PRIORITY_MARKERS: tuple[str, ...] = (
     "последний",
     "новинки",
     "тренды",
+    "тенденции",
+    "современные решения",
+    "чаще используют",
+    "стандарты",
+    "бренды",
 )
 
 LOOKUP_PRIORITY_MARKERS: tuple[str, ...] = (
@@ -106,6 +107,22 @@ SANITARY_KEYWORDS: tuple[str, ...] = (
     "инсталляция",
     "поддон",
     "лейка",
+)
+
+DOMAIN_MARKERS: tuple[str, ...] = SANITARY_KEYWORDS + (
+    "ondo",
+    "stm",
+    "optima",
+    "roegen",
+    "rispa",
+    "atlas",
+    "акс",
+    "мультифлекс",
+    "редуктор",
+    "коллектор",
+    "сервопривод",
+    "воздухоотвод",
+    "тепл",
 )
 
 
@@ -302,11 +319,23 @@ def _should_prefer_web(query: str) -> bool:
     """Определяет, когда WEB должен быть первым источником."""
     lowered_query = query.lower()
     words = lowered_query.split()
+    has_web_marker = any(marker in lowered_query for marker in WEB_PRIORITY_MARKERS)
+    has_lookup_marker = any(marker in lowered_query for marker in LOOKUP_PRIORITY_MARKERS)
+    has_sku = SKU_PATTERN.search(query.upper()) is not None
 
+    # Явно внешние/динамические запросы отправляем в web первично.
+    if has_web_marker and not has_lookup_marker and not has_sku:
+        return True
+
+    # Короткие общие фразы допустимо отправлять в web, если это не SKU/артикул.
     if len(words) < 3:
-        return SKU_PATTERN.search(query.upper()) is None
+        return not has_sku
 
-    return any(marker in lowered_query for marker in WEB_PRIORITY_MARKERS)
+    # Для остальных доменных вопросов web не должен иметь первичный приоритет.
+    if _is_domain_query(lowered_query):
+        return False
+
+    return has_web_marker
 
 
 def _should_prefer_lookup(query: str) -> bool:
@@ -323,7 +352,35 @@ def _is_smalltalk(query: str) -> bool:
     lowered_query = query.lower().strip()
     if not lowered_query:
         return False
-    return any(marker in lowered_query for marker in SMALLTALK_MARKERS)
+    if _is_domain_query(lowered_query):
+        return False
+
+    normalized = re.sub(r"[^\w\s]", " ", lowered_query)
+    normalized = " ".join(normalized.split())
+    if not normalized:
+        return False
+
+    # Срабатывает только на короткие бытовые реплики.
+    if len(normalized.split()) > 5:
+        return False
+
+    for marker in SMALLTALK_MARKERS:
+        if " " in marker:
+            if normalized == marker:
+                return True
+            continue
+
+        if re.search(rf"\b{re.escape(marker)}\b", normalized):
+            return True
+
+    return False
+
+
+def _is_domain_query(lowered_query: str) -> bool:
+    """Проверяет, что запрос относится к товарам/техтематике проекта."""
+    if SKU_PATTERN.search(lowered_query.upper()):
+        return True
+    return any(marker in lowered_query for marker in DOMAIN_MARKERS)
 
 
 def _smalltalk_response() -> str:
