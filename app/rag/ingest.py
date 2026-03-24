@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -17,6 +18,11 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_DATA_DIR = Path("data/knowledge_base")
 MIN_CHUNK_SIZE = 200
+MISSING_DATA_MARKER = "[НЕТ ДАННЫХ В ИСХОДНОМ ДОКУМЕНТЕ]"
+
+HEADER_LINE_PATTERN = re.compile(r"^\s*([A-Z][A-Z0-9_ ]{1,50})\s*:\s*(.+?)\s*$")
+SECTION_HEADER_PATTERN = re.compile(r"^[A-Z][A-Z0-9 ()/&_-]{2,}$")
+NON_ID_CHARS_PATTERN = re.compile(r"[^a-z0-9]+")
 
 
 @dataclass(frozen=True)
@@ -34,6 +40,16 @@ class TextChunk:
     chunk_id: str
     text: str
     metadata: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class StructuredDocument:
+    """Структурированное представление документа с секциями."""
+
+    source: str
+    text: str
+    fields: dict[str, str]
+    sections: list[tuple[str, str]]
 
 
 def load_documents(data_dir: str) -> list[SourceDocument]:
@@ -71,32 +87,163 @@ def _create_text_splitter() -> RecursiveCharacterTextSplitter:
     )
 
 
+def _normalize_value(value: str) -> str:
+    """Нормализует текстовое значение поля."""
+    normalized = " ".join(value.strip().split())
+    if not normalized or normalized == MISSING_DATA_MARKER:
+        return ""
+    return normalized
+
+
+def _slugify(value: str) -> str:
+    """Преобразует строку в безопасный идентификатор для chunk-id."""
+    lowered = value.strip().lower()
+    lowered = NON_ID_CHARS_PATTERN.sub("_", lowered)
+    lowered = lowered.strip("_")
+    return lowered or "section"
+
+
+def _extract_fields(text: str) -> dict[str, str]:
+    """Извлекает поля формата `FIELD: value`."""
+    fields: dict[str, str] = {}
+    for line in text.splitlines():
+        match = HEADER_LINE_PATTERN.match(line.strip())
+        if not match:
+            continue
+        key = match.group(1).strip().upper()
+        value = _normalize_value(match.group(2))
+        fields[key] = value
+    return fields
+
+
+def _split_sections(text: str) -> list[tuple[str, str]]:
+    """Разбивает документ на именованные секции по верхнеуровневым заголовкам."""
+    sections: list[tuple[str, str]] = []
+    current_header = "OVERVIEW"
+    current_lines: list[str] = []
+
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if line and ":" not in line and SECTION_HEADER_PATTERN.fullmatch(line):
+            body = "\n".join(current_lines).strip()
+            if body:
+                sections.append((current_header, body))
+            current_header = line
+            current_lines = []
+            continue
+
+        current_lines.append(raw_line)
+
+    tail = "\n".join(current_lines).strip()
+    if tail:
+        sections.append((current_header, tail))
+
+    return sections
+
+
+def _extract_list_from_section(sections: list[tuple[str, str]], section_name: str) -> str:
+    """Извлекает элементы списочной секции и возвращает их строкой через запятую."""
+    for header, body in sections:
+        if header != section_name:
+            continue
+        values: list[str] = []
+        for line in body.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("- "):
+                normalized = _normalize_value(stripped[2:])
+            else:
+                normalized = _normalize_value(stripped)
+            if normalized:
+                values.append(normalized)
+        return ", ".join(values)
+    return ""
+
+
+def _parse_structured_document(document: SourceDocument) -> StructuredDocument:
+    """Строит структурированное представление документа для секционного чанкования."""
+    fields = _extract_fields(document.text)
+    sections = _split_sections(document.text)
+    return StructuredDocument(source=document.source, text=document.text, fields=fields, sections=sections)
+
+
+def _build_chunk_text(structured: StructuredDocument, section: str, section_part: str) -> str:
+    """Собирает чанк с кратким контекстом карточки и текущей секции."""
+    lead_lines = [
+        f"DOCUMENT: {structured.fields.get('DOCUMENT', '')}",
+        f"DOC_ID: {structured.fields.get('DOC_ID', '')}",
+        f"PRODUCT: {structured.fields.get('PRODUCT', '')}",
+        f"BRAND: {structured.fields.get('BRAND', '')}",
+        f"CATEGORY: {structured.fields.get('CATEGORY', '')}",
+        f"SECTION: {section}",
+    ]
+    lead = "\n".join(line for line in lead_lines if not line.endswith(": "))
+    return f"{lead}\n\n{section_part.strip()}".strip()
+
+
+def _build_chunk_metadata(
+    structured: StructuredDocument,
+    section: str,
+    content_hash: str,
+    section_index: int,
+    chunk_index: int,
+) -> dict[str, Any]:
+    """Формирует расширенную metadata для Chroma."""
+    fields = structured.fields
+    return {
+        "source": structured.source,
+        "chunk_id": chunk_index,
+        "content_hash": content_hash,
+        "doc_id": fields.get("DOC_ID", ""),
+        "document": fields.get("DOCUMENT", ""),
+        "product": fields.get("PRODUCT", ""),
+        "brand": fields.get("BRAND", ""),
+        "category": fields.get("CATEGORY", ""),
+        "model": fields.get("MODEL", ""),
+        "manufacturer": fields.get("MANUFACTURER", ""),
+        "country": fields.get("COUNTRY", ""),
+        "section": section,
+        "section_index": section_index,
+        "articles": _extract_list_from_section(structured.sections, "ARTICLES"),
+    }
+
+
 def chunk_documents(documents: list[SourceDocument]) -> list[TextChunk]:
-    """Разбивает документы на чанки и генерирует стабильные идентификаторы."""
+    """Разбивает документы на секционные чанки и генерирует стабильные идентификаторы."""
     splitter = _create_text_splitter()
     chunks: list[TextChunk] = []
 
     for document in documents:
-        parts = splitter.split_text(document.text)
+        structured = _parse_structured_document(document)
         seen_hashes: dict[str, int] = {}
+        global_index = 0
+        sections = structured.sections or [("OVERVIEW", structured.text)]
 
-        for index, part in enumerate(parts):
-            content_hash = hashlib.sha256(part.encode("utf-8")).hexdigest()
-            occurrence = seen_hashes.get(content_hash, 0)
-            seen_hashes[content_hash] = occurrence + 1
-            stable_chunk_id = f"{document.source}:{content_hash[:16]}:{occurrence}"
+        for section_index, (section_name, section_body) in enumerate(sections):
+            parts = splitter.split_text(section_body)
+            section_slug = _slugify(section_name)
 
-            chunks.append(
-                TextChunk(
-                    chunk_id=stable_chunk_id,
-                    text=part,
-                    metadata={
-                        "source": document.source,
-                        "chunk_id": index,
-                        "content_hash": content_hash,
-                    },
+            for part in parts:
+                chunk_text = _build_chunk_text(structured, section_name, part)
+                content_hash = hashlib.sha256(chunk_text.encode("utf-8")).hexdigest()
+                dedupe_key = f"{section_slug}:{content_hash}"
+                occurrence = seen_hashes.get(dedupe_key, 0)
+                seen_hashes[dedupe_key] = occurrence + 1
+                stable_chunk_id = f"{document.source}:{section_slug}:{content_hash[:16]}:{occurrence}"
+
+                chunks.append(
+                    TextChunk(
+                        chunk_id=stable_chunk_id,
+                        text=chunk_text,
+                        metadata=_build_chunk_metadata(
+                            structured=structured,
+                            section=section_name,
+                            content_hash=content_hash,
+                            section_index=section_index,
+                            chunk_index=global_index,
+                        ),
+                    )
                 )
-            )
+                global_index += 1
 
     logger.info("Prepared %d chunks", len(chunks))
     return chunks

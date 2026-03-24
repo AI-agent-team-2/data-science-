@@ -364,9 +364,15 @@ def _format_rag_context(items: list[dict[str, Any]]) -> str:
     for index, item in enumerate(items[:MAX_RAG_CONTEXT_ITEMS], start=1):
         metadata = item.get("metadata") or {}
         source = str(metadata.get("source", "unknown"))
+        section = str(metadata.get("section", "")).strip()
+        doc_id = str(metadata.get("doc_id", "")).strip()
+        product = str(metadata.get("product", "")).strip()
         score = float(item.get("score", 0.0) or 0.0)
         text = str(item.get("text", "")).strip().replace("\n", " ")
-        lines.append(f"[RAG {index}] source={source} score={score:.3f} text={text[:800]}")
+        lines.append(
+            f"[RAG {index}] source={source} section={section} doc_id={doc_id} "
+            f"product={product} score={score:.3f} text={text[:800]}"
+        )
 
     return "\n".join(lines).strip()
 
