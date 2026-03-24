@@ -43,7 +43,7 @@ class SearchResult(TypedDict):
 
 @dataclass(frozen=True)
 class CatalogItem:
-    """Элемент локального каталога с предрасчитанными полями для ранжирования."""
+    """Элемент локального каталога с предрассчитанными полями для ранжирования."""
 
     name: str
     brand: str
@@ -93,7 +93,7 @@ def _canonical_sku(value: str) -> str:
 
 def _build_title(doc_name: str, product: str, product_type: str, document: str) -> str:
     """Выбирает наиболее информативный заголовок для карточки товара."""
-    for candidate in (document, product, product_type):
+    for candidate in (product, product_type, document):
         if candidate:
             return candidate
     return doc_name
@@ -104,49 +104,54 @@ def _load_catalog() -> list[CatalogItem]:
     """Загружает локальный каталог из `data/knowledge_base` и кеширует результат."""
     root = Path(__file__).resolve().parents[2]
     kb_root = root / "data" / "knowledge_base"
-    source_dirs: tuple[Path, Path] = (kb_root / "tp", kb_root / "cat")
     items: list[CatalogItem] = []
+    if not kb_root.exists():
+        logger.warning("Каталог базы знаний не найден: %s", kb_root)
+        return items
 
-    for source_dir in source_dirs:
-        if not source_dir.exists():
-            logger.warning("Catalog source directory does not exist: %s", source_dir)
+    source_paths = sorted(kb_root.glob("*.txt"))
+
+    for path in source_paths:
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            logger.exception("Не удалось прочитать файл каталога: %s", path)
             continue
 
-        for path in sorted(source_dir.glob("*.txt")):
-            try:
-                text = path.read_text(encoding="utf-8", errors="ignore")
-            except OSError:
-                logger.exception("Failed to read catalog file: %s", path)
-                continue
+        brand = _extract_field(text, "BRAND")
+        product = _extract_field(text, "PRODUCT")
+        category = _extract_field(text, "CATEGORY")
+        product_type = _extract_field(text, "PRODUCT TYPE")
+        document = _extract_field(text, "DOCUMENT")
+        title = _build_title(path.stem, product, product_type, document)
+        skus = _extract_skus(text)
 
-            brand = _extract_field(text, "BRAND")
-            product = _extract_field(text, "PRODUCT")
-            product_type = _extract_field(text, "PRODUCT TYPE")
-            document = _extract_field(text, "DOCUMENT")
-            title = _build_title(path.stem, product, product_type, document)
-            skus = _extract_skus(text)
-
-            searchable = _normalize(
-                " ".join(
-                    [title, brand, product, product_type, document, " ".join(skus), text[:MAX_SEARCH_DOC_LENGTH]]
-                )
+        searchable = _normalize(
+            " ".join(
+                [title, brand, category, product, product_type, document, " ".join(skus), text[:MAX_SEARCH_DOC_LENGTH]]
             )
-            item = CatalogItem(
-                name=title,
-                brand=brand,
-                category=product or product_type,
-                sku_list=skus,
-                source=str(path.relative_to(root)).replace("\\", "/"),
-                searchable=searchable,
-                tokens=_tokenize(searchable),
-            )
-            items.append(item)
+        )
+        item = CatalogItem(
+            name=title,
+            brand=brand,
+            category=category or product_type or product,
+            sku_list=skus,
+            source=str(path.relative_to(root)).replace("\\", "/"),
+            searchable=searchable,
+            tokens=_tokenize(searchable),
+        )
+        items.append(item)
 
-    logger.info("Catalog loaded: %d items", len(items))
+    logger.info("Каталог загружен: %d позиций", len(items))
     return items
 
 
-def _score_item(query: str, query_tokens: set[str], query_skus: set[str], item: CatalogItem) -> float:
+def _score_item(
+    query: str,
+    query_tokens: set[str],
+    query_skus: set[str],
+    item: CatalogItem,
+) -> float:
     """Считает итоговый score документа для текстового ранжирования."""
     score = 0.0
 
@@ -194,7 +199,7 @@ def _build_empty_response(query: str, note: str) -> str:
 
 
 def _rank_sku_matches(catalog: list[CatalogItem], query_tokens: set[str], query_skus: set[str]) -> list[tuple[float, CatalogItem]]:
-    """Ранжирует элементы только по SKU-совпадениям (режим SKU-first)."""
+    """Ранжирует элементы только по SKU-совпадениям (режим `sku_first`)."""
     ranked: list[tuple[float, CatalogItem]] = []
     for item in catalog:
         item_skus = {_canonical_sku(sku) for sku in item.sku_list}
@@ -238,14 +243,14 @@ def product_lookup(query: str, limit: int = 5) -> str:
         if not catalog:
             return _build_empty_response(
                 normalized_query,
-                "Каталог не найден. Проверьте data/knowledge_base/tp и data/knowledge_base/cat.",
+                "Каталог не найден. Проверьте данные в data/knowledge_base.",
             )
 
         query_tokens = _tokenize(normalized_query)
         query_skus = {_canonical_sku(sku) for sku in SKU_PATTERN.findall(normalized_query.upper())}
         top_n = _clamp_limit(limit)
 
-        # SKU-first: если пользователь прислал артикул, сначала отдаем точные SKU-совпадения.
+        # Режим sku_first: при запросе с артикулом сначала возвращаем точные SKU-совпадения.
         if query_skus:
             sku_ranked = _rank_sku_matches(catalog, query_tokens, query_skus)
             if sku_ranked:
@@ -272,7 +277,7 @@ def product_lookup(query: str, limit: int = 5) -> str:
             }
         )
     except Exception:
-        logger.exception("Product lookup failed for query: %s", normalized_query)
+        logger.exception("Ошибка product_lookup для запроса: %s", normalized_query)
         return _build_empty_response(
             normalized_query,
             "Внутренняя ошибка поиска. Попробуйте повторить запрос позже.",

@@ -21,15 +21,7 @@ def _to_json(payload: dict[str, Any]) -> str:
 
 @tool
 def rag_search(query: str) -> str:
-    """
-    Выполняет поиск по внутренней базе знаний (RAG).
-
-    Args:
-        query: Текст запроса пользователя.
-
-    Returns:
-        JSON-строку с результатами поиска и служебной заметкой.
-    """
+    """Выполняет поиск по внутренней базе знаний и возвращает JSON-ответ."""
     if not settings.enable_rag:
         return _to_json(
             {
@@ -43,7 +35,7 @@ def rag_search(query: str) -> str:
     try:
         results = retriever.search(query=query)
     except Exception:
-        logger.exception("RAG search failed for query: %s", query)
+        logger.exception("Ошибка RAG-поиска для запроса: %s", query)
         return _to_json(
             {
                 "query": query,

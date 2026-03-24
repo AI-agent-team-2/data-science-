@@ -108,7 +108,7 @@ EMPTY_CONTEXT_RESULT = ContextBuildResult(context_text="", web_urls=[], used_web
 
 
 def run_agent(user_text: str, user_id: str = "unknown") -> str:
-    """Запускает full-pipeline ответа: tool routing -> LLM -> сохранение в историю."""
+    """Запускает полный пайплайн ответа: инструменты -> LLM -> история."""
     session_id = user_id or "unknown"
     query = user_text.strip()
 
@@ -239,7 +239,7 @@ def _context_from_web(query: str, mode: str) -> ContextBuildResult:
 
 
 def _invoke_tool(func: Callable[[dict[str, Any]], Any], payload: dict[str, Any], op_name: str) -> dict[str, Any]:
-    """Вызывает tool с таймаутом и возвращает JSON-object payload."""
+    """Вызывает tool с таймаутом и возвращает JSON-объект."""
     raw = _invoke_with_timeout(func, payload, timeout_sec=TOOL_TIMEOUT_SEC, op_name=op_name)
     return _parse_object_json(raw)
 
@@ -251,10 +251,10 @@ def _invoke_with_timeout(func: Callable[[Any], Any], arg: Any, timeout_sec: int,
         try:
             return future.result(timeout=max(1, timeout_sec))
         except FuturesTimeoutError:
-            logger.warning("%s timed out after %s sec", op_name, timeout_sec)
+            logger.warning("Операция %s превысила таймаут %s сек", op_name, timeout_sec)
             return ""
         except Exception:
-            logger.exception("%s failed", op_name)
+            logger.exception("Операция %s завершилась с ошибкой", op_name)
             return ""
 
 
@@ -280,7 +280,7 @@ def _extract_results(payload: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _should_prefer_web(query: str) -> bool:
-    """Определяет, когда web должен быть первым источником."""
+    """Определяет, когда WEB должен быть первым источником."""
     lowered_query = query.lower()
     words = lowered_query.split()
 
@@ -291,7 +291,7 @@ def _should_prefer_web(query: str) -> bool:
 
 
 def _should_prefer_lookup(query: str) -> bool:
-    """Определяет, когда lookup должен быть первым источником."""
+    """Определяет, когда LOOKUP должен быть первым источником."""
     if SKU_PATTERN.search(query.upper()):
         return True
 
@@ -300,7 +300,7 @@ def _should_prefer_lookup(query: str) -> bool:
 
 
 def enhance_search_query(original_query: str, search_type: str = "general") -> str:
-    """Улучшает формулировку запроса для внешнего web-поиска."""
+    """Улучшает формулировку запроса для внешнего WEB-поиска."""
     lowered_query = original_query.lower()
 
     if any(marker in lowered_query for marker in ("сантехник", "унитаз", "смеситель")):
@@ -336,7 +336,7 @@ def _is_rag_useful(items: list[dict[str, Any]]) -> bool:
 
 
 def _is_web_useful(items: list[dict[str, Any]]) -> bool:
-    """Проверяет, что web-результаты содержат валидные ссылки."""
+    """Проверяет, что WEB-результаты содержат валидные ссылки."""
     for item in items:
         url = str(item.get("url", "")).strip().lower()
         if url.startswith("https://") or url.startswith("http://"):
@@ -345,7 +345,7 @@ def _is_web_useful(items: list[dict[str, Any]]) -> bool:
 
 
 def _is_sanitary_relevant(items: list[dict[str, Any]]) -> bool:
-    """Проверяет, что web-результаты действительно относятся к сантехнике."""
+    """Проверяет, что WEB-результаты действительно относятся к сантехнике."""
     for item in items:
         title = str(item.get("title", "")).lower()
         snippet = str(item.get("snippet", "")).lower()
@@ -364,15 +364,21 @@ def _format_rag_context(items: list[dict[str, Any]]) -> str:
     for index, item in enumerate(items[:MAX_RAG_CONTEXT_ITEMS], start=1):
         metadata = item.get("metadata") or {}
         source = str(metadata.get("source", "unknown"))
+        section = str(metadata.get("section", "")).strip()
+        doc_id = str(metadata.get("doc_id", "")).strip()
+        product = str(metadata.get("product", "")).strip()
         score = float(item.get("score", 0.0) or 0.0)
         text = str(item.get("text", "")).strip().replace("\n", " ")
-        lines.append(f"[RAG {index}] source={source} score={score:.3f} text={text[:800]}")
+        lines.append(
+            f"[RAG {index}] source={source} section={section} doc_id={doc_id} "
+            f"product={product} score={score:.3f} text={text[:800]}"
+        )
 
     return "\n".join(lines).strip()
 
 
 def _format_lookup_context(payload: dict[str, Any], items: list[dict[str, Any]]) -> str:
-    """Форматирует контекстный блок из результатов lookup."""
+    """Форматирует контекстный блок из результатов LOOKUP."""
     mode = str(payload.get("mode", "lookup"))
     lines = [f"[LOOKUP] mode={mode} count={len(items)}"]
 
@@ -394,7 +400,7 @@ def _format_lookup_context(payload: dict[str, Any], items: list[dict[str, Any]])
 
 
 def _format_web_context(items: list[dict[str, Any]]) -> str:
-    """Форматирует контекстный блок из результатов web-поиска."""
+    """Форматирует контекстный блок из результатов WEB-поиска."""
     lines: list[str] = []
 
     for index, item in enumerate(items[:MAX_WEB_CONTEXT_ITEMS], start=1):
@@ -407,7 +413,7 @@ def _format_web_context(items: list[dict[str, Any]]) -> str:
 
 
 def _extract_web_urls(items: list[dict[str, Any]]) -> list[str]:
-    """Собирает уникальные URL из web-результатов."""
+    """Собирает уникальные URL из WEB-результатов."""
     urls: list[str] = []
     seen: set[str] = set()
 
@@ -425,7 +431,7 @@ def _extract_web_urls(items: list[dict[str, Any]]) -> list[str]:
 
 
 def _build_final_prompt(user_text: str, context_block: str) -> str:
-    """Собирает финальный prompt для LLM на основе вопроса и контекста."""
+    """Собирает финальный prompt для LLM по вопросу и контексту."""
     return (
         f"Вопрос пользователя:\n{user_text}\n\n"
         f"Контекст для ответа:\n{context_block}\n\n"
@@ -451,7 +457,7 @@ def _extract_ai_text(message: Any) -> str:
 
 
 def _ensure_sources_block(answer: str, urls: list[str]) -> str:
-    """Добавляет блок `Источники`, если web использовался и блока еще нет."""
+    """Добавляет блок `Источники`, если использовался WEB и блока еще нет."""
     if "Источники:" in answer:
         return answer
 
