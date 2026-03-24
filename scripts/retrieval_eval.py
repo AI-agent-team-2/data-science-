@@ -131,7 +131,14 @@ LOOKUP_TEST_CASES: list[LookupCase] = [
     {"query": "редуктор давления ONDO", "expected_any": ["ondo_pressure_reducer_rag_ready.txt"]},
     {"query": "редуктор давления с манометром ONDO", "expected_any": ["ondo_pressure_reducer_with_gauge_rag_ready.txt"]},
     {"query": "циркуляционный насос ONDO CLM", "expected_any": ["ondo_circulation_pumps_rag_ready.txt"]},
-    {"query": "насосная группа ONDO", "expected_any": ["ondo_pump_group_rag_ready.txt"]},
+    {
+        "query": "насосная группа ONDO",
+        "expected_any": [
+            "ondo_pump_group_rag_ready.txt",
+            "ondo_pump_fast_mount_group_rag_ready.txt",
+            "ondo_pump_mixing_group_rag_ready.txt",
+        ],
+    },
     {"query": "комнатный термостат ONDO", "expected_any": ["ondo_room_thermostat_rag_ready.txt"]},
     {"query": "термоэлектрический привод ONDO", "expected_any": ["ondo_thermoelectric_actuator_rag_ready.txt"]},
     {"query": "контроллер зон ONDO", "expected_any": ["ondo_zone_controller_rag_ready.txt"]},

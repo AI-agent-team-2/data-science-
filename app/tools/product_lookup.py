@@ -93,7 +93,7 @@ def _canonical_sku(value: str) -> str:
 
 def _build_title(doc_name: str, product: str, product_type: str, document: str) -> str:
     """Выбирает наиболее информативный заголовок для карточки товара."""
-    for candidate in (document, product, product_type):
+    for candidate in (product, product_type, document):
         if candidate:
             return candidate
     return doc_name
@@ -104,43 +104,51 @@ def _load_catalog() -> list[CatalogItem]:
     """Загружает локальный каталог из `data/knowledge_base` и кеширует результат."""
     root = Path(__file__).resolve().parents[2]
     kb_root = root / "data" / "knowledge_base"
-    source_dirs: tuple[Path, Path] = (kb_root / "tp", kb_root / "cat")
     items: list[CatalogItem] = []
+    source_paths: list[Path] = []
 
-    for source_dir in source_dirs:
-        if not source_dir.exists():
-            logger.warning("Catalog source directory does not exist: %s", source_dir)
+    # New KB layout: data/knowledge_base/*.txt
+    if kb_root.exists():
+        source_paths.extend(sorted(kb_root.glob("*.txt")))
+    else:
+        logger.warning("Catalog root does not exist: %s", kb_root)
+
+    # Backward compatibility: old layout under tp/cat.
+    for legacy_dir in (kb_root / "tp", kb_root / "cat"):
+        if not legacy_dir.exists():
+            continue
+        source_paths.extend(sorted(legacy_dir.glob("*.txt")))
+
+    for path in source_paths:
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            logger.exception("Failed to read catalog file: %s", path)
             continue
 
-        for path in sorted(source_dir.glob("*.txt")):
-            try:
-                text = path.read_text(encoding="utf-8", errors="ignore")
-            except OSError:
-                logger.exception("Failed to read catalog file: %s", path)
-                continue
+        brand = _extract_field(text, "BRAND")
+        product = _extract_field(text, "PRODUCT")
+        category = _extract_field(text, "CATEGORY")
+        product_type = _extract_field(text, "PRODUCT TYPE")
+        document = _extract_field(text, "DOCUMENT")
+        title = _build_title(path.stem, product, product_type, document)
+        skus = _extract_skus(text)
 
-            brand = _extract_field(text, "BRAND")
-            product = _extract_field(text, "PRODUCT")
-            product_type = _extract_field(text, "PRODUCT TYPE")
-            document = _extract_field(text, "DOCUMENT")
-            title = _build_title(path.stem, product, product_type, document)
-            skus = _extract_skus(text)
-
-            searchable = _normalize(
-                " ".join(
-                    [title, brand, product, product_type, document, " ".join(skus), text[:MAX_SEARCH_DOC_LENGTH]]
-                )
+        searchable = _normalize(
+            " ".join(
+                [title, brand, category, product, product_type, document, " ".join(skus), text[:MAX_SEARCH_DOC_LENGTH]]
             )
-            item = CatalogItem(
-                name=title,
-                brand=brand,
-                category=product or product_type,
-                sku_list=skus,
-                source=str(path.relative_to(root)).replace("\\", "/"),
-                searchable=searchable,
-                tokens=_tokenize(searchable),
-            )
-            items.append(item)
+        )
+        item = CatalogItem(
+            name=title,
+            brand=brand,
+            category=category or product_type or product,
+            sku_list=skus,
+            source=str(path.relative_to(root)).replace("\\", "/"),
+            searchable=searchable,
+            tokens=_tokenize(searchable),
+        )
+        items.append(item)
 
     logger.info("Catalog loaded: %d items", len(items))
     return items
@@ -238,7 +246,7 @@ def product_lookup(query: str, limit: int = 5) -> str:
         if not catalog:
             return _build_empty_response(
                 normalized_query,
-                "Каталог не найден. Проверьте data/knowledge_base/tp и data/knowledge_base/cat.",
+                "Каталог не найден. Проверьте данные в data/knowledge_base.",
             )
 
         query_tokens = _tokenize(normalized_query)
