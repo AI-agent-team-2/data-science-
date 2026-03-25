@@ -104,9 +104,7 @@ def build_model_invoke_config(
         langfuse_metadata["langfuse_user_id"] = user_id
     if tags:
         langfuse_metadata["langfuse_tags"] = tags
-    if run_id:
-        langfuse_metadata["langfuse_trace_id"] = run_id
-    elif trace_id:
+    if trace_id:
         langfuse_metadata["langfuse_trace_id"] = str(trace_id).strip()
 
     if langfuse_metadata:

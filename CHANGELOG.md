@@ -2,6 +2,17 @@
 
 Формат файла основан на принципах [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/).
 
+## [2.0.5] - 2026-03-25
+
+### Исправлено
+- `app/observability/langfuse_client.py` адаптирован под Langfuse v3 API (`start_as_current_observation`, `trace_context`).
+- Устранена несовместимость legacy `client.trace(...)`, из-за которой root trace `run_agent` не создавался.
+- Восстановлена корректная parent-child иерархия между manual orchestration tracing и callback observations модели.
+
+### Изменено
+- Сохранен публичный интерфейс wrapper: `create_trace`, `create_span`, `end_observation`, `capture_error`, `flush_if_available`.
+- В `run_agent` используется `trace_id` в формате `uuid4().hex` для корректной привязки в Langfuse v3.
+
 ## [2.0.4] - 2026-03-25
 
 ### Исправлено
