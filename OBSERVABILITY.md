@@ -15,6 +15,7 @@ Observability в проекте помогает:
 1. Manual tracing в `app/run_agent.py`:
    - trace `run_agent` на каждый входящий запрос;
    - orchestration spans для ключевых этапов пайплайна.
+   - реализация использует Langfuse v3 API через `start_as_current_observation`.
 2. Callback-интеграция LangChain в `app/graph.py`:
    - `langfuse.langchain.CallbackHandler` для автоматического наблюдения вызовов модели.
    - `config.run_id` привязывается к `trace.id` root trace `run_agent`, чтобы model observation не создавал отдельный root trace.
@@ -26,7 +27,7 @@ Observability в проекте помогает:
 ### Trace
 
 - `run_agent`
-  - `trace_id` генерируется в `run_agent` как UUID и используется для привязки model invoke
+  - `trace_id` генерируется в `run_agent` в формате `uuid4().hex` (32 hex) и используется для привязки model invoke
   - `session_id = hash_user_id(user_id)`
   - безопасные metadata: `model`, `provider`, `source_order`, `enable_*` флаги
 
@@ -121,4 +122,4 @@ LANGFUSE_ENABLED=false
 4. Таймауты в инструментах:
    - проверьте сетевой доступ для web-поиска и время ответа внешних API.
 5. Model observation появляется отдельным root trace:
-   - проверьте, что в `build_model_invoke_config` передается `run_id`, равный `trace.id` из `run_agent`.
+   - проверьте, что в `build_model_invoke_config` передаются `run_id` и `langfuse_trace_id` из `run_agent`.
