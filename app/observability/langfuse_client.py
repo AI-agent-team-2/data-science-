@@ -96,6 +96,7 @@ def get_langchain_callback_handler(
 
         _callback_handler = LangfuseCallbackHandler()
         _callback_init_error = None
+        logger.debug("Langfuse CallbackHandler успешно инициализирован.")
         return _callback_handler
     except Exception as exc:
         _callback_handler = None

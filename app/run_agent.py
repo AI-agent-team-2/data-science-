@@ -225,6 +225,11 @@ def run_agent(user_text: str, user_id: str = "unknown") -> str:
             "enable_product_lookup": settings.enable_product_lookup,
         },
     )
+    trace_id = str(getattr(trace, "id", "") or "")
+    if trace_id:
+        logger.debug("Создан root trace run_agent: %s", trace_id)
+    else:
+        logger.debug("Root trace run_agent не создан; используется no-op observability")
 
     assistant_text = ""
     with bind_observability_context(trace=trace, parent=trace):
@@ -287,7 +292,6 @@ def run_agent(user_text: str, user_id: str = "unknown") -> str:
 
             final_prompt = _build_final_prompt(user_text=user_text, context_block=context.context_text)
             model_input = [SystemMessage(content=SYSTEM_PROMPT), *history_messages, HumanMessage(content=final_prompt)]
-            trace_id = str(getattr(trace, "id", "") or "")
             model_invoke_config = build_model_invoke_config(
                 trace_id=trace_id or None,
                 session_id=hashed_user,
@@ -300,6 +304,11 @@ def run_agent(user_text: str, user_id: str = "unknown") -> str:
                 },
                 run_name="run_agent_model_invoke",
             )
+            if trace_id and model_invoke_config and model_invoke_config.get("run_id"):
+                logger.debug("Вызов модели привязан к root trace %s", trace_id)
+            elif trace_id:
+                logger.debug("Не удалось передать run_id в model invoke для trace %s", trace_id)
+
             response = _invoke_with_timeout(
                 lambda payload: model.invoke(payload, config=model_invoke_config),
                 model_input,
