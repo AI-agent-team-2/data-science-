@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import logging
-import threading
-from contextlib import contextmanager
 from typing import Any
 
 from app.config import settings
@@ -14,7 +12,6 @@ _langfuse_client: Any | None = None
 _client_init_attempted = False
 _callback_handler_class: Any | None = None
 _callback_init_error: str | None = None
-_thread_ctx = threading.local()
 
 
 class _LangfuseObservationAdapter:
@@ -406,26 +403,42 @@ def create_span(
     Any | None
         Объект span или `None` при ошибке.
     """
-    if parent is None:
-        parent = get_observability_parent() or get_observability_trace()
-    if parent is None:
-        return None
-
     try:
-        if isinstance(parent, _LangfuseObservationAdapter):
-            return parent.span(
+        if parent is not None:
+            if isinstance(parent, _LangfuseObservationAdapter):
+                return parent.span(
+                    name=name,
+                    input=input_payload,
+                    metadata=metadata or {},
+                )
+
+            return _safe_call(
+                parent,
+                "span",
                 name=name,
-                input=input_payload,
-                metadata=metadata or {},
+                input=sanitize_payload(input_payload),
+                metadata=sanitize_payload(metadata or {}),
             )
 
-        return _safe_call(
-            parent,
-            "span",
+        client = get_langfuse_client()
+        if client is None:
+            return None
+
+        current_trace_id = _safe_call(client, "get_current_trace_id")
+        current_observation_id = _safe_call(client, "get_current_observation_id")
+        if not current_trace_id:
+            return None
+
+        adapter = _LangfuseObservationAdapter(
+            client=client,
             name=name,
-            input=sanitize_payload(input_payload),
-            metadata=sanitize_payload(metadata or {}),
+            trace_id=str(current_trace_id),
+            parent_span_id=str(current_observation_id) if current_observation_id else None,
+            input_payload=input_payload,
+            metadata=metadata,
+            as_type="span",
         )
+        return adapter.start()
     except Exception:
         logger.exception("Не удалось создать Langfuse span: %s", name)
         return None
@@ -499,31 +512,3 @@ def flush_if_available() -> None:
         _safe_call(client, "flush")
     except Exception:
         logger.exception("Не удалось выполнить Langfuse.flush().")
-
-
-def set_observability_context(trace: Any | None = None, parent: Any | None = None) -> None:
-    """Сохраняет текущий trace и родительский span в thread-local контексте."""
-    _thread_ctx.trace = trace
-    _thread_ctx.parent = parent
-
-
-def get_observability_trace() -> Any | None:
-    """Возвращает текущий trace из thread-local контекста."""
-    return getattr(_thread_ctx, "trace", None)
-
-
-def get_observability_parent() -> Any | None:
-    """Возвращает текущий родительский span из thread-local контекста."""
-    return getattr(_thread_ctx, "parent", None)
-
-
-@contextmanager
-def bind_observability_context(trace: Any | None = None, parent: Any | None = None):
-    """Временно привязывает trace/span к текущему потоку выполнения."""
-    prev_trace = get_observability_trace()
-    prev_parent = get_observability_parent()
-    set_observability_context(trace=trace, parent=parent)
-    try:
-        yield
-    finally:
-        set_observability_context(trace=prev_trace, parent=prev_parent)

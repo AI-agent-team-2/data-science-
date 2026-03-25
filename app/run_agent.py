@@ -15,14 +15,11 @@ from app.config import settings
 from app.graph import build_model_invoke_config, model
 from app.history_store import load_messages, save_turn
 from app.observability import (
-    bind_observability_context,
     capture_error,
     create_span,
     create_trace,
     end_observation,
     flush_if_available,
-    get_observability_parent,
-    get_observability_trace,
     hash_user_id,
     sanitize_text,
 )
@@ -238,132 +235,131 @@ def run_agent(user_text: str, user_id: str = "unknown") -> str:
     root_parent = trace
     assistant_text = ""
     should_save_turn = False
-    with bind_observability_context(trace=trace, parent=trace):
+    try:
+        if _is_identity_or_capability_query(query):
+            assistant_text = _assistant_scope_response()
+            should_save_turn = True
+            return assistant_text
+
+        if _is_smalltalk(query):
+            assistant_text = _smalltalk_response()
+            should_save_turn = True
+            return assistant_text
+
+        if _is_noise_query(query) or _is_offtopic_or_rude_query(query):
+            assistant_text = _domain_redirect_response()
+            should_save_turn = True
+            return assistant_text
+
+        history_span = create_span(
+            parent=trace,
+            name="history_load",
+            input_payload={"session_id": hashed_user},
+        )
         try:
-            if _is_identity_or_capability_query(query):
-                assistant_text = _assistant_scope_response()
-                should_save_turn = True
-                return assistant_text
+            history_messages = _to_langchain_messages(load_messages(session_id=session_id))
+            end_observation(history_span, output_payload={"history_messages": len(history_messages)})
+        except Exception as exc:
+            capture_error(history_span, exc, metadata={"stage": "history_load"})
+            end_observation(history_span, output_payload={"history_messages": 0, "status": "error"})
+            raise
 
-            if _is_smalltalk(query):
-                assistant_text = _smalltalk_response()
-                should_save_turn = True
-                return assistant_text
-
-            if _is_noise_query(query) or _is_offtopic_or_rude_query(query):
-                assistant_text = _domain_redirect_response()
-                should_save_turn = True
-                return assistant_text
-
-            history_span = create_span(
-                parent=get_observability_parent() or trace,
-                name="history_load",
-                input_payload={"session_id": hashed_user},
-            )
-            try:
-                history_messages = _to_langchain_messages(load_messages(session_id=session_id))
-                end_observation(history_span, output_payload={"history_messages": len(history_messages)})
-            except Exception as exc:
-                capture_error(history_span, exc, metadata={"stage": "history_load"})
-                end_observation(history_span, output_payload={"history_messages": 0, "status": "error"})
-                raise
-
-            context_span = create_span(
-                parent=get_observability_parent() or trace,
-                name="context_build",
-                input_payload={
-                    "source_order": source_order,
-                    "query": sanitize_text(query),
-                },
-            )
-            try:
-                context = _build_context(
-                    query,
-                    source_order=source_order,
-                    trace=trace,
-                    parent=root_parent,
-                )
-                end_observation(
-                    context_span,
-                    output_payload={
-                        "used_web": context.used_web,
-                        "web_urls_count": len(context.web_urls),
-                        "has_context": bool(context.context_text),
-                    },
-                )
-            except Exception as exc:
-                capture_error(context_span, exc, metadata={"stage": "context_build"})
-                end_observation(context_span, output_payload={"status": "error"})
-                raise
-
-            if not context.context_text:
-                assistant_text = _clarifying_question()
-                should_save_turn = True
-                return assistant_text
-
-            final_prompt = _build_final_prompt(user_text=user_text, context_block=context.context_text)
-            model_input = [SystemMessage(content=SYSTEM_PROMPT), *history_messages, HumanMessage(content=final_prompt)]
-            parent_observation_id = str(getattr(trace, "id", "") or "")
-            model_invoke_config = build_model_invoke_config(
-                trace_id=effective_trace_id or None,
-                session_id=hashed_user,
-                user_id=hashed_user,
-                parent_observation_id=parent_observation_id or None,
-                tags=["telegram", "san-bot", "run_agent"],
-                metadata={
-                    "provider": settings.resolved_model_provider,
-                    "model": settings.resolved_model_name,
-                    "source_order": source_order,
-                },
-                run_name="run_agent_model_invoke",
-            )
-            invoke_meta = (model_invoke_config or {}).get("metadata") or {}
-            if invoke_meta.get("langfuse_trace_id") and invoke_meta.get("langfuse_parent_observation_id"):
-                logger.debug("Вызов модели привязан к root trace %s через metadata", trace_id)
-            else:
-                logger.debug("Не удалось передать metadata linkage в model invoke для trace %s", trace_id)
-
-            response = _invoke_with_timeout(
-                lambda payload: model.invoke(payload, config=model_invoke_config),
-                model_input,
-                timeout_sec=MODEL_TIMEOUT_SEC,
-                op_name="model_invoke",
+        context_span = create_span(
+            parent=trace,
+            name="context_build",
+            input_payload={
+                "source_order": source_order,
+                "query": sanitize_text(query),
+            },
+        )
+        try:
+            context = _build_context(
+                query,
+                source_order=source_order,
                 trace=trace,
                 parent=root_parent,
             )
+            end_observation(
+                context_span,
+                output_payload={
+                    "used_web": context.used_web,
+                    "web_urls_count": len(context.web_urls),
+                    "has_context": bool(context.context_text),
+                },
+            )
+        except Exception as exc:
+            capture_error(context_span, exc, metadata={"stage": "context_build"})
+            end_observation(context_span, output_payload={"status": "error"})
+            raise
 
-            assistant_text = _extract_ai_text(response)
-            if context.used_web:
-                assistant_text = _ensure_sources_block(assistant_text, context.web_urls)
-
+        if not context.context_text:
+            assistant_text = _clarifying_question()
             should_save_turn = True
             return assistant_text
-        except Exception as exc:
-            capture_error(
-                trace,
-                exc,
-                metadata={
-                    "stage": "run_agent",
-                    "query": sanitize_text(query),
-                    "hashed_user_id": hashed_user,
-                },
+
+        final_prompt = _build_final_prompt(user_text=user_text, context_block=context.context_text)
+        model_input = [SystemMessage(content=SYSTEM_PROMPT), *history_messages, HumanMessage(content=final_prompt)]
+        parent_observation_id = str(getattr(trace, "id", "") or "")
+        model_invoke_config = build_model_invoke_config(
+            trace_id=effective_trace_id or None,
+            session_id=hashed_user,
+            user_id=hashed_user,
+            parent_observation_id=parent_observation_id or None,
+            tags=["telegram", "san-bot", "run_agent"],
+            metadata={
+                "provider": settings.resolved_model_provider,
+                "model": settings.resolved_model_name,
+                "source_order": source_order,
+            },
+            run_name="run_agent_model_invoke",
+        )
+        invoke_meta = (model_invoke_config or {}).get("metadata") or {}
+        if invoke_meta.get("langfuse_trace_id") and invoke_meta.get("langfuse_parent_observation_id"):
+            logger.debug("Вызов модели привязан к root trace %s через metadata", trace_id)
+        else:
+            logger.debug("Не удалось передать metadata linkage в model invoke для trace %s", trace_id)
+
+        response = _invoke_with_timeout(
+            lambda payload: model.invoke(payload, config=model_invoke_config),
+            model_input,
+            timeout_sec=MODEL_TIMEOUT_SEC,
+            op_name="model_invoke",
+            trace=trace,
+            parent=root_parent,
+        )
+
+        assistant_text = _extract_ai_text(response)
+        if context.used_web:
+            assistant_text = _ensure_sources_block(assistant_text, context.web_urls)
+
+        should_save_turn = True
+        return assistant_text
+    except Exception as exc:
+        capture_error(
+            trace,
+            exc,
+            metadata={
+                "stage": "run_agent",
+                "query": sanitize_text(query),
+                "hashed_user_id": hashed_user,
+            },
+        )
+        raise
+    finally:
+        if should_save_turn:
+            _save_turn_with_observability(
+                session_id=session_id,
+                user_text=user_text,
+                assistant_text=assistant_text,
             )
-            raise
-        finally:
-            if should_save_turn:
-                _save_turn_with_observability(
-                    session_id=session_id,
-                    user_text=user_text,
-                    assistant_text=assistant_text,
-                )
-            end_observation(
-                trace,
-                output_payload={
-                    "assistant_preview": sanitize_text(assistant_text),
-                    "assistant_len": len(assistant_text),
-                },
-            )
-            flush_if_available()
+        end_observation(
+            trace,
+            output_payload={
+                "assistant_preview": sanitize_text(assistant_text),
+                "assistant_len": len(assistant_text),
+            },
+        )
+        flush_if_available()
 
 
 def _to_langchain_messages(history: list[tuple[str, str]]) -> list[BaseMessage]:
@@ -397,7 +393,7 @@ def _save_turn_with_observability(
         Ответ ассистента.
     """
     span = create_span(
-        parent=get_observability_parent() or get_observability_trace(),
+        parent=None,
         name="history_save",
         input_payload={"session_id": hash_user_id(session_id)},
     )
@@ -623,8 +619,7 @@ def _invoke_with_timeout(
     Any
         Результат `func(arg)` либо пустая строка при ошибке/таймауте.
     """
-    active_trace = trace or get_observability_trace()
-    active_parent = parent or get_observability_parent() or active_trace
+    active_parent = parent or trace
     op_span = create_span(
         parent=active_parent,
         name=op_name,
@@ -635,8 +630,7 @@ def _invoke_with_timeout(
     )
 
     def _runner() -> Any:
-        with bind_observability_context(trace=active_trace, parent=op_span or active_parent):
-            return func(arg)
+        return func(arg)
 
     with ThreadPoolExecutor(max_workers=1) as executor:
         # Переносим contextvars в worker-поток, чтобы callback сохранял parent-child связь trace.

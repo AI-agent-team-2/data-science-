@@ -1,5 +1,4 @@
 from app.observability.langfuse_client import (
-    bind_observability_context,
     capture_error,
     create_span,
     create_trace,
@@ -7,13 +6,10 @@ from app.observability.langfuse_client import (
     flush_if_available,
     get_callback_init_error,
     get_langchain_callback_handler,
-    get_observability_parent,
-    get_observability_trace,
 )
 from app.observability.sanitize import hash_user_id, sanitize_payload, sanitize_text
 
 __all__ = [
-    "bind_observability_context",
     "capture_error",
     "create_span",
     "create_trace",
@@ -21,8 +17,6 @@ __all__ = [
     "flush_if_available",
     "get_callback_init_error",
     "get_langchain_callback_handler",
-    "get_observability_parent",
-    "get_observability_trace",
     "hash_user_id",
     "sanitize_payload",
     "sanitize_text",

@@ -15,8 +15,6 @@ from app.observability import (
     capture_error,
     create_span,
     end_observation,
-    get_observability_parent,
-    get_observability_trace,
     sanitize_text,
 )
 
@@ -227,7 +225,7 @@ def web_search(query: str, max_results: int = 5) -> str:
         JSON-ответ с результатами внешнего поиска.
     """
     span = create_span(
-        parent=get_observability_parent() or get_observability_trace(),
+        parent=None,
         name="web_search_exec",
         input_payload={"query": sanitize_text(query), "max_results": max_results},
     )
