@@ -6,6 +6,7 @@ import re
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass
 from typing import Any, Callable, Literal
+from uuid import uuid4
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 
@@ -208,10 +209,12 @@ def run_agent(user_text: str, user_id: str = "unknown") -> str:
     session_id = user_id or "unknown"
     query = user_text.strip()
     hashed_user = hash_user_id(session_id)
+    trace_id = str(uuid4())
     source_order = _resolve_source_order(query)
     trace = create_trace(
         name="run_agent",
         session_id=hashed_user,
+        trace_id=trace_id,
         input_payload={
             "query": sanitize_text(query),
             "hashed_user_id": hashed_user,
@@ -225,8 +228,7 @@ def run_agent(user_text: str, user_id: str = "unknown") -> str:
             "enable_product_lookup": settings.enable_product_lookup,
         },
     )
-    trace_id = str(getattr(trace, "id", "") or "")
-    if trace_id:
+    if trace is not None:
         logger.debug("Создан root trace run_agent: %s", trace_id)
     else:
         logger.debug("Root trace run_agent не создан; используется no-op observability")
@@ -293,7 +295,7 @@ def run_agent(user_text: str, user_id: str = "unknown") -> str:
             final_prompt = _build_final_prompt(user_text=user_text, context_block=context.context_text)
             model_input = [SystemMessage(content=SYSTEM_PROMPT), *history_messages, HumanMessage(content=final_prompt)]
             model_invoke_config = build_model_invoke_config(
-                trace_id=trace_id or None,
+                trace_id=trace_id,
                 session_id=hashed_user,
                 user_id=hashed_user,
                 tags=["telegram", "san-bot", "run_agent"],
@@ -304,9 +306,9 @@ def run_agent(user_text: str, user_id: str = "unknown") -> str:
                 },
                 run_name="run_agent_model_invoke",
             )
-            if trace_id and model_invoke_config and model_invoke_config.get("run_id"):
+            if model_invoke_config and model_invoke_config.get("run_id"):
                 logger.debug("Вызов модели привязан к root trace %s", trace_id)
-            elif trace_id:
+            else:
                 logger.debug("Не удалось передать run_id в model invoke для trace %s", trace_id)
 
             response = _invoke_with_timeout(

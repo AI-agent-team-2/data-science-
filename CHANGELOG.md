@@ -7,6 +7,7 @@
 ### Исправлено
 - Починена иерархия Langfuse trace: `model_invoke` больше не должен создавать отдельный root trace при наличии `run_agent`.
 - В `model.invoke` добавлена привязка `config.run_id` к `trace.id` root trace.
+- В `run_agent` добавлена явная генерация UUID trace_id для стабильной parent-child привязки.
 
 ### Изменено
 - Добавлена диагностическая debug-информация по созданию root trace и передаче trace context в вызов модели.

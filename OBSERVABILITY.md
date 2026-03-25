@@ -26,6 +26,7 @@ Observability в проекте помогает:
 ### Trace
 
 - `run_agent`
+  - `trace_id` генерируется в `run_agent` как UUID и используется для привязки model invoke
   - `session_id = hash_user_id(user_id)`
   - безопасные metadata: `model`, `provider`, `source_order`, `enable_*` флаги
 
