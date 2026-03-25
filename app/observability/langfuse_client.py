@@ -132,6 +132,7 @@ def _safe_call(obj: Any, method_name: str, **kwargs: Any) -> Any | None:
 def create_trace(
     name: str,
     session_id: str,
+    trace_id: str | None = None,
     input_payload: Any | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> Any | None:
@@ -148,13 +149,19 @@ def create_trace(
         return None
 
     try:
+        trace_kwargs: dict[str, Any] = {
+            "name": name,
+            "session_id": session_id,
+            "input": sanitize_payload(input_payload),
+            "metadata": sanitize_payload(metadata or {}),
+        }
+        if trace_id:
+            trace_kwargs["id"] = trace_id
+
         return _safe_call(
             client,
             "trace",
-            name=name,
-            session_id=session_id,
-            input=sanitize_payload(input_payload),
-            metadata=sanitize_payload(metadata or {}),
+            **trace_kwargs,
         )
     except Exception:
         logger.exception("Не удалось создать Langfuse trace: %s", name)
