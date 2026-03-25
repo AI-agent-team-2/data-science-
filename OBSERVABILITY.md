@@ -18,7 +18,7 @@ Observability в проекте помогает:
    - реализация использует Langfuse v3 API через `start_as_current_observation`.
 2. Callback-интеграция LangChain в `app/graph.py`:
    - `langfuse.langchain.CallbackHandler` для автоматического наблюдения вызовов модели.
-   - `config.run_id` привязывается к `trace.id` root trace `run_agent`, чтобы model observation не создавал отдельный root trace.
+   - в metadata передаются `langfuse_trace_id` и `langfuse_parent_observation_id`, чтобы model observation вкладывался в root trace `run_agent`.
 
 Точка инициализации клиента и callback handler: `app/observability/langfuse_client.py`.
 
