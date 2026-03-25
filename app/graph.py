@@ -61,6 +61,7 @@ def build_model_invoke_config(
     trace_id: str | None = None,
     session_id: str | None = None,
     user_id: str | None = None,
+    parent_observation_id: str | None = None,
     tags: list[str] | None = None,
     metadata: dict[str, Any] | None = None,
     run_name: str | None = None,
@@ -76,6 +77,8 @@ def build_model_invoke_config(
         Идентификатор сессии для Langfuse.
     user_id : str | None
         Идентификатор пользователя для Langfuse.
+    parent_observation_id : str | None
+        Идентификатор родительского observation для привязки callback.
     tags : list[str] | None
         Теги trace.
     metadata : dict[str, Any] | None
@@ -106,6 +109,8 @@ def build_model_invoke_config(
         langfuse_metadata["langfuse_tags"] = tags
     if trace_id:
         langfuse_metadata["langfuse_trace_id"] = str(trace_id).strip()
+    if parent_observation_id:
+        langfuse_metadata["langfuse_parent_observation_id"] = str(parent_observation_id).strip()
 
     if langfuse_metadata:
         config["metadata"] = langfuse_metadata

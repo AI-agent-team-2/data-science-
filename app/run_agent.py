@@ -294,10 +294,12 @@ def run_agent(user_text: str, user_id: str = "unknown") -> str:
 
             final_prompt = _build_final_prompt(user_text=user_text, context_block=context.context_text)
             model_input = [SystemMessage(content=SYSTEM_PROMPT), *history_messages, HumanMessage(content=final_prompt)]
+            parent_observation_id = str(getattr(trace, "id", "") or "")
             model_invoke_config = build_model_invoke_config(
                 trace_id=trace_id,
                 session_id=hashed_user,
                 user_id=hashed_user,
+                parent_observation_id=parent_observation_id or None,
                 tags=["telegram", "san-bot", "run_agent"],
                 metadata={
                     "provider": settings.resolved_model_provider,
