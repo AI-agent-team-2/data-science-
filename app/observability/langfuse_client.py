@@ -33,7 +33,7 @@ class _LangfuseObservationAdapter:
         client: Any,
         name: str,
         trace_id: str | None = None,
-        parent_observation_id: str | None = None,
+        parent_span_id: str | None = None,
         input_payload: Any | None = None,
         metadata: dict[str, Any] | None = None,
         as_type: str = "span",
@@ -41,8 +41,8 @@ class _LangfuseObservationAdapter:
         self._client = client
         self._name = name
         self._trace_id = str(trace_id).strip() if trace_id else None
-        self._parent_observation_id = (
-            str(parent_observation_id).strip() if parent_observation_id else None
+        self._parent_span_id = (
+            str(parent_span_id).strip() if parent_span_id else None
         )
         self._input_payload = sanitize_payload(input_payload)
         self._metadata = sanitize_payload(metadata or {})
@@ -64,8 +64,8 @@ class _LangfuseObservationAdapter:
         trace_context: dict[str, str] = {}
         if self._trace_id:
             trace_context["trace_id"] = self._trace_id
-        if self._parent_observation_id:
-            trace_context["parent_observation_id"] = self._parent_observation_id
+        if self._parent_span_id:
+            trace_context["parent_span_id"] = self._parent_span_id
 
         kwargs: dict[str, Any] = {
             "name": self._name,
@@ -109,7 +109,7 @@ class _LangfuseObservationAdapter:
             client=self._client,
             name=name,
             trace_id=self._trace_id,
-            parent_observation_id=self.id,
+            parent_span_id=self.id,
             input_payload=input,
             metadata=metadata,
             as_type="span",
@@ -353,7 +353,7 @@ def create_trace(
             client=client,
             name=name,
             trace_id=trace_id,
-            parent_observation_id=None,
+            parent_span_id=None,
             input_payload=input_payload,
             metadata=trace_metadata,
             as_type="span",
