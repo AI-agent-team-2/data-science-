@@ -13,7 +13,8 @@ logger = logging.getLogger(__name__)
 _langfuse_client: Any | None = None
 _client_init_attempted = False
 _callback_init_attempted = False
-_callback_available = True
+_callback_handler: Any | None = None
+_callback_init_error: str | None = None
 _thread_ctx = threading.local()
 
 
@@ -52,127 +53,40 @@ def get_langfuse_client() -> Any | None:
 
 
 def get_langchain_callback_handler(
-    trace_id: str | None = None,
-    session_id: str | None = None,
-    user_id: str | None = None,
+    trace_id: str | None = None,  # kept for API compatibility with caller
+    session_id: str | None = None,  # handled via invoke config metadata
+    user_id: str | None = None,  # handled via invoke config metadata
 ) -> Any | None:
-    """Создает callback handler для LangChain/OpenAI usage metrics."""
-    global _callback_init_attempted, _callback_available
+    """Создает singleton CallbackHandler через современный путь `langfuse.langchain`."""
+    global _callback_handler, _callback_init_attempted, _callback_init_error
     if not _is_enabled():
         return None
-    if _callback_init_attempted and not _callback_available:
+    if _callback_init_attempted:
+        return _callback_handler
+
+    _callback_init_attempted = True
+    # Langfuse client must be initialized first, then CallbackHandler() can reuse env/active client.
+    _ = get_langfuse_client()
+    try:
+        from langfuse.langchain import CallbackHandler as LangfuseCallbackHandler  # type: ignore
+
+        _callback_handler = LangfuseCallbackHandler()
+        _callback_init_error = None
+        return _callback_handler
+    except Exception as exc:
+        _callback_handler = None
+        _callback_init_error = str(exc)
+        logger.error(
+            "Langfuse LangChain CallbackHandler init failed once: %s. "
+            "Check langfuse/langchain version compatibility.",
+            _callback_init_error,
+        )
         return None
 
-    kwargs: dict[str, Any] = {
-        "public_key": settings.langfuse_public_key,
-        "secret_key": settings.langfuse_secret_key,
-        "host": settings.langfuse_host,
-    }
-    if trace_id:
-        kwargs["trace_id"] = trace_id
-    if session_id:
-        kwargs["session_id"] = session_id
-    if user_id:
-        kwargs["user_id"] = user_id
 
-    try:
-        from langfuse.callback import CallbackHandler as LangfuseCallbackHandler  # type: ignore
-        _callback_init_attempted = True
-
-        try:
-            return LangfuseCallbackHandler(**kwargs)
-        except TypeError:
-            kwargs.pop("trace_id", None)
-            kwargs.pop("session_id", None)
-            kwargs.pop("user_id", None)
-            return LangfuseCallbackHandler(**kwargs)
-    except Exception:
-        try:
-            from langfuse.langchain import CallbackHandler as LangfuseCallbackHandler  # type: ignore
-            _callback_init_attempted = True
-
-            try:
-                return LangfuseCallbackHandler(**kwargs)
-            except TypeError:
-                kwargs.pop("trace_id", None)
-                kwargs.pop("session_id", None)
-                kwargs.pop("user_id", None)
-                return LangfuseCallbackHandler(**kwargs)
-        except Exception:
-            _callback_init_attempted = True
-            _callback_available = False
-            logger.warning(
-                "Langfuse callback handler недоступен для текущих версий LangChain/Langfuse. "
-                "Используется ручная отправка generation для model_invoke."
-            )
-            return None
-
-
-def _extract_usage_payload(response: Any) -> dict[str, Any]:
-    usage: dict[str, Any] = {}
-    metadata = getattr(response, "response_metadata", None)
-    usage_metadata = getattr(response, "usage_metadata", None)
-    if isinstance(metadata, dict):
-        token_usage = metadata.get("token_usage")
-        if isinstance(token_usage, dict):
-            usage["input"] = token_usage.get("prompt_tokens")
-            usage["output"] = token_usage.get("completion_tokens")
-            usage["total"] = token_usage.get("total_tokens")
-            usage["cost"] = token_usage.get("cost")
-    if isinstance(usage_metadata, dict):
-        usage["input"] = usage.get("input") or usage_metadata.get("input_tokens")
-        usage["output"] = usage.get("output") or usage_metadata.get("output_tokens")
-        usage["total"] = usage.get("total") or usage_metadata.get("total_tokens")
-    return {k: v for k, v in usage.items() if isinstance(v, (int, float))}
-
-
-def capture_model_generation(
-    parent: Any | None,
-    model_name: str,
-    input_payload: Any,
-    output_payload: Any,
-    response: Any,
-    metadata: dict[str, Any] | None = None,
-) -> None:
-    """Пишет generation для model_invoke (usage/tokens/cost) без callback-зависимости."""
-    client = get_langfuse_client()
-    if client is None:
-        return
-
-    usage = _extract_usage_payload(response)
-    safe_input = sanitize_payload(input_payload)
-    safe_output = sanitize_payload(output_payload)
-    safe_metadata = sanitize_payload(metadata or {})
-    safe_metadata["model"] = sanitize_payload(model_name)
-
-    generation_kwargs: dict[str, Any] = {
-        "name": "model_invoke_generation",
-        "model": sanitize_payload(model_name),
-        "input": safe_input,
-        "output": safe_output,
-        "metadata": safe_metadata,
-    }
-    if "input" in usage:
-        generation_kwargs["usage_details"] = {
-            "input": usage.get("input", 0),
-            "output": usage.get("output", 0),
-            "total": usage.get("total", 0),
-        }
-    if "cost" in usage:
-        generation_kwargs["cost_details"] = {"total": usage["cost"]}
-
-    try:
-        if parent is not None:
-            generated = _safe_call(parent, "generation", **generation_kwargs)
-            if generated is not None:
-                return
-
-        trace_id = str(getattr(parent, "id", "") or "")
-        if trace_id:
-            _safe_call(client, "generation", trace_id=trace_id, **generation_kwargs)
-            return
-    except Exception:
-        logger.exception("Не удалось записать model generation в Langfuse.")
+def get_callback_init_error() -> str | None:
+    """Возвращает текст ошибки инициализации callback handler (если была)."""
+    return _callback_init_error
 
 
 def _safe_call(obj: Any, method_name: str, **kwargs: Any) -> Any | None:
