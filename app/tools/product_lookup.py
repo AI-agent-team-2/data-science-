@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import logging
 import re
 from dataclasses import dataclass
@@ -11,6 +10,7 @@ from typing import Any, Final, TypedDict
 from langchain_core.tools import tool
 
 from app.observability import sanitize_text
+from app.tools.response_utils import empty_results_payload, to_json
 
 logger = logging.getLogger(__name__)
 
@@ -190,14 +190,9 @@ def _serialize_item(item: CatalogItem, score: float) -> SearchResult:
     }
 
 
-def _to_json(payload: dict[str, Any]) -> str:
-    """Сериализует ответ в JSON с единым форматом."""
-    return json.dumps(payload, ensure_ascii=False, indent=2)
-
-
 def _build_empty_response(query: str, note: str) -> str:
     """Формирует типовой пустой ответ для ошибок валидации/данных."""
-    return _to_json({"query": query, "count": 0, "results": [], "note": note})
+    return to_json(empty_results_payload(query=query, note=note))
 
 
 def _rank_sku_matches(
@@ -274,7 +269,7 @@ def product_lookup(query: str, limit: int = 5) -> str:
             if sku_ranked:
                 top_sku_matches = sku_ranked[:top_n]
                 results = [_serialize_item(item, score) for score, item in top_sku_matches]
-                return _to_json(
+                return to_json(
                     {
                         "query": normalized_query,
                         "count": len(results),
@@ -286,7 +281,7 @@ def product_lookup(query: str, limit: int = 5) -> str:
         ranked = _rank_text_matches(catalog, normalized_query, query_tokens, query_skus)
         top_text_matches = ranked[:top_n]
         results = [_serialize_item(item, score) for score, item in top_text_matches]
-        return _to_json(
+        return to_json(
             {
                 "query": normalized_query,
                 "count": len(results),

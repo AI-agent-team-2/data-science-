@@ -12,6 +12,7 @@ from langchain_core.tools import tool
 
 from app.config import settings
 from app.observability import sanitize_text
+from app.tools.response_utils import to_json
 
 logger = logging.getLogger(__name__)
 
@@ -30,11 +31,6 @@ def _get_cache_key(query: str, max_results: int) -> str:
     """Создает стабильный ключ кэша по параметрам поиска."""
     key_source = f"{query}_{max_results}"
     return hashlib.md5(key_source.encode("utf-8")).hexdigest()
-
-
-def _to_json(payload: dict[str, Any]) -> str:
-    """Сериализует объект в JSON с читаемым форматированием."""
-    return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
 def _load_from_cache(key: str) -> dict[str, Any] | None:
@@ -74,7 +70,7 @@ def _save_to_cache(key: str, result: dict[str, Any]) -> None:
     }
 
     try:
-        cache_file.write_text(_to_json(payload), encoding="utf-8")
+        cache_file.write_text(to_json(payload), encoding="utf-8")
     except Exception:
         logger.exception("Не удалось сохранить кэш WEB-поиска в %s", cache_file)
 
@@ -99,7 +95,7 @@ def _normalize_results(query: str, items: list[dict[str, Any]], provider: str) -
             }
         )
 
-    return _to_json(
+    return to_json(
         {
             "query": query,
             "provider": provider,
@@ -112,7 +108,7 @@ def _normalize_results(query: str, items: list[dict[str, Any]], provider: str) -
 
 def _error_object(query: str, provider: str, message: str) -> str:
     """Формирует JSON-ответ с ошибкой в едином формате."""
-    return _to_json(
+    return to_json(
         {
             "query": query,
             "provider": provider,
@@ -228,7 +224,7 @@ def web_search(query: str, max_results: int = 5) -> str:
     cache_key = _get_cache_key(query, normalized_max_results)
     cached_result = _load_from_cache(cache_key)
     if cached_result is not None:
-        return _to_json(cached_result)
+        return to_json(cached_result)
 
     tavily_key = os.getenv("TAVILY_API_KEY", "").strip()
     if tavily_key:
