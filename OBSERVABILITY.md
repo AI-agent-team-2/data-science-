@@ -19,6 +19,7 @@ Observability в проекте помогает:
 2. Callback-интеграция LangChain в `app/graph.py`:
    - `langfuse.langchain.CallbackHandler` для автоматического наблюдения вызовов модели.
    - в metadata передаются `langfuse_trace_id` и `langfuse_parent_observation_id`, чтобы model observation вкладывался в root trace `run_agent`.
+   - callback handler создается на каждый invoke, чтобы не смешивать контекст между запросами.
 
 Точка инициализации клиента и callback handler: `app/observability/langfuse_client.py`.
 
@@ -122,4 +123,4 @@ LANGFUSE_ENABLED=false
 4. Таймауты в инструментах:
    - проверьте сетевой доступ для web-поиска и время ответа внешних API.
 5. Model observation появляется отдельным root trace:
-   - проверьте, что в `build_model_invoke_config` передаются `run_id` и `langfuse_trace_id` из `run_agent`.
+   - проверьте, что в `build_model_invoke_config` передаются `langfuse_trace_id` и `langfuse_parent_observation_id` из `run_agent`.

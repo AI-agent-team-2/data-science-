@@ -2,6 +2,15 @@
 
 Формат файла основан на принципах [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/).
 
+## [2.0.6] - 2026-03-25
+
+### Исправлено
+- Устранен конфликт привязки callback к trace: убрана конкурирующая передача `run_id` в `model.invoke` config.
+- Привязка model observation к `run_agent` выполняется через metadata `langfuse_trace_id` и `langfuse_parent_observation_id`.
+
+### Изменено
+- `CallbackHandler` Langfuse создается на каждый invoke, чтобы исключить межзапросное смешивание контекста.
+
 ## [2.0.5] - 2026-03-25
 
 ### Исправлено

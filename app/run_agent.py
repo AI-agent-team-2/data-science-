@@ -308,10 +308,11 @@ def run_agent(user_text: str, user_id: str = "unknown") -> str:
                 },
                 run_name="run_agent_model_invoke",
             )
-            if model_invoke_config and model_invoke_config.get("run_id"):
-                logger.debug("Вызов модели привязан к root trace %s", trace_id)
+            invoke_meta = (model_invoke_config or {}).get("metadata") or {}
+            if invoke_meta.get("langfuse_trace_id") and invoke_meta.get("langfuse_parent_observation_id"):
+                logger.debug("Вызов модели привязан к root trace %s через metadata", trace_id)
             else:
-                logger.debug("Не удалось передать run_id в model invoke для trace %s", trace_id)
+                logger.debug("Не удалось передать metadata linkage в model invoke для trace %s", trace_id)
 
             response = _invoke_with_timeout(
                 lambda payload: model.invoke(payload, config=model_invoke_config),
