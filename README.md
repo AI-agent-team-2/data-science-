@@ -83,3 +83,8 @@ python -m app.bot.telegram_bot
 ## История изменений
 
 См. [CHANGELOG.md](CHANGELOG.md).
+
+## Observability и deploy
+
+- Langfuse tracing и правила sanitization: [OBSERVABILITY.md](OBSERVABILITY.md)
+- Пошаговый rollout/rollback на VPS: [DEPLOY_VPS.md](DEPLOY_VPS.md)
