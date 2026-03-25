@@ -1,6 +1,7 @@
 from app.observability.langfuse_client import (
     bind_observability_context,
     capture_error,
+    capture_model_generation,
     create_span,
     create_trace,
     end_observation,
@@ -14,6 +15,7 @@ from app.observability.sanitize import hash_user_id, sanitize_payload, sanitize_
 __all__ = [
     "bind_observability_context",
     "capture_error",
+    "capture_model_generation",
     "create_span",
     "create_trace",
     "end_observation",

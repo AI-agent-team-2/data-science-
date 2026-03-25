@@ -15,6 +15,7 @@ from app.history_store import load_messages, save_turn
 from app.observability import (
     bind_observability_context,
     capture_error,
+    capture_model_generation,
     create_span,
     create_trace,
     end_observation,
@@ -287,6 +288,18 @@ def run_agent(user_text: str, user_id: str = "unknown") -> str:
             )
 
             assistant_text = _extract_ai_text(response)
+            capture_model_generation(
+                parent=trace,
+                model_name=settings.resolved_model_name,
+                input_payload={
+                    "messages_count": len(model_input),
+                    "query": sanitize_text(user_text),
+                    "context_chars": len(context.context_text),
+                },
+                output_payload={"assistant_preview": sanitize_text(assistant_text)},
+                response=response,
+                metadata={"provider": settings.resolved_model_provider},
+            )
             if context.used_web:
                 assistant_text = _ensure_sources_block(assistant_text, context.web_urls)
 

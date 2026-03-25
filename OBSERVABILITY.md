@@ -19,6 +19,9 @@
   - `rag_search`: `top_k`, `retrieved_count`, `avg_score`, `max_score`
   - `product_lookup`: `normalized_query` (sanitized), `detected_sku_count`, `result_count`, `mode`
 - ошибки/таймауты как error event/status update.
+- `model_invoke` usage/cost:
+  - через Langfuse callback handler (если совместим по версиям)
+  - fallback: ручная отправка `generation` из `response_metadata/usage_metadata`
 
 ## Что НЕ логируется
 
