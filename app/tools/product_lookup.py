@@ -10,6 +10,15 @@ from typing import Any, Final, TypedDict
 
 from langchain_core.tools import tool
 
+from app.observability import (
+    capture_error,
+    create_span,
+    end_observation,
+    get_observability_parent,
+    get_observability_trace,
+    sanitize_text,
+)
+
 logger = logging.getLogger(__name__)
 
 SKU_PATTERN: Final[re.Pattern[str]] = re.compile(r"\b[A-Z0-9][A-Z0-9\-_]{4,}\b")
@@ -235,12 +244,19 @@ def product_lookup(query: str, limit: int = 5) -> str:
     Поиск товара по названию, бренду, артикулу или параметрам в локальном каталоге.
     """
     normalized_query = _normalize(query)
+    span = create_span(
+        parent=get_observability_parent() or get_observability_trace(),
+        name="product_lookup_exec",
+        input_payload={"query": sanitize_text(normalized_query), "limit": limit},
+    )
     if not normalized_query:
+        end_observation(span, output_payload={"result_count": 0, "status": "empty_query"})
         return _build_empty_response(normalized_query, "Пустой поисковый запрос.")
 
     try:
         catalog = _load_catalog()
         if not catalog:
+            end_observation(span, output_payload={"result_count": 0, "status": "catalog_missing"})
             return _build_empty_response(
                 normalized_query,
                 "Каталог не найден. Проверьте данные в data/knowledge_base.",
@@ -256,6 +272,15 @@ def product_lookup(query: str, limit: int = 5) -> str:
             if sku_ranked:
                 top_sku_matches = sku_ranked[:top_n]
                 results = [_serialize_item(item, score) for score, item in top_sku_matches]
+                end_observation(
+                    span,
+                    output_payload={
+                        "normalized_query": sanitize_text(normalized_query),
+                        "detected_sku_count": len(query_skus),
+                        "result_count": len(results),
+                        "mode": "sku_first",
+                    },
+                )
                 return _to_json(
                     {
                         "query": normalized_query,
@@ -268,6 +293,15 @@ def product_lookup(query: str, limit: int = 5) -> str:
         ranked = _rank_text_matches(catalog, normalized_query, query_tokens, query_skus)
         top_text_matches = ranked[:top_n]
         results = [_serialize_item(item, score) for score, item in top_text_matches]
+        end_observation(
+            span,
+            output_payload={
+                "normalized_query": sanitize_text(normalized_query),
+                "detected_sku_count": len(query_skus),
+                "result_count": len(results),
+                "mode": "text_ranked",
+            },
+        )
         return _to_json(
             {
                 "query": normalized_query,
@@ -276,8 +310,14 @@ def product_lookup(query: str, limit: int = 5) -> str:
                 "results": results,
             }
         )
-    except Exception:
+    except Exception as exc:
         logger.exception("Ошибка product_lookup для запроса: %s", normalized_query)
+        capture_error(
+            span,
+            exc,
+            metadata={"tool": "product_lookup", "query": sanitize_text(normalized_query)},
+        )
+        end_observation(span, output_payload={"result_count": 0, "status": "error"})
         return _build_empty_response(
             normalized_query,
             "Внутренняя ошибка поиска. Попробуйте повторить запрос позже.",

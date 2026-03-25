@@ -11,6 +11,7 @@ load_dotenv()
 DEFAULT_PROVIDER: Final[str] = "openrouter"
 DEFAULT_OPENROUTER_BASE_URL: Final[str] = "https://openrouter.ai/api/v1"
 DEFAULT_OPENAI_BASE_URL: Final[str] = "https://api.openai.com/v1"
+DEFAULT_LANGFUSE_HOST: Final[str] = "https://cloud.langfuse.com"
 DEFAULT_OPENROUTER_MODEL: Final[str] = "openai/gpt-4o-mini"
 DEFAULT_OPENAI_MODEL: Final[str] = "gpt-4o-mini"
 DEFAULT_EMBEDDING_MODEL: Final[str] = "text-embedding-3-small"
@@ -74,6 +75,11 @@ class Settings:
     enable_web_search: bool = _get_env_bool("ENABLE_WEB_SEARCH", True)
     enable_rag: bool = _get_env_bool("ENABLE_RAG", True)
     enable_product_lookup: bool = _get_env_bool("ENABLE_PRODUCT_LOOKUP", True)
+
+    langfuse_public_key: str = _get_env_str("LANGFUSE_PUBLIC_KEY")
+    langfuse_secret_key: str = _get_env_str("LANGFUSE_SECRET_KEY")
+    langfuse_host: str = _get_env_str("LANGFUSE_HOST", DEFAULT_LANGFUSE_HOST)
+    langfuse_enabled: bool = _get_env_bool("LANGFUSE_ENABLED", False)
 
     @property
     def resolved_model_provider(self) -> str:

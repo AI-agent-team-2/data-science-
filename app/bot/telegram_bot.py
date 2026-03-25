@@ -14,6 +14,7 @@ if __package__ is None or __package__ == "":
 
 from app.config import settings
 from app.history_store import clear_history
+from app.observability import hash_user_id
 from app.rag.retriever import ChromaRetriever
 from app.run_agent import run_agent
 
@@ -153,7 +154,9 @@ def _handle_text_message(message: Message) -> None:
         _handle_unknown_command(message)
         return
 
-    answer = run_agent(message.text, user_id=str(message.from_user.id))
+    session_user_id = str(message.from_user.id)
+    logger.debug("Processing Telegram message for session=%s", hash_user_id(session_user_id))
+    answer = run_agent(message.text, user_id=session_user_id)
     bot.reply_to(message, answer)
 
 

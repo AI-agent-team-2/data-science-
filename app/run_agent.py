@@ -10,8 +10,20 @@ from typing import Any, Callable, Literal
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 
 from app.config import settings
-from app.graph import model
+from app.graph import build_model_invoke_config, model
 from app.history_store import load_messages, save_turn
+from app.observability import (
+    bind_observability_context,
+    capture_error,
+    create_span,
+    create_trace,
+    end_observation,
+    flush_if_available,
+    get_observability_parent,
+    get_observability_trace,
+    hash_user_id,
+    sanitize_text,
+)
 from app.prompts import SYSTEM_PROMPT
 from app.tools.product_lookup import product_lookup
 from app.tools.rag_search import rag_search
@@ -181,45 +193,125 @@ def run_agent(user_text: str, user_id: str = "unknown") -> str:
     """Запускает полный пайплайн ответа: инструменты -> LLM -> история."""
     session_id = user_id or "unknown"
     query = user_text.strip()
-
-    if _is_identity_or_capability_query(query):
-        assistant_text = _assistant_scope_response()
-        save_turn(session_id=session_id, user_text=user_text, assistant_text=assistant_text)
-        return assistant_text
-
-    if _is_smalltalk(query):
-        assistant_text = _smalltalk_response()
-        save_turn(session_id=session_id, user_text=user_text, assistant_text=assistant_text)
-        return assistant_text
-
-    if _is_noise_query(query) or _is_offtopic_or_rude_query(query):
-        assistant_text = _domain_redirect_response()
-        save_turn(session_id=session_id, user_text=user_text, assistant_text=assistant_text)
-        return assistant_text
-
-    history_messages = _to_langchain_messages(load_messages(session_id=session_id))
-    context = _build_context(query)
-
-    if not context.context_text:
-        assistant_text = _clarifying_question()
-        save_turn(session_id=session_id, user_text=user_text, assistant_text=assistant_text)
-        return assistant_text
-
-    final_prompt = _build_final_prompt(user_text=user_text, context_block=context.context_text)
-    model_input = [SystemMessage(content=SYSTEM_PROMPT), *history_messages, HumanMessage(content=final_prompt)]
-    response = _invoke_with_timeout(
-        model.invoke,
-        model_input,
-        timeout_sec=MODEL_TIMEOUT_SEC,
-        op_name="model_invoke",
+    hashed_user = hash_user_id(session_id)
+    source_order = _resolve_source_order(query)
+    trace = create_trace(
+        name="run_agent",
+        session_id=hashed_user,
+        input_payload={
+            "query": sanitize_text(query),
+            "hashed_user_id": hashed_user,
+        },
+        metadata={
+            "model": settings.resolved_model_name,
+            "provider": settings.resolved_model_provider,
+            "source_order": source_order,
+            "enable_web_search": settings.enable_web_search,
+            "enable_rag": settings.enable_rag,
+            "enable_product_lookup": settings.enable_product_lookup,
+        },
     )
 
-    assistant_text = _extract_ai_text(response)
-    if context.used_web:
-        assistant_text = _ensure_sources_block(assistant_text, context.web_urls)
+    assistant_text = ""
+    with bind_observability_context(trace=trace, parent=trace):
+        try:
+            if _is_identity_or_capability_query(query):
+                assistant_text = _assistant_scope_response()
+                _save_turn_with_observability(session_id=session_id, user_text=user_text, assistant_text=assistant_text)
+                return assistant_text
 
-    save_turn(session_id=session_id, user_text=user_text, assistant_text=assistant_text)
-    return assistant_text
+            if _is_smalltalk(query):
+                assistant_text = _smalltalk_response()
+                _save_turn_with_observability(session_id=session_id, user_text=user_text, assistant_text=assistant_text)
+                return assistant_text
+
+            if _is_noise_query(query) or _is_offtopic_or_rude_query(query):
+                assistant_text = _domain_redirect_response()
+                _save_turn_with_observability(session_id=session_id, user_text=user_text, assistant_text=assistant_text)
+                return assistant_text
+
+            history_span = create_span(
+                parent=get_observability_parent() or trace,
+                name="history_load",
+                input_payload={"session_id": hashed_user},
+            )
+            try:
+                history_messages = _to_langchain_messages(load_messages(session_id=session_id))
+                end_observation(history_span, output_payload={"history_messages": len(history_messages)})
+            except Exception as exc:
+                capture_error(history_span, exc, metadata={"stage": "history_load"})
+                end_observation(history_span, output_payload={"history_messages": 0, "status": "error"})
+                raise
+
+            context_span = create_span(
+                parent=get_observability_parent() or trace,
+                name="context_build",
+                input_payload={
+                    "source_order": source_order,
+                    "query": sanitize_text(query),
+                },
+            )
+            try:
+                context = _build_context(query, source_order=source_order)
+                end_observation(
+                    context_span,
+                    output_payload={
+                        "used_web": context.used_web,
+                        "web_urls_count": len(context.web_urls),
+                        "has_context": bool(context.context_text),
+                    },
+                )
+            except Exception as exc:
+                capture_error(context_span, exc, metadata={"stage": "context_build"})
+                end_observation(context_span, output_payload={"status": "error"})
+                raise
+
+            if not context.context_text:
+                assistant_text = _clarifying_question()
+                _save_turn_with_observability(session_id=session_id, user_text=user_text, assistant_text=assistant_text)
+                return assistant_text
+
+            final_prompt = _build_final_prompt(user_text=user_text, context_block=context.context_text)
+            model_input = [SystemMessage(content=SYSTEM_PROMPT), *history_messages, HumanMessage(content=final_prompt)]
+            trace_id = str(getattr(trace, "id", "") or "")
+            model_invoke_config = build_model_invoke_config(
+                trace_id=trace_id or None,
+                session_id=hashed_user,
+                user_id=hashed_user,
+            )
+            response = _invoke_with_timeout(
+                lambda payload: model.invoke(payload, config=model_invoke_config),
+                model_input,
+                timeout_sec=MODEL_TIMEOUT_SEC,
+                op_name="model_invoke",
+            )
+
+            assistant_text = _extract_ai_text(response)
+            if context.used_web:
+                assistant_text = _ensure_sources_block(assistant_text, context.web_urls)
+
+            _save_turn_with_observability(session_id=session_id, user_text=user_text, assistant_text=assistant_text)
+            return assistant_text
+        except Exception as exc:
+            capture_error(
+                trace,
+                exc,
+                metadata={
+                    "stage": "run_agent",
+                    "query": sanitize_text(query),
+                    "hashed_user_id": hashed_user,
+                },
+            )
+            raise
+        finally:
+            end_observation(
+                trace,
+                output_payload={
+                    "assistant_preview": sanitize_text(assistant_text),
+                    "assistant_len": len(assistant_text),
+                },
+            )
+            flush_if_available()
 
 
 def _to_langchain_messages(history: list[tuple[str, str]]) -> list[BaseMessage]:
@@ -235,9 +327,25 @@ def _to_langchain_messages(history: list[tuple[str, str]]) -> list[BaseMessage]:
     return messages
 
 
-def _build_context(query: str) -> ContextBuildResult:
+def _save_turn_with_observability(session_id: str, user_text: str, assistant_text: str) -> None:
+    """Сохраняет историю диалога и пишет span `history_save`."""
+    span = create_span(
+        parent=get_observability_parent() or get_observability_trace(),
+        name="history_save",
+        input_payload={"session_id": hash_user_id(session_id)},
+    )
+    try:
+        save_turn(session_id=session_id, user_text=user_text, assistant_text=assistant_text)
+        end_observation(span, output_payload={"saved": True, "assistant_len": len(assistant_text)})
+    except Exception as exc:
+        capture_error(span, exc, metadata={"stage": "history_save"})
+        end_observation(span, output_payload={"saved": False})
+        raise
+
+
+def _build_context(query: str, source_order: list[ToolName] | None = None) -> ContextBuildResult:
     """Подбирает лучший доступный контекст согласно приоритету источников."""
-    source_order = _resolve_source_order(query)
+    source_order = source_order or _resolve_source_order(query)
 
     for index, source in enumerate(source_order):
         web_mode = "primary" if index == 0 else "fallback"
@@ -278,7 +386,7 @@ def _context_from_source(source: ToolName, query: str, web_mode: str) -> Context
 
 def _context_from_lookup(query: str) -> ContextBuildResult:
     """Пытается получить контекст из базы товаров (LOOKUP)."""
-    payload = _invoke_tool(product_lookup.invoke, {"query": query, "limit": 5}, "product_lookup")
+    payload = _invoke_tool(product_lookup.invoke, {"query": query, "limit": 5}, "tool_lookup")
     items = _extract_results(payload)
 
     if not items:
@@ -293,7 +401,7 @@ def _context_from_lookup(query: str) -> ContextBuildResult:
 
 def _context_from_rag(query: str) -> ContextBuildResult:
     """Пытается получить контекст из RAG-базы знаний."""
-    payload = _invoke_tool(rag_search.invoke, {"query": query}, "rag_search")
+    payload = _invoke_tool(rag_search.invoke, {"query": query}, "tool_rag")
     items = _extract_results(payload)
 
     if not _is_rag_useful(items):
@@ -312,7 +420,7 @@ def _context_from_web(query: str, mode: str) -> ContextBuildResult:
     payload = _invoke_tool(
         web_search.invoke,
         {"query": enhanced_query, "max_results": settings.web_search_max_results},
-        "web_search",
+        "tool_web",
     )
     items = _extract_results(payload)
 
@@ -332,17 +440,66 @@ def _invoke_tool(func: Callable[[dict[str, Any]], Any], payload: dict[str, Any],
     return _parse_object_json(raw)
 
 
+def _summarize_arg(arg: Any) -> dict[str, Any]:
+    if isinstance(arg, list):
+        return {"type": "list", "size": len(arg)}
+    if isinstance(arg, dict):
+        summary: dict[str, Any] = {}
+        for key in ("query", "max_results", "limit"):
+            if key in arg:
+                value = arg.get(key)
+                summary[key] = sanitize_text(str(value)) if isinstance(value, str) else value
+        summary["keys"] = sorted(str(k) for k in arg.keys())
+        return summary
+    return {"type": type(arg).__name__}
+
+
+def _summarize_result(value: Any) -> dict[str, Any]:
+    if isinstance(value, str):
+        return {"result_type": "str", "result_len": len(value)}
+    if isinstance(value, dict):
+        return {"result_type": "dict", "keys": sorted(str(k) for k in value.keys())}
+    if isinstance(value, list):
+        return {"result_type": "list", "size": len(value)}
+    return {"result_type": type(value).__name__}
+
+
 def _invoke_with_timeout(func: Callable[[Any], Any], arg: Any, timeout_sec: int, op_name: str) -> Any:
     """Безопасно вызывает функцию в отдельном потоке с ограничением времени."""
+    trace = get_observability_trace()
+    parent = get_observability_parent() or trace
+    op_span = create_span(
+        parent=parent,
+        name=op_name,
+        input_payload={
+            "timeout_sec": timeout_sec,
+            "arg": _summarize_arg(arg),
+        },
+    )
+
+    def _runner() -> Any:
+        with bind_observability_context(trace=trace, parent=op_span or parent):
+            return func(arg)
+
     with ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(func, arg)
+        future = executor.submit(_runner)
         try:
-            return future.result(timeout=max(1, timeout_sec))
+            result = future.result(timeout=max(1, timeout_sec))
+            end_observation(op_span, output_payload=_summarize_result(result))
+            return result
         except FuturesTimeoutError:
             logger.warning("Операция %s превысила таймаут %s сек", op_name, timeout_sec)
+            capture_error(
+                op_span,
+                f"timeout after {timeout_sec}s",
+                metadata={"op_name": op_name, "timeout_sec": timeout_sec},
+            )
+            end_observation(op_span, output_payload={"status": "timeout"})
             return ""
-        except Exception:
+        except Exception as exc:
             logger.exception("Операция %s завершилась с ошибкой", op_name)
+            capture_error(op_span, exc, metadata={"op_name": op_name})
+            end_observation(op_span, output_payload={"status": "error"})
             return ""
 
 

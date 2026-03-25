@@ -2,6 +2,7 @@ langchain==1.2.12
 langchain-core==1.2.18
 langchain-openai==1.1.11
 langchain-text-splitters==1.1.1
+langfuse==2.60.8
 chromadb==1.5.5
 pyTelegramBotAPI==4.32.0
 python-dotenv==1.2.2
