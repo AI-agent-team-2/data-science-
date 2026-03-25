@@ -1,11 +1,43 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
+from uuid import UUID
 
 from langchain_openai import ChatOpenAI
 
 from app.config import settings
 from app.observability.langfuse_client import get_langchain_callback_handler
+
+logger = logging.getLogger(__name__)
+
+
+def _normalize_run_id(trace_id: str | None) -> str | None:
+    """
+    Нормализует trace_id для передачи в `config.run_id`.
+
+    Parameters
+    ----------
+    trace_id : str | None
+        Идентификатор trace, полученный из manual tracing.
+
+    Returns
+    -------
+    str | None
+        Валидный UUID-идентификатор или `None`.
+    """
+    if not trace_id:
+        return None
+
+    raw = str(trace_id).strip()
+    if not raw:
+        return None
+
+    try:
+        return str(UUID(raw))
+    except ValueError:
+        logger.debug("trace_id не является UUID и не будет передан в run_id: %s", raw)
+        return None
 
 
 def create_chat_model() -> ChatOpenAI:
@@ -61,6 +93,10 @@ def build_model_invoke_config(
         return None
 
     config: dict[str, Any] = {"callbacks": [callback_handler]}
+    run_id = _normalize_run_id(trace_id)
+    if run_id:
+        config["run_id"] = run_id
+
     langfuse_metadata: dict[str, Any] = dict(metadata or {})
     if session_id:
         langfuse_metadata["langfuse_session_id"] = session_id
@@ -68,6 +104,8 @@ def build_model_invoke_config(
         langfuse_metadata["langfuse_user_id"] = user_id
     if tags:
         langfuse_metadata["langfuse_tags"] = tags
+    if run_id:
+        langfuse_metadata["langfuse_trace_id"] = run_id
 
     if langfuse_metadata:
         config["metadata"] = langfuse_metadata

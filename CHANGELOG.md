@@ -2,6 +2,16 @@
 
 Формат файла основан на принципах [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/).
 
+## [2.0.4] - 2026-03-25
+
+### Исправлено
+- Починена иерархия Langfuse trace: `model_invoke` больше не должен создавать отдельный root trace при наличии `run_agent`.
+- В `model.invoke` добавлена привязка `config.run_id` к `trace.id` root trace.
+
+### Изменено
+- Добавлена диагностическая debug-информация по созданию root trace и передаче trace context в вызов модели.
+- Обновлена observability-документация с проверкой корректной parent-child структуры.
+
 ## [2.0.3] - 2026-03-25
 
 ### Изменено
