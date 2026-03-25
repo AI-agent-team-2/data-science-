@@ -237,36 +237,22 @@ def run_agent(user_text: str, user_id: str = "unknown") -> str:
     effective_trace_id = str(getattr(trace, "trace_id", "") or trace_id)
     root_parent = trace
     assistant_text = ""
+    should_save_turn = False
     with bind_observability_context(trace=trace, parent=trace):
         try:
             if _is_identity_or_capability_query(query):
                 assistant_text = _assistant_scope_response()
-                _save_turn_with_observability(
-                    session_id=session_id,
-                    user_text=user_text,
-                    assistant_text=assistant_text,
-                    parent=root_parent,
-                )
+                should_save_turn = True
                 return assistant_text
 
             if _is_smalltalk(query):
                 assistant_text = _smalltalk_response()
-                _save_turn_with_observability(
-                    session_id=session_id,
-                    user_text=user_text,
-                    assistant_text=assistant_text,
-                    parent=root_parent,
-                )
+                should_save_turn = True
                 return assistant_text
 
             if _is_noise_query(query) or _is_offtopic_or_rude_query(query):
                 assistant_text = _domain_redirect_response()
-                _save_turn_with_observability(
-                    session_id=session_id,
-                    user_text=user_text,
-                    assistant_text=assistant_text,
-                    parent=root_parent,
-                )
+                should_save_turn = True
                 return assistant_text
 
             history_span = create_span(
@@ -312,12 +298,7 @@ def run_agent(user_text: str, user_id: str = "unknown") -> str:
 
             if not context.context_text:
                 assistant_text = _clarifying_question()
-                _save_turn_with_observability(
-                    session_id=session_id,
-                    user_text=user_text,
-                    assistant_text=assistant_text,
-                    parent=root_parent,
-                )
+                should_save_turn = True
                 return assistant_text
 
             final_prompt = _build_final_prompt(user_text=user_text, context_block=context.context_text)
@@ -355,12 +336,7 @@ def run_agent(user_text: str, user_id: str = "unknown") -> str:
             if context.used_web:
                 assistant_text = _ensure_sources_block(assistant_text, context.web_urls)
 
-            _save_turn_with_observability(
-                session_id=session_id,
-                user_text=user_text,
-                assistant_text=assistant_text,
-                parent=root_parent,
-            )
+            should_save_turn = True
             return assistant_text
         except Exception as exc:
             capture_error(
@@ -374,6 +350,13 @@ def run_agent(user_text: str, user_id: str = "unknown") -> str:
             )
             raise
         finally:
+            if should_save_turn:
+                _save_turn_with_observability(
+                    session_id=session_id,
+                    user_text=user_text,
+                    assistant_text=assistant_text,
+                    parent=root_parent,
+                )
             end_observation(
                 trace,
                 output_payload={
