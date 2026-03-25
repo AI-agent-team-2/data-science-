@@ -22,12 +22,29 @@ def build_model_invoke_config(
     trace_id: str | None = None,
     session_id: str | None = None,
     user_id: str | None = None,
+    tags: list[str] | None = None,
+    metadata: dict[str, Any] | None = None,
+    run_name: str | None = None,
 ) -> dict[str, Any] | None:
     """Возвращает config для model.invoke с Langfuse callbacks (если включено)."""
     callback_handler = get_langchain_callback_handler(trace_id=trace_id, session_id=session_id, user_id=user_id)
     if callback_handler is None:
         return None
-    return {"callbacks": [callback_handler]}
+
+    config: dict[str, Any] = {"callbacks": [callback_handler]}
+    langfuse_metadata: dict[str, Any] = dict(metadata or {})
+    if session_id:
+        langfuse_metadata["langfuse_session_id"] = session_id
+    if user_id:
+        langfuse_metadata["langfuse_user_id"] = user_id
+    if tags:
+        langfuse_metadata["langfuse_tags"] = tags
+
+    if langfuse_metadata:
+        config["metadata"] = langfuse_metadata
+    if run_name:
+        config["run_name"] = run_name
+    return config
 
 
 model = create_chat_model()
