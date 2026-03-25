@@ -14,8 +14,6 @@ from app.observability import (
     capture_error,
     create_span,
     end_observation,
-    get_observability_parent,
-    get_observability_trace,
     sanitize_text,
 )
 
@@ -261,7 +259,7 @@ def product_lookup(query: str, limit: int = 5) -> str:
     """
     normalized_query = _normalize(query)
     span = create_span(
-        parent=get_observability_parent() or get_observability_trace(),
+        parent=None,
         name="product_lookup_exec",
         input_payload={"query": sanitize_text(normalized_query), "limit": limit},
     )

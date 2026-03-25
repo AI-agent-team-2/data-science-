@@ -11,8 +11,6 @@ from app.observability import (
     capture_error,
     create_span,
     end_observation,
-    get_observability_parent,
-    get_observability_trace,
     sanitize_text,
 )
 from app.rag.retriever import ChromaRetriever
@@ -52,7 +50,7 @@ def rag_search(query: str) -> str:
         JSON-ответ с найденными фрагментами.
     """
     span = create_span(
-        parent=get_observability_parent() or get_observability_trace(),
+        parent=None,
         name="rag_search_exec",
         input_payload={"query": sanitize_text(query), "top_k": settings.top_k},
     )
