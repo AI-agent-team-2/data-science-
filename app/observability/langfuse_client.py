@@ -19,6 +19,7 @@ _thread_ctx = threading.local()
 
 
 def _is_enabled() -> bool:
+    """Проверяет, включена ли интеграция Langfuse и заданы ли ключи."""
     return bool(
         settings.langfuse_enabled
         and settings.langfuse_public_key
@@ -27,7 +28,14 @@ def _is_enabled() -> bool:
 
 
 def get_langfuse_client() -> Any | None:
-    """Возвращает singleton Langfuse client или None при отключении/ошибке."""
+    """
+    Возвращает singleton-клиент Langfuse.
+
+    Returns
+    -------
+    Any | None
+        Клиент Langfuse или `None`, если интеграция отключена/недоступна.
+    """
     global _langfuse_client, _client_init_attempted
     if _client_init_attempted:
         return _langfuse_client
@@ -46,18 +54,35 @@ def get_langfuse_client() -> Any | None:
             host=settings.langfuse_host,
         )
     except Exception:
-        logger.exception("Не удалось инициализировать Langfuse, observability отключен.")
+        logger.exception("Не удалось инициализировать Langfuse, observability отключена.")
         _langfuse_client = None
 
     return _langfuse_client
 
 
 def get_langchain_callback_handler(
-    trace_id: str | None = None,  # kept for API compatibility with caller
-    session_id: str | None = None,  # handled via invoke config metadata
-    user_id: str | None = None,  # handled via invoke config metadata
+    trace_id: str | None = None,
+    session_id: str | None = None,
+    user_id: str | None = None,
 ) -> Any | None:
-    """Создает singleton CallbackHandler через современный путь `langfuse.langchain`."""
+    """
+    Возвращает singleton `CallbackHandler` для LangChain.
+
+    Parameters
+    ----------
+    trace_id : str | None
+        Аргумент сохранен для совместимости сигнатуры.
+    session_id : str | None
+        Аргумент сохранен для совместимости сигнатуры.
+    user_id : str | None
+        Аргумент сохранен для совместимости сигнатуры.
+
+    Returns
+    -------
+    Any | None
+        Экземпляр callback handler или `None`, если инициализация не удалась.
+    """
+    _ = (trace_id, session_id, user_id)
     global _callback_handler, _callback_init_attempted, _callback_init_error
     if not _is_enabled():
         return None
@@ -65,7 +90,6 @@ def get_langchain_callback_handler(
         return _callback_handler
 
     _callback_init_attempted = True
-    # Langfuse client must be initialized first, then CallbackHandler() can reuse env/active client.
     _ = get_langfuse_client()
     try:
         from langfuse.langchain import CallbackHandler as LangfuseCallbackHandler  # type: ignore
@@ -77,19 +101,27 @@ def get_langchain_callback_handler(
         _callback_handler = None
         _callback_init_error = str(exc)
         logger.error(
-            "Langfuse LangChain CallbackHandler init failed once: %s. "
-            "Check langfuse/langchain version compatibility.",
+            "Не удалось инициализировать Langfuse CallbackHandler: %s. "
+            "Проверьте совместимость версий langfuse/langchain.",
             _callback_init_error,
         )
         return None
 
 
 def get_callback_init_error() -> str | None:
-    """Возвращает текст ошибки инициализации callback handler (если была)."""
+    """
+    Возвращает последнюю ошибку инициализации callback.
+
+    Returns
+    -------
+    str | None
+        Текст ошибки или `None`, если ошибок не было.
+    """
     return _callback_init_error
 
 
 def _safe_call(obj: Any, method_name: str, **kwargs: Any) -> Any | None:
+    """Безопасно вызывает метод объекта по имени."""
     method = getattr(obj, method_name, None)
     if callable(method):
         return method(**kwargs)
@@ -102,7 +134,14 @@ def create_trace(
     input_payload: Any | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> Any | None:
-    """Создает trace, при недоступности Langfuse возвращает None."""
+    """
+    Создает trace в Langfuse.
+
+    Returns
+    -------
+    Any | None
+        Объект trace или `None`, если создать trace не удалось.
+    """
     client = get_langfuse_client()
     if client is None:
         return None
@@ -127,7 +166,14 @@ def create_span(
     input_payload: Any | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> Any | None:
-    """Создает span как дочерний для trace/span; при ошибке возвращает None."""
+    """
+    Создает дочерний span для текущего trace/span.
+
+    Returns
+    -------
+    Any | None
+        Объект span или `None` при ошибке.
+    """
     if parent is None:
         parent = get_observability_parent() or get_observability_trace()
     if parent is None:
@@ -151,7 +197,7 @@ def end_observation(
     output_payload: Any | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> None:
-    """Завершает span/trace с безопасным payload."""
+    """Завершает span или trace с очищенным payload."""
     if target is None:
         return
 
@@ -171,7 +217,7 @@ def capture_error(
     error: Exception | str,
     metadata: dict[str, Any] | None = None,
 ) -> None:
-    """Отправляет ошибку в Langfuse без влияния на бизнес-логику."""
+    """Отправляет информацию об ошибке в Langfuse без влияния на бизнес-логику."""
     if target is None:
         return
 
@@ -210,21 +256,24 @@ def flush_if_available() -> None:
 
 
 def set_observability_context(trace: Any | None = None, parent: Any | None = None) -> None:
+    """Сохраняет текущий trace и родительский span в thread-local контексте."""
     _thread_ctx.trace = trace
     _thread_ctx.parent = parent
 
 
 def get_observability_trace() -> Any | None:
+    """Возвращает текущий trace из thread-local контекста."""
     return getattr(_thread_ctx, "trace", None)
 
 
 def get_observability_parent() -> Any | None:
+    """Возвращает текущий родительский span из thread-local контекста."""
     return getattr(_thread_ctx, "parent", None)
 
 
 @contextmanager
 def bind_observability_context(trace: Any | None = None, parent: Any | None = None):
-    """Контекстный биндинг trace/span для текущего потока (включая ThreadPool worker)."""
+    """Временно привязывает trace/span к текущему потоку выполнения."""
     prev_trace = get_observability_trace()
     prev_parent = get_observability_parent()
     set_observability_context(trace=trace, parent=parent)

@@ -155,7 +155,7 @@ def _handle_text_message(message: Message) -> None:
         return
 
     session_user_id = str(message.from_user.id)
-    logger.debug("Processing Telegram message for session=%s", hash_user_id(session_user_id))
+    logger.debug("Обработка сообщения Telegram для сессии=%s", hash_user_id(session_user_id))
     answer = run_agent(message.text, user_id=session_user_id)
     bot.reply_to(message, answer)
 

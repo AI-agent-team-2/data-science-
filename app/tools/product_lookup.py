@@ -207,7 +207,11 @@ def _build_empty_response(query: str, note: str) -> str:
     return _to_json({"query": query, "count": 0, "results": [], "note": note})
 
 
-def _rank_sku_matches(catalog: list[CatalogItem], query_tokens: set[str], query_skus: set[str]) -> list[tuple[float, CatalogItem]]:
+def _rank_sku_matches(
+    catalog: list[CatalogItem],
+    query_tokens: set[str],
+    query_skus: set[str],
+) -> list[tuple[float, CatalogItem]]:
     """Ранжирует элементы только по SKU-совпадениям (режим `sku_first`)."""
     ranked: list[tuple[float, CatalogItem]] = []
     for item in catalog:
@@ -241,7 +245,19 @@ def _rank_text_matches(
 @tool
 def product_lookup(query: str, limit: int = 5) -> str:
     """
-    Поиск товара по названию, бренду, артикулу или параметрам в локальном каталоге.
+    Ищет товары по локальному каталогу.
+
+    Parameters
+    ----------
+    query : str
+        Пользовательский запрос.
+    limit : int, default=5
+        Максимальное число результатов.
+
+    Returns
+    -------
+    str
+        JSON-ответ с результатами поиска.
     """
     normalized_query = _normalize(query)
     span = create_span(
@@ -266,7 +282,7 @@ def product_lookup(query: str, limit: int = 5) -> str:
         query_skus = {_canonical_sku(sku) for sku in SKU_PATTERN.findall(normalized_query.upper())}
         top_n = _clamp_limit(limit)
 
-        # Режим sku_first: при запросе с артикулом сначала возвращаем точные SKU-совпадения.
+        # Режим sku_first: при наличии артикула сначала возвращаем точные SKU-совпадения.
         if query_skus:
             sku_ranked = _rank_sku_matches(catalog, query_tokens, query_skus)
             if sku_ranked:
