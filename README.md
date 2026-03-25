@@ -113,7 +113,7 @@ python app/bot/telegram_bot.py
 
 - Подробная схема trace/span: [OBSERVABILITY.md](OBSERVABILITY.md)
 - Интеграция использует Langfuse Python SDK v3 (manual wrapper + LangChain callback).
-- Для каждого запроса создается один root trace `run_agent`; вызов модели привязывается к нему через `run_id`.
+- Для каждого запроса создается один root trace `run_agent`; вызов модели привязывается к нему через metadata (`langfuse_trace_id`, `langfuse_parent_observation_id`).
 - Быстрое включение:
   1. заполните `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_HOST`;
   2. установите `LANGFUSE_ENABLED=true`;

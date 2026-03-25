@@ -12,8 +12,7 @@ logger = logging.getLogger(__name__)
 
 _langfuse_client: Any | None = None
 _client_init_attempted = False
-_callback_init_attempted = False
-_callback_handler: Any | None = None
+_callback_handler_class: Any | None = None
 _callback_init_error: str | None = None
 _thread_ctx = threading.local()
 
@@ -279,23 +278,23 @@ def get_langchain_callback_handler(
         Экземпляр callback handler или `None`, если инициализация не удалась.
     """
     _ = (trace_id, session_id, user_id)
-    global _callback_handler, _callback_init_attempted, _callback_init_error
+    global _callback_handler_class, _callback_init_error
     if not _is_enabled():
         return None
-    if _callback_init_attempted:
-        return _callback_handler
 
-    _callback_init_attempted = True
     _ = get_langfuse_client()
     try:
-        from langfuse.langchain import CallbackHandler as LangfuseCallbackHandler  # type: ignore
+        if _callback_handler_class is None:
+            from langfuse.langchain import CallbackHandler as LangfuseCallbackHandler  # type: ignore
 
-        _callback_handler = LangfuseCallbackHandler()
+            _callback_handler_class = LangfuseCallbackHandler
+
+        callback_handler = _callback_handler_class()
         _callback_init_error = None
-        logger.debug("Langfuse CallbackHandler успешно инициализирован.")
-        return _callback_handler
+        logger.debug("Langfuse CallbackHandler успешно создан для запроса.")
+        return callback_handler
     except Exception as exc:
-        _callback_handler = None
+        _callback_handler_class = None
         _callback_init_error = str(exc)
         logger.error(
             "Не удалось инициализировать Langfuse CallbackHandler: %s. "
