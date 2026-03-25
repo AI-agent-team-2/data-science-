@@ -28,6 +28,7 @@ def _to_json(payload: dict[str, Any]) -> str:
 
 
 def _score_summary(items: list[dict[str, Any]]) -> dict[str, float]:
+    """Возвращает агрегированные метрики релевантности для списка результатов."""
     scores = [float(item.get("score", 0.0) or 0.0) for item in items if isinstance(item, dict)]
     if not scores:
         return {"avg_score": 0.0, "max_score": 0.0}
@@ -37,7 +38,19 @@ def _score_summary(items: list[dict[str, Any]]) -> dict[str, float]:
 
 @tool
 def rag_search(query: str) -> str:
-    """Выполняет поиск по внутренней базе знаний и возвращает JSON-ответ."""
+    """
+    Выполняет поиск по внутренней базе знаний.
+
+    Parameters
+    ----------
+    query : str
+        Текст запроса пользователя.
+
+    Returns
+    -------
+    str
+        JSON-ответ с найденными фрагментами.
+    """
     span = create_span(
         parent=get_observability_parent() or get_observability_trace(),
         name="rag_search_exec",

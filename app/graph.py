@@ -9,7 +9,14 @@ from app.observability.langfuse_client import get_langchain_callback_handler
 
 
 def create_chat_model() -> ChatOpenAI:
-    """Создает и возвращает основной LLM-клиент приложения."""
+    """
+    Создает основной LLM-клиент приложения.
+
+    Returns
+    -------
+    ChatOpenAI
+        Инициализированный клиент чата.
+    """
     return ChatOpenAI(
         model=settings.resolved_model_name,
         temperature=0,
@@ -26,7 +33,29 @@ def build_model_invoke_config(
     metadata: dict[str, Any] | None = None,
     run_name: str | None = None,
 ) -> dict[str, Any] | None:
-    """Возвращает config для model.invoke с Langfuse callbacks (если включено)."""
+    """
+    Формирует config для `model.invoke` с callback Langfuse.
+
+    Parameters
+    ----------
+    trace_id : str | None
+        Идентификатор trace для совместимости сигнатуры.
+    session_id : str | None
+        Идентификатор сессии для Langfuse.
+    user_id : str | None
+        Идентификатор пользователя для Langfuse.
+    tags : list[str] | None
+        Теги trace.
+    metadata : dict[str, Any] | None
+        Дополнительные метаданные вызова модели.
+    run_name : str | None
+        Имя запуска в LangChain.
+
+    Returns
+    -------
+    dict[str, Any] | None
+        Словарь config для LangChain или `None`, если callback недоступен.
+    """
     callback_handler = get_langchain_callback_handler(trace_id=trace_id, session_id=session_id, user_id=user_id)
     if callback_handler is None:
         return None

@@ -1,17 +1,51 @@
 # SAN Bot
 
-Telegram-бот по сантехническим товарам на базе LLM + RAG (ChromaDB).
+Telegram-бот для подбора и консультаций по сантехническим товарам.  
+Проект использует LLM, локальный поиск по каталогу, RAG на ChromaDB и внешний web-поиск.
 
-## Что умеет
+## Основные возможности
 
-- отвечает на вопросы пользователей в Telegram;
-- использует 3 источника: `product_lookup`, `rag_search`, `web_search`;
-- хранит историю диалога в `history.db` (SQLite);
-- хранит векторный индекс в `chroma_db`.
+- ответы пользователю в Telegram с учетом истории диалога;
+- маршрутизация запроса между источниками `lookup -> rag -> web` (или в другом порядке по типу запроса);
+- поиск по локальному каталогу (`product_lookup`) с режимом `sku_first` для запросов по артикулам;
+- поиск по базе знаний (`rag_search`) через ChromaDB;
+- внешний поиск (`web_search`) через Tavily или DuckDuckGo с файловым кешем;
+- observability через Langfuse (trace/span, ошибки, метаданные вызовов).
 
-## Быстрый старт
+## Архитектура
 
-### 1) Установка
+1. Telegram-сообщение приходит в `app/bot/telegram_bot.py`.
+2. Оркестратор `app/run_agent.py`:
+   - загружает историю,
+   - выбирает источники контекста,
+   - собирает prompt,
+   - вызывает модель,
+   - сохраняет историю.
+3. Инструменты в `app/tools/` возвращают нормализованный JSON.
+4. RAG-слой в `app/rag/` отвечает за индексацию и retrieval.
+5. Наблюдаемость и санитизация находятся в `app/observability/`.
+
+## Технологический стек
+
+- Python 3.10+
+- LangChain (`langchain`, `langchain-core`, `langchain-openai`, `langchain-community`)
+- OpenAI-compatible API (OpenAI/OpenRouter)
+- ChromaDB
+- pyTelegramBotAPI
+- Langfuse
+
+## Структура проекта
+
+- `app/bot/` — Telegram-обработчики
+- `app/run_agent.py` — orchestration и fallback-логика
+- `app/tools/` — инструменты `product_lookup`, `rag_search`, `web_search`
+- `app/rag/` — индексация документов и retrieval
+- `app/observability/` — Langfuse-клиент и санитизация payload
+- `data/knowledge_base/` — текстовые документы для каталога и RAG
+- `chroma_db/` — локальное хранилище Chroma
+- `history.db` — история диалогов (SQLite)
+
+## Установка
 
 ```bash
 python -m venv myenv
@@ -23,7 +57,7 @@ python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-### 2) Настройка `.env`
+## Настройка окружения
 
 ```bash
 cp .env.example .env
@@ -31,7 +65,7 @@ cp .env.example .env
 # Copy-Item .env.example .env
 ```
 
-Минимально нужны:
+Минимально обязательные переменные:
 
 ```env
 TELEGRAM_TOKEN=
@@ -40,51 +74,70 @@ OPENAI_API_KEY=
 
 Остальные параметры имеют значения по умолчанию из `app/config.py`.
 
-### 3) Индексация базы знаний
+## Подготовка RAG (ингест)
+
+После изменения файлов в `data/knowledge_base/` выполните переиндексацию:
 
 ```bash
 python -m app.rag.ingest
 ```
 
-База документов: `data/knowledge_base/*.txt`
-
-### 4) Запуск бота
-
-```bash
-python app/bot/telegram_bot.py
-```
-
-или
+## Запуск локально
 
 ```bash
 python -m app.bot.telegram_bot
 ```
 
-## Проверка качества ответов
+Альтернативный запуск:
 
-Основной набор вопросов хранится в `TEST.txt`.
-Полный прогон выполняется локально через `app.run_agent` с сохранением отчета в `artifacts/`
-(например, `test_bot_full_report_rerun_v2.json`).
+```bash
+python app/bot/telegram_bot.py
+```
 
-## Ключевые модули
+## Команды бота
 
-- `app/run_agent.py` — роутинг и сбор контекста;
-- `app/tools/` — инструменты (`product_lookup`, `rag_search`, `web_search`);
-- `app/rag/ingest.py` — индексация документов;
-- `app/rag/retriever.py` — retrieval из Chroma;
-- `app/bot/telegram_bot.py` — Telegram-интерфейс.
+- `/start` — приветствие
+- `/help` — справка
+- `/clear` — очистка истории диалога
+- `/status` — статус подсистем
+- `/id` — технические идентификаторы чата
 
-## Полезно знать
+## Запуск на VPS и systemd
 
-- `product_lookup` читает каталог из `data/knowledge_base/*.txt`;
-- в RAG используется секционное чанкование документов;
-- после обновления базы знаний нужно повторить `python -m app.rag.ingest`.
+Для production-обновления и безопасного rollout используйте:
+
+- [DEPLOY_VPS.md](DEPLOY_VPS.md) — пошаговый deploy/rollback;
+- `/etc/san-bot/san-bot.env` — переменные окружения для `san-bot.service`.
+
+## Observability (Langfuse)
+
+- Подробная схема trace/span: [OBSERVABILITY.md](OBSERVABILITY.md)
+- Быстрое включение:
+  1. заполните `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_HOST`;
+  2. установите `LANGFUSE_ENABLED=true`;
+  3. перезапустите сервис.
+
+## Проверка и тестовые сценарии
+
+- Базовые вопросы для ручной проверки: `TEST.txt`.
+- Для локальной проверки импорта:
+
+```bash
+python -c "import app.graph; print('graph_ok')"
+python -c "from app.run_agent import run_agent; print('run_agent_ok')"
+```
+
+## Типовые проблемы
+
+1. Бот не отвечает в Telegram:
+   - проверьте `TELEGRAM_TOKEN` и логи сервиса.
+2. Пустые ответы по базе знаний:
+   - убедитесь, что выполнен `python -m app.rag.ingest`.
+3. Нет trace в Langfuse:
+   - проверьте `LANGFUSE_ENABLED`, ключи и доступность `LANGFUSE_HOST`.
+4. Ошибка web-поиска:
+   - при отсутствии `TAVILY_API_KEY` используется DuckDuckGo-бэкенд.
 
 ## История изменений
 
-См. [CHANGELOG.md](CHANGELOG.md).
-
-## Observability и deploy
-
-- Langfuse tracing и правила sanitization: [OBSERVABILITY.md](OBSERVABILITY.md)
-- Пошаговый rollout/rollback на VPS: [DEPLOY_VPS.md](DEPLOY_VPS.md)
+Смотрите [CHANGELOG.md](CHANGELOG.md).

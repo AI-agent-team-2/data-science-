@@ -190,7 +190,21 @@ EMPTY_CONTEXT_RESULT = ContextBuildResult(context_text="", web_urls=[], used_web
 
 
 def run_agent(user_text: str, user_id: str = "unknown") -> str:
-    """Запускает полный пайплайн ответа: инструменты -> LLM -> история."""
+    """
+    Выполняет полный цикл ответа пользователю.
+
+    Parameters
+    ----------
+    user_text : str
+        Текст запроса пользователя.
+    user_id : str, default="unknown"
+        Внешний идентификатор пользователя/сессии.
+
+    Returns
+    -------
+    str
+        Финальный ответ ассистента.
+    """
     session_id = user_id or "unknown"
     query = user_text.strip()
     hashed_user = hash_user_id(session_id)
@@ -335,7 +349,18 @@ def _to_langchain_messages(history: list[tuple[str, str]]) -> list[BaseMessage]:
 
 
 def _save_turn_with_observability(session_id: str, user_text: str, assistant_text: str) -> None:
-    """Сохраняет историю диалога и пишет span `history_save`."""
+    """
+    Сохраняет шаг диалога и пишет span `history_save`.
+
+    Parameters
+    ----------
+    session_id : str
+        Идентификатор сессии.
+    user_text : str
+        Текст запроса пользователя.
+    assistant_text : str
+        Ответ ассистента.
+    """
     span = create_span(
         parent=get_observability_parent() or get_observability_trace(),
         name="history_save",
@@ -351,7 +376,21 @@ def _save_turn_with_observability(session_id: str, user_text: str, assistant_tex
 
 
 def _build_context(query: str, source_order: list[ToolName] | None = None) -> ContextBuildResult:
-    """Подбирает лучший доступный контекст согласно приоритету источников."""
+    """
+    Подбирает контекст из доступных источников по приоритету.
+
+    Parameters
+    ----------
+    query : str
+        Текст запроса.
+    source_order : list[ToolName] | None
+        Явный порядок источников.
+
+    Returns
+    -------
+    ContextBuildResult
+        Итоговый контекст, ссылки и признак использования web-источника.
+    """
     source_order = source_order or _resolve_source_order(query)
 
     for index, source in enumerate(source_order):
@@ -448,6 +487,7 @@ def _invoke_tool(func: Callable[[dict[str, Any]], Any], payload: dict[str, Any],
 
 
 def _summarize_arg(arg: Any) -> dict[str, Any]:
+    """Формирует безопасное краткое описание аргумента для observability."""
     if isinstance(arg, list):
         return {"type": "list", "size": len(arg)}
     if isinstance(arg, dict):
@@ -462,6 +502,7 @@ def _summarize_arg(arg: Any) -> dict[str, Any]:
 
 
 def _summarize_result(value: Any) -> dict[str, Any]:
+    """Формирует безопасную сводку результата функции для observability."""
     if isinstance(value, str):
         return {"result_type": "str", "result_len": len(value)}
     if isinstance(value, dict):
@@ -472,7 +513,25 @@ def _summarize_result(value: Any) -> dict[str, Any]:
 
 
 def _invoke_with_timeout(func: Callable[[Any], Any], arg: Any, timeout_sec: int, op_name: str) -> Any:
-    """Безопасно вызывает функцию в отдельном потоке с ограничением времени."""
+    """
+    Вызывает функцию в отдельном потоке с ограничением времени.
+
+    Parameters
+    ----------
+    func : Callable[[Any], Any]
+        Целевая функция.
+    arg : Any
+        Аргумент для вызова.
+    timeout_sec : int
+        Лимит времени в секундах.
+    op_name : str
+        Имя операции для логов и span.
+
+    Returns
+    -------
+    Any
+        Результат `func(arg)` либо пустая строка при ошибке/таймауте.
+    """
     trace = get_observability_trace()
     parent = get_observability_parent() or trace
     op_span = create_span(
@@ -539,15 +598,15 @@ def _should_prefer_web(query: str) -> bool:
     has_lookup_marker = any(marker in lowered_query for marker in LOOKUP_PRIORITY_MARKERS)
     has_sku = SKU_PATTERN.search(query.upper()) is not None
 
-    # Явно внешние/динамические запросы отправляем в web первично.
+    # Явно внешние и динамичные запросы отправляем в web в первую очередь.
     if has_web_marker and not has_lookup_marker and not has_sku:
         return True
 
-    # Короткие общие фразы допустимо отправлять в web, если это не SKU/артикул.
+    # Короткие общие фразы можно отправлять в web, если это не SKU/артикул.
     if len(words) < 3:
         return has_web_marker and not has_sku
 
-    # Для остальных доменных вопросов web не должен иметь первичный приоритет.
+    # Для остальных доменных вопросов web не должен быть первичным источником.
     if _is_domain_query(lowered_query):
         return False
 
@@ -576,7 +635,7 @@ def _is_smalltalk(query: str) -> bool:
     if not normalized:
         return False
 
-    # Срабатывает только на короткие бытовые реплики.
+    # Реагируем только на короткие бытовые реплики.
     if len(normalized.split()) > 5:
         return False
 
@@ -656,7 +715,21 @@ def _smalltalk_response() -> str:
 
 
 def enhance_search_query(original_query: str, search_type: str = "general") -> str:
-    """Улучшает формулировку запроса для внешнего WEB-поиска."""
+    """
+    Улучшает формулировку запроса для внешнего web-поиска.
+
+    Parameters
+    ----------
+    original_query : str
+        Исходный запрос пользователя.
+    search_type : str, default="general"
+        Режим поиска (`general` или `fallback`).
+
+    Returns
+    -------
+    str
+        Нормализованный поисковый запрос.
+    """
     lowered_query = original_query.lower()
 
     if any(marker in lowered_query for marker in ("сантехник", "унитаз", "смеситель")):
@@ -787,7 +860,7 @@ def _extract_web_urls(items: list[dict[str, Any]]) -> list[str]:
 
 
 def _build_final_prompt(user_text: str, context_block: str) -> str:
-    """Собирает финальный prompt для LLM по вопросу и контексту."""
+    """Собирает финальный prompt для LLM из вопроса и контекста."""
     return (
         f"Вопрос пользователя:\n{user_text}\n\n"
         f"Контекст для ответа:\n{context_block}\n\n"

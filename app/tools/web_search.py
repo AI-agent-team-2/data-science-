@@ -131,7 +131,7 @@ def _error_object(query: str, provider: str, message: str) -> str:
 
 
 def _duckduckgo_search(query: str, max_results: int) -> str:
-    """Выполняет веб-поиск через DDGS/DuckDuckGo backend."""
+    """Выполняет web-поиск через DDGS/DuckDuckGo."""
     try:
         try:
             from ddgs import DDGS  # type: ignore
@@ -214,7 +214,17 @@ def web_search(query: str, max_results: int = 5) -> str:
     """
     Ищет актуальную внешнюю информацию в интернете.
 
-    Используется для динамичных данных: цены, наличие, отзывы и рыночные новинки.
+    Parameters
+    ----------
+    query : str
+        Поисковый запрос.
+    max_results : int, default=5
+        Максимальное число результатов.
+
+    Returns
+    -------
+    str
+        JSON-ответ с результатами внешнего поиска.
     """
     span = create_span(
         parent=get_observability_parent() or get_observability_trace(),

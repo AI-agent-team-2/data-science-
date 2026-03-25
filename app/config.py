@@ -90,7 +90,7 @@ class Settings:
 
     @property
     def resolved_openai_base_url(self) -> str:
-        """Возвращает итоговый base URL OpenAI-compatible API."""
+        """Возвращает итоговый базовый URL OpenAI-compatible API."""
         if self.openai_base_url:
             return self.openai_base_url
 
@@ -125,7 +125,7 @@ class Settings:
 
     @property
     def resolved_embedding_base_url(self) -> str:
-        """Возвращает base URL embedding API (или общий base URL)."""
+        """Возвращает базовый URL embedding API (или общий базовый URL)."""
         return self.embedding_base_url or self.resolved_openai_base_url
 
 
