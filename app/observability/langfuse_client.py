@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any
+from uuid import uuid4
 
 from app.config import settings
 from app.observability.sanitize import sanitize_payload
@@ -210,6 +211,100 @@ class _LangfuseObservationAdapter:
         self._ended = True
 
 
+class _LangfuseTraceAdapter:
+    """
+    Адаптер trace, который инкапсулирует root observation.
+
+    Нужен, чтобы `create_trace` создавал реальный trace-entity в Langfuse,
+    но код проекта продолжал работать с объектом, похожим на observation
+    (`span`, `update`, `end`, `event`).
+    """
+
+    def __init__(
+        self,
+        *,
+        trace_id: str,
+        root_observation: _LangfuseObservationAdapter,
+        trace_entity: Any | None = None,
+    ) -> None:
+        self.trace_id = trace_id
+        self.id = root_observation.id
+        self._root = root_observation
+        self._trace_entity = trace_entity
+
+    def span(
+        self,
+        *,
+        name: str,
+        input: Any | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> _LangfuseObservationAdapter:
+        return self._root.span(name=name, input=input, metadata=metadata)
+
+    def update(
+        self,
+        *,
+        input: Any | None = None,
+        output: Any | None = None,
+        metadata: dict[str, Any] | None = None,
+        level: str | None = None,
+        status_message: str | None = None,
+    ) -> None:
+        self._root.update(
+            input=input,
+            output=output,
+            metadata=metadata,
+            level=level,
+            status_message=status_message,
+        )
+
+        # Поддерживаем синхронизацию trace-level полей, если trace-entity доступен.
+        if self._trace_entity is None:
+            return
+
+        trace_update: dict[str, Any] = {}
+        if input is not None:
+            trace_update["input"] = sanitize_payload(input)
+        if output is not None:
+            trace_update["output"] = sanitize_payload(output)
+        if metadata:
+            trace_update["metadata"] = sanitize_payload(metadata)
+        if not trace_update:
+            return
+
+        updater = getattr(self._trace_entity, "update", None)
+        if callable(updater):
+            try:
+                updater(**trace_update)
+            except Exception:
+                logger.debug("Не удалось обновить trace-entity через trace.update().")
+
+    def end(
+        self,
+        *,
+        output: Any | None = None,
+        metadata: dict[str, Any] | None = None,
+        level: str | None = None,
+        status_message: str | None = None,
+    ) -> None:
+        self._root.end(
+            output=output,
+            metadata=metadata,
+            level=level,
+            status_message=status_message,
+        )
+
+    def event(
+        self,
+        *,
+        name: str,
+        level: str | None = None,
+        input: Any | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        self._root.event(name=name, level=level, input=input, metadata=metadata)
+
+
 def _is_enabled() -> bool:
     """Проверяет, включена ли интеграция Langfuse и заданы ли ключи."""
     return bool(
@@ -371,19 +466,41 @@ def create_trace(
         if session_id:
             trace_metadata["langfuse_session_id"] = session_id
 
-        adapter = _LangfuseObservationAdapter(
+        effective_trace_id = str(trace_id or "").strip() or uuid4().hex
+
+        # 1) Пытаемся создать trace-entity как первичную сущность.
+        trace_entity: Any | None = None
+        try:
+            trace_entity = _safe_call(
+                client,
+                "trace",
+                id=effective_trace_id,
+                name=name,
+                input=sanitize_payload(input_payload),
+                metadata=sanitize_payload(trace_metadata),
+            )
+        except Exception:
+            logger.debug("Не удалось создать trace-entity через client.trace(); используем root observation.")
+
+        # 2) Создаем root observation внутри trace.
+        root_span = _LangfuseObservationAdapter(
             client=client,
             name=name,
-            trace_id=trace_id,
+            trace_id=effective_trace_id,
             parent_span_id=None,
             input_payload=input_payload,
             metadata=trace_metadata,
             as_type="span",
+        ).start()
+
+        trace_adapter = _LangfuseTraceAdapter(
+            trace_id=effective_trace_id,
+            root_observation=root_span,
+            trace_entity=trace_entity,
         )
-        started = adapter.start()
-        if started.trace_id:
-            logger.debug("Создан trace %s с root observation %s", started.trace_id, started.id)
-        return started
+
+        logger.debug("Создан trace %s с root observation %s", trace_adapter.trace_id, trace_adapter.id)
+        return trace_adapter
     except Exception:
         logger.exception("Не удалось создать Langfuse trace: %s", name)
         return None

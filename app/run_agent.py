@@ -351,6 +351,7 @@ def run_agent(user_text: str, user_id: str = "unknown") -> str:
                 session_id=session_id,
                 user_text=user_text,
                 assistant_text=assistant_text,
+                parent=trace,
             )
         end_observation(
             trace,
@@ -379,6 +380,7 @@ def _save_turn_with_observability(
     session_id: str,
     user_text: str,
     assistant_text: str,
+    parent: Any | None = None,
 ) -> None:
     """
     Сохраняет шаг диалога и пишет span `history_save`.
@@ -393,7 +395,7 @@ def _save_turn_with_observability(
         Ответ ассистента.
     """
     span = create_span(
-        parent=None,
+        parent=parent,
         name="history_save",
         input_payload={"session_id": hash_user_id(session_id)},
     )
