@@ -62,7 +62,13 @@ def build_model_invoke_config(
     dict[str, Any] | None
         Словарь config для LangChain или `None`, если callback недоступен.
     """
-    callback_handler = get_langchain_callback_handler(trace_id=trace_id, session_id=session_id, user_id=user_id)
+    callback_handler = get_langchain_callback_handler(
+        trace_id=trace_id,
+        session_id=session_id,
+        user_id=user_id,
+        parent_observation_id=parent_observation_id,
+        tags=tags,
+    )
     if callback_handler is None:
         return None
 

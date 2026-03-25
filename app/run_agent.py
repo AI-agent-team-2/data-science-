@@ -234,22 +234,39 @@ def run_agent(user_text: str, user_id: str = "unknown") -> str:
     else:
         logger.debug("Root trace run_agent не создан; используется no-op observability")
 
+    effective_trace_id = str(getattr(trace, "trace_id", "") or trace_id)
+    root_parent = trace
     assistant_text = ""
     with bind_observability_context(trace=trace, parent=trace):
         try:
             if _is_identity_or_capability_query(query):
                 assistant_text = _assistant_scope_response()
-                _save_turn_with_observability(session_id=session_id, user_text=user_text, assistant_text=assistant_text)
+                _save_turn_with_observability(
+                    session_id=session_id,
+                    user_text=user_text,
+                    assistant_text=assistant_text,
+                    parent=root_parent,
+                )
                 return assistant_text
 
             if _is_smalltalk(query):
                 assistant_text = _smalltalk_response()
-                _save_turn_with_observability(session_id=session_id, user_text=user_text, assistant_text=assistant_text)
+                _save_turn_with_observability(
+                    session_id=session_id,
+                    user_text=user_text,
+                    assistant_text=assistant_text,
+                    parent=root_parent,
+                )
                 return assistant_text
 
             if _is_noise_query(query) or _is_offtopic_or_rude_query(query):
                 assistant_text = _domain_redirect_response()
-                _save_turn_with_observability(session_id=session_id, user_text=user_text, assistant_text=assistant_text)
+                _save_turn_with_observability(
+                    session_id=session_id,
+                    user_text=user_text,
+                    assistant_text=assistant_text,
+                    parent=root_parent,
+                )
                 return assistant_text
 
             history_span = create_span(
@@ -274,7 +291,12 @@ def run_agent(user_text: str, user_id: str = "unknown") -> str:
                 },
             )
             try:
-                context = _build_context(query, source_order=source_order)
+                context = _build_context(
+                    query,
+                    source_order=source_order,
+                    trace=trace,
+                    parent=root_parent,
+                )
                 end_observation(
                     context_span,
                     output_payload={
@@ -290,14 +312,19 @@ def run_agent(user_text: str, user_id: str = "unknown") -> str:
 
             if not context.context_text:
                 assistant_text = _clarifying_question()
-                _save_turn_with_observability(session_id=session_id, user_text=user_text, assistant_text=assistant_text)
+                _save_turn_with_observability(
+                    session_id=session_id,
+                    user_text=user_text,
+                    assistant_text=assistant_text,
+                    parent=root_parent,
+                )
                 return assistant_text
 
             final_prompt = _build_final_prompt(user_text=user_text, context_block=context.context_text)
             model_input = [SystemMessage(content=SYSTEM_PROMPT), *history_messages, HumanMessage(content=final_prompt)]
             parent_observation_id = str(getattr(trace, "id", "") or "")
             model_invoke_config = build_model_invoke_config(
-                trace_id=trace_id,
+                trace_id=effective_trace_id or None,
                 session_id=hashed_user,
                 user_id=hashed_user,
                 parent_observation_id=parent_observation_id or None,
@@ -320,13 +347,20 @@ def run_agent(user_text: str, user_id: str = "unknown") -> str:
                 model_input,
                 timeout_sec=MODEL_TIMEOUT_SEC,
                 op_name="model_invoke",
+                trace=trace,
+                parent=root_parent,
             )
 
             assistant_text = _extract_ai_text(response)
             if context.used_web:
                 assistant_text = _ensure_sources_block(assistant_text, context.web_urls)
 
-            _save_turn_with_observability(session_id=session_id, user_text=user_text, assistant_text=assistant_text)
+            _save_turn_with_observability(
+                session_id=session_id,
+                user_text=user_text,
+                assistant_text=assistant_text,
+                parent=root_parent,
+            )
             return assistant_text
         except Exception as exc:
             capture_error(
@@ -363,7 +397,12 @@ def _to_langchain_messages(history: list[tuple[str, str]]) -> list[BaseMessage]:
     return messages
 
 
-def _save_turn_with_observability(session_id: str, user_text: str, assistant_text: str) -> None:
+def _save_turn_with_observability(
+    session_id: str,
+    user_text: str,
+    assistant_text: str,
+    parent: Any | None = None,
+) -> None:
     """
     Сохраняет шаг диалога и пишет span `history_save`.
 
@@ -377,7 +416,7 @@ def _save_turn_with_observability(session_id: str, user_text: str, assistant_tex
         Ответ ассистента.
     """
     span = create_span(
-        parent=get_observability_parent() or get_observability_trace(),
+        parent=parent or get_observability_parent() or get_observability_trace(),
         name="history_save",
         input_payload={"session_id": hash_user_id(session_id)},
     )
@@ -390,7 +429,12 @@ def _save_turn_with_observability(session_id: str, user_text: str, assistant_tex
         raise
 
 
-def _build_context(query: str, source_order: list[ToolName] | None = None) -> ContextBuildResult:
+def _build_context(
+    query: str,
+    source_order: list[ToolName] | None = None,
+    trace: Any | None = None,
+    parent: Any | None = None,
+) -> ContextBuildResult:
     """
     Подбирает контекст из доступных источников по приоритету.
 
@@ -420,7 +464,13 @@ def _build_context(query: str, source_order: list[ToolName] | None = None) -> Co
         if source == "web" and not _should_use_web_source(query=query, web_mode=web_mode):
             continue
 
-        result = _context_from_source(source=source, query=query, web_mode=web_mode)
+        result = _context_from_source(
+            source=source,
+            query=query,
+            web_mode=web_mode,
+            trace=trace,
+            parent=parent,
+        )
         if result.context_text:
             return result
 
@@ -436,18 +486,30 @@ def _resolve_source_order(query: str) -> list[ToolName]:
     return ["rag", "lookup", "web"]
 
 
-def _context_from_source(source: ToolName, query: str, web_mode: str) -> ContextBuildResult:
+def _context_from_source(
+    source: ToolName,
+    query: str,
+    web_mode: str,
+    trace: Any | None = None,
+    parent: Any | None = None,
+) -> ContextBuildResult:
     """Строит контекст из указанного источника данных."""
     if source == "lookup":
-        return _context_from_lookup(query)
+        return _context_from_lookup(query, trace=trace, parent=parent)
     if source == "rag":
-        return _context_from_rag(query)
-    return _context_from_web(query, mode=web_mode)
+        return _context_from_rag(query, trace=trace, parent=parent)
+    return _context_from_web(query, mode=web_mode, trace=trace, parent=parent)
 
 
-def _context_from_lookup(query: str) -> ContextBuildResult:
+def _context_from_lookup(query: str, trace: Any | None = None, parent: Any | None = None) -> ContextBuildResult:
     """Пытается получить контекст из базы товаров (LOOKUP)."""
-    payload = _invoke_tool(product_lookup.invoke, {"query": query, "limit": 5}, "tool_lookup")
+    payload = _invoke_tool(
+        product_lookup.invoke,
+        {"query": query, "limit": 5},
+        "tool_lookup",
+        trace=trace,
+        parent=parent,
+    )
     items = _extract_results(payload)
 
     if not items:
@@ -460,9 +522,15 @@ def _context_from_lookup(query: str) -> ContextBuildResult:
     )
 
 
-def _context_from_rag(query: str) -> ContextBuildResult:
+def _context_from_rag(query: str, trace: Any | None = None, parent: Any | None = None) -> ContextBuildResult:
     """Пытается получить контекст из RAG-базы знаний."""
-    payload = _invoke_tool(rag_search.invoke, {"query": query}, "tool_rag")
+    payload = _invoke_tool(
+        rag_search.invoke,
+        {"query": query},
+        "tool_rag",
+        trace=trace,
+        parent=parent,
+    )
     items = _extract_results(payload)
 
     if not _is_rag_useful(items):
@@ -475,13 +543,20 @@ def _context_from_rag(query: str) -> ContextBuildResult:
     )
 
 
-def _context_from_web(query: str, mode: str) -> ContextBuildResult:
+def _context_from_web(
+    query: str,
+    mode: str,
+    trace: Any | None = None,
+    parent: Any | None = None,
+) -> ContextBuildResult:
     """Пытается получить контекст из web-поиска."""
     enhanced_query = enhance_search_query(query, mode)
     payload = _invoke_tool(
         web_search.invoke,
         {"query": enhanced_query, "max_results": settings.web_search_max_results},
         "tool_web",
+        trace=trace,
+        parent=parent,
     )
     items = _extract_results(payload)
 
@@ -495,9 +570,22 @@ def _context_from_web(query: str, mode: str) -> ContextBuildResult:
     )
 
 
-def _invoke_tool(func: Callable[[dict[str, Any]], Any], payload: dict[str, Any], op_name: str) -> dict[str, Any]:
+def _invoke_tool(
+    func: Callable[[dict[str, Any]], Any],
+    payload: dict[str, Any],
+    op_name: str,
+    trace: Any | None = None,
+    parent: Any | None = None,
+) -> dict[str, Any]:
     """Вызывает tool с таймаутом и возвращает JSON-объект."""
-    raw = _invoke_with_timeout(func, payload, timeout_sec=TOOL_TIMEOUT_SEC, op_name=op_name)
+    raw = _invoke_with_timeout(
+        func,
+        payload,
+        timeout_sec=TOOL_TIMEOUT_SEC,
+        op_name=op_name,
+        trace=trace,
+        parent=parent,
+    )
     return _parse_object_json(raw)
 
 
@@ -527,7 +615,14 @@ def _summarize_result(value: Any) -> dict[str, Any]:
     return {"result_type": type(value).__name__}
 
 
-def _invoke_with_timeout(func: Callable[[Any], Any], arg: Any, timeout_sec: int, op_name: str) -> Any:
+def _invoke_with_timeout(
+    func: Callable[[Any], Any],
+    arg: Any,
+    timeout_sec: int,
+    op_name: str,
+    trace: Any | None = None,
+    parent: Any | None = None,
+) -> Any:
     """
     Вызывает функцию в отдельном потоке с ограничением времени.
 
@@ -547,10 +642,10 @@ def _invoke_with_timeout(func: Callable[[Any], Any], arg: Any, timeout_sec: int,
     Any
         Результат `func(arg)` либо пустая строка при ошибке/таймауте.
     """
-    trace = get_observability_trace()
-    parent = get_observability_parent() or trace
+    active_trace = trace or get_observability_trace()
+    active_parent = parent or get_observability_parent() or active_trace
     op_span = create_span(
-        parent=parent,
+        parent=active_parent,
         name=op_name,
         input_payload={
             "timeout_sec": timeout_sec,
@@ -559,7 +654,7 @@ def _invoke_with_timeout(func: Callable[[Any], Any], arg: Any, timeout_sec: int,
     )
 
     def _runner() -> Any:
-        with bind_observability_context(trace=trace, parent=op_span or parent):
+        with bind_observability_context(trace=active_trace, parent=op_span or active_parent):
             return func(arg)
 
     with ThreadPoolExecutor(max_workers=1) as executor:
