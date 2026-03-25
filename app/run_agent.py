@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from contextvars import copy_context
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass
 from typing import Any, Callable, Literal
@@ -562,7 +563,9 @@ def _invoke_with_timeout(func: Callable[[Any], Any], arg: Any, timeout_sec: int,
             return func(arg)
 
     with ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(_runner)
+        # Переносим contextvars в worker-поток, чтобы callback сохранял parent-child связь trace.
+        ctx = copy_context()
+        future = executor.submit(ctx.run, _runner)
         try:
             result = future.result(timeout=max(1, timeout_sec))
             end_observation(op_span, output_payload=_summarize_result(result))
