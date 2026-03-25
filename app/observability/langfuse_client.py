@@ -259,6 +259,8 @@ def get_langchain_callback_handler(
     trace_id: str | None = None,
     session_id: str | None = None,
     user_id: str | None = None,
+    parent_observation_id: str | None = None,
+    tags: list[str] | None = None,
 ) -> Any | None:
     """
     Возвращает singleton `CallbackHandler` для LangChain.
@@ -271,13 +273,17 @@ def get_langchain_callback_handler(
         Аргумент сохранен для совместимости сигнатуры.
     user_id : str | None
         Аргумент сохранен для совместимости сигнатуры.
+    parent_observation_id : str | None
+        Идентификатор родительского observation для явной привязки callback.
+    tags : list[str] | None
+        Теги trace/наблюдения для callback handler.
 
     Returns
     -------
     Any | None
         Экземпляр callback handler или `None`, если инициализация не удалась.
     """
-    _ = (trace_id, session_id, user_id)
+    _ = (trace_id, session_id, user_id, parent_observation_id, tags)
     global _callback_handler_class, _callback_init_error
     if not _is_enabled():
         return None
@@ -289,7 +295,27 @@ def get_langchain_callback_handler(
 
             _callback_handler_class = LangfuseCallbackHandler
 
-        callback_handler = _callback_handler_class()
+        constructor_kwargs: dict[str, Any] = {}
+        if trace_id:
+            constructor_kwargs["trace_id"] = str(trace_id).strip()
+        if session_id:
+            constructor_kwargs["session_id"] = str(session_id).strip()
+        if user_id:
+            constructor_kwargs["user_id"] = str(user_id).strip()
+        if parent_observation_id:
+            constructor_kwargs["parent_observation_id"] = str(parent_observation_id).strip()
+        if tags:
+            constructor_kwargs["tags"] = tags
+
+        callback_handler: Any
+        if constructor_kwargs:
+            try:
+                callback_handler = _callback_handler_class(**constructor_kwargs)
+            except TypeError:
+                # Фолбэк на старые/ограниченные сигнатуры CallbackHandler.
+                callback_handler = _callback_handler_class()
+        else:
+            callback_handler = _callback_handler_class()
         _callback_init_error = None
         logger.debug("Langfuse CallbackHandler успешно создан для запроса.")
         return callback_handler
