@@ -11,12 +11,7 @@ from typing import Any, Final
 from langchain_core.tools import tool
 
 from app.config import settings
-from app.observability import (
-    capture_error,
-    create_span,
-    end_observation,
-    sanitize_text,
-)
+from app.observability import sanitize_text
 
 logger = logging.getLogger(__name__)
 
@@ -224,13 +219,7 @@ def web_search(query: str, max_results: int = 5) -> str:
     str
         JSON-ответ с результатами внешнего поиска.
     """
-    span = create_span(
-        parent=None,
-        name="web_search_exec",
-        input_payload={"query": sanitize_text(query), "max_results": max_results},
-    )
     if not settings.enable_web_search:
-        end_observation(span, output_payload={"provider": "disabled", "cache_hit": False, "result_count": 0})
         return _error_object(query, "disabled", "Веб-поиск отключен в настройках.")
 
     normalized_max_results = min(max_results, settings.web_search_max_results)
@@ -239,12 +228,6 @@ def web_search(query: str, max_results: int = 5) -> str:
     cache_key = _get_cache_key(query, normalized_max_results)
     cached_result = _load_from_cache(cache_key)
     if cached_result is not None:
-        cached_count = int(cached_result.get("count", 0) or 0) if isinstance(cached_result, dict) else 0
-        provider = str(cached_result.get("provider", "cache")) if isinstance(cached_result, dict) else "cache"
-        end_observation(
-            span,
-            output_payload={"provider": provider, "cache_hit": True, "result_count": cached_count},
-        )
         return _to_json(cached_result)
 
     tavily_key = os.getenv("TAVILY_API_KEY", "").strip()
@@ -257,20 +240,8 @@ def web_search(query: str, max_results: int = 5) -> str:
         parsed_result = json.loads(raw_result)
         if isinstance(parsed_result, dict) and parsed_result.get("results"):
             _save_to_cache(cache_key, parsed_result)
-        if isinstance(parsed_result, dict):
-            end_observation(
-                span,
-                output_payload={
-                    "provider": str(parsed_result.get("provider", "unknown")),
-                    "cache_hit": False,
-                    "result_count": int(parsed_result.get("count", 0) or 0),
-                },
-            )
-        else:
-            end_observation(span, output_payload={"provider": "unknown", "cache_hit": False, "result_count": 0})
     except Exception as exc:
         logger.exception("Не удалось разобрать ответ web_search для кэширования")
-        capture_error(span, exc, metadata={"tool": "web_search", "query": sanitize_text(query)})
-        end_observation(span, output_payload={"provider": "unknown", "cache_hit": False, "result_count": 0})
+        logger.debug("Детали ошибки web_search: %s", sanitize_text(str(exc)))
 
     return raw_result
