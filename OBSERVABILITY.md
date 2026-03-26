@@ -44,7 +44,6 @@
 
 - `hash_user_id(user_id)` — стабильный идентификатор вида `u_<16hex>`;
 - `sanitize_text(text)` — маскирование email/телефонов/secret-like токенов;
-- `sanitize_payload(payload)` — рекурсивная санитизация структур.
 
 ## Переменные окружения
 

@@ -82,7 +82,7 @@ def load_messages(session_id: str, limit: int | None = None) -> list[HistoryMess
                 ORDER BY created_at DESC
                 LIMIT ?
                 """,
-                (session_id, f"-{ttl_days} days", effective_limit * 2),
+                (session_id, f"-{ttl_days} days", effective_limit),
             )
             rows = cursor.fetchall()
     except Exception:

@@ -41,3 +41,5 @@ rag_notebook.ipynb
 app/legacy/
 github_actions_deploy
 github_actions_deploy.pub
+deploy.sh
+LOCAL_PROJECT_EXPLANATION.md

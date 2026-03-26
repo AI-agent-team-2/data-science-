@@ -83,7 +83,6 @@ def get_langchain_callback_handler(
     Any | None
         Экземпляр callback handler или `None`, если инициализация не удалась.
     """
-    _ = (trace_id, session_id, user_id, parent_observation_id, tags)
     global _callback_handler_class, _callback_init_error
     if not _is_enabled():
         return None

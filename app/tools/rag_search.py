@@ -11,7 +11,15 @@ from app.tools.response_utils import empty_results_payload, to_json
 
 logger = logging.getLogger(__name__)
 
-retriever = ChromaRetriever()
+_retriever: ChromaRetriever | None = None
+
+
+def _get_retriever() -> ChromaRetriever:
+    """Ленивая инициализация retriever для устойчивого импорта модуля."""
+    global _retriever
+    if _retriever is None:
+        _retriever = ChromaRetriever()
+    return _retriever
 
 
 @tool
@@ -33,6 +41,7 @@ def rag_search(query: str) -> str:
         return to_json(empty_results_payload(query=query, note="RAG-поиск отключен в настройках."))
 
     try:
+        retriever = _get_retriever()
         results = retriever.search(query=query)
     except Exception as exc:
         logger.exception("Ошибка RAG-поиска для запроса: %s", query)

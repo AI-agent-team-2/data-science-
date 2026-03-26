@@ -27,7 +27,15 @@ class SearchResult(TypedDict):
     score: float
 
 
-retriever = ProductRetriever()
+_retriever: ProductRetriever | None = None
+
+
+def _get_retriever() -> ProductRetriever:
+    """Ленивая инициализация retriever для устойчивого импорта модуля."""
+    global _retriever
+    if _retriever is None:
+        _retriever = ProductRetriever()
+    return _retriever
 
 
 def _normalize(text: str) -> str:
@@ -76,6 +84,7 @@ def product_lookup(query: str, limit: int = 5) -> str:
 
     top_n = _clamp_limit(limit)
     mode = "semantic"
+    retriever = _get_retriever()
     query_skus = retriever.extract_query_skus(normalized_query)
 
     try:

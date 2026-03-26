@@ -6,6 +6,7 @@ import re
 from contextvars import copy_context
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Callable, Literal
 from uuid import uuid4
 
@@ -30,6 +31,8 @@ logger = logging.getLogger(__name__)
 ToolName = Literal["lookup", "rag", "web"]
 
 SKU_PATTERN = re.compile(r"\b[A-Z][A-Z0-9]{4,}\b")
+WEB_YEAR_PATTERN = re.compile(r"\bв\s+20\d{2}\b")
+YEAR_PATTERN = re.compile(r"\b(20\d{2})\b")
 TOOL_TIMEOUT_SEC = 20
 MODEL_TIMEOUT_SEC = 45
 MIN_RAG_SCORE = 0.2
@@ -84,9 +87,6 @@ OFFTOPIC_OR_RUDE_MARKERS: tuple[str, ...] = (
 WEB_PRIORITY_MARKERS: tuple[str, ...] = (
     "сейчас",
     "сегодня",
-    "в 2026",
-    "в 2025",
-    "в 2024",
     "новые требования",
     "что изменилось",
     "по отзывам",
@@ -321,14 +321,9 @@ def _to_langchain_messages(history: list[tuple[str, str]]) -> list[BaseMessage]:
     return messages
 
 
-def _save_turn(session_id: str, user_text: str, assistant_text: str) -> None:
-    """Сохраняет шаг диалога без ручного управления trace/span."""
-    save_turn(session_id=session_id, user_text=user_text, assistant_text=assistant_text)
-
-
 def _save_and_return(session_id: str, user_text: str, assistant_text: str) -> str:
     """Единая точка сохранения ответа и возврата результата из pipeline."""
-    _save_turn(session_id=session_id, user_text=user_text, assistant_text=assistant_text)
+    save_turn(session_id=session_id, user_text=user_text, assistant_text=assistant_text)
     return assistant_text
 
 
@@ -516,7 +511,7 @@ def _invoke_with_timeout(
         except FuturesTimeoutError:
             logger.warning("Операция превысила таймаут %s сек", timeout_sec)
             return ""
-        except Exception as exc:
+        except Exception:
             logger.exception("Операция завершилась с ошибкой")
             return ""
 
@@ -539,9 +534,6 @@ def _child_config(config: RunnableConfig | None, run_name: str) -> RunnableConfi
         child["metadata"] = dict(metadata)
     child["run_name"] = run_name
     return child
-
-
-
 
 def _parse_object_json(raw: Any) -> dict[str, Any]:
     """Парсит JSON-строку в dict. Некорректные данные приводятся к пустому dict."""
@@ -569,22 +561,23 @@ def _should_prefer_web(query: str) -> bool:
     lowered_query = query.lower()
     words = lowered_query.split()
     has_web_marker = any(marker in lowered_query for marker in WEB_PRIORITY_MARKERS)
+    has_web_year_marker = WEB_YEAR_PATTERN.search(lowered_query) is not None
     has_lookup_marker = any(marker in lowered_query for marker in LOOKUP_PRIORITY_MARKERS)
     has_sku = SKU_PATTERN.search(query.upper()) is not None
 
     # Явно внешние и динамичные запросы отправляем в web в первую очередь.
-    if has_web_marker and not has_lookup_marker and not has_sku:
+    if (has_web_marker or has_web_year_marker) and not has_lookup_marker and not has_sku:
         return True
 
     # Короткие общие фразы можно отправлять в web, если это не SKU/артикул.
     if len(words) < 3:
-        return has_web_marker and not has_sku
+        return (has_web_marker or has_web_year_marker) and not has_sku
 
     # Для остальных доменных вопросов web не должен быть первичным источником.
     if _is_domain_query(lowered_query):
         return False
 
-    return has_web_marker
+    return has_web_marker or has_web_year_marker
 
 
 def _should_prefer_lookup(query: str) -> bool:
@@ -710,11 +703,9 @@ def enhance_search_query(original_query: str, search_type: str = "general") -> s
         return original_query
 
     if "новинк" in lowered_query or "новые" in lowered_query:
-        if "2026" in lowered_query:
-            return "новинки сантехники 2026 каталог"
-        if "2025" in lowered_query:
-            return "новинки сантехники 2025 каталог"
-        return "новые сантехнические товары 2026 каталог"
+        year_match = YEAR_PATTERN.search(lowered_query)
+        target_year = year_match.group(1) if year_match else str(datetime.now().year)
+        return f"новинки сантехники {target_year} каталог"
 
     if any(marker in lowered_query for marker in ("бюджет", "цен", "стоит", "сколько")):
         return f"{original_query} сантехника"
