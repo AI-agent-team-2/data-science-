@@ -3,14 +3,13 @@ from __future__ import annotations
 import logging
 import sqlite3
 from pathlib import Path
-from typing import Any, TypeAlias
+from typing import TypeAlias
 
 from app.config import settings
 
 logger = logging.getLogger(__name__)
 
 HistoryMessage: TypeAlias = tuple[str, str]
-HistoryStats: TypeAlias = dict[str, Any]
 
 CREATE_HISTORY_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS history (
@@ -107,43 +106,6 @@ def clear_history(session_id: str) -> None:
             connection.commit()
     except Exception:
         logger.exception("Не удалось очистить историю для session_id=%s", session_id)
-
-
-def get_history_stats(session_id: str) -> HistoryStats:
-    """Возвращает статистику по истории пользователя."""
-    default_stats: HistoryStats = {
-        "count": 0,
-        "first_message": None,
-        "last_message": None,
-    }
-
-    try:
-        with get_connection() as connection:
-            cursor = connection.cursor()
-            cursor.execute(
-                """
-                SELECT
-                    COUNT(*) AS count,
-                    MIN(created_at) AS first,
-                    MAX(created_at) AS last
-                FROM history
-                WHERE session_id = ?
-                """,
-                (session_id,),
-            )
-            row = cursor.fetchone()
-    except Exception:
-        logger.exception("Не удалось получить статистику истории для session_id=%s", session_id)
-        return default_stats
-
-    if row is None:
-        return default_stats
-
-    return {
-        "count": int(row["count"]),
-        "first_message": row["first"],
-        "last_message": row["last"],
-    }
 
 
 def _cleanup_old(session_id: str) -> None:

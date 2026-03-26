@@ -15,6 +15,19 @@ DEFAULT_LANGFUSE_HOST: Final[str] = "https://cloud.langfuse.com"
 DEFAULT_OPENROUTER_MODEL: Final[str] = "openai/gpt-4o-mini"
 DEFAULT_OPENAI_MODEL: Final[str] = "gpt-4o-mini"
 DEFAULT_EMBEDDING_MODEL: Final[str] = "text-embedding-3-small"
+DEFAULT_COLLECTION_NAME: Final[str] = "sanitary_goods"
+DEFAULT_TOP_K: Final[int] = 6
+DEFAULT_EMBEDDING_BATCH_SIZE: Final[int] = 64
+DEFAULT_CHUNK_SIZE: Final[int] = 900
+DEFAULT_CHUNK_OVERLAP: Final[int] = 140
+DEFAULT_HISTORY_MAX_MESSAGES: Final[int] = 24
+DEFAULT_HISTORY_TTL_DAYS: Final[int] = 30
+DEFAULT_WEB_CACHE_ENABLED: Final[bool] = True
+DEFAULT_WEB_CACHE_TTL_HOURS: Final[int] = 24
+DEFAULT_WEB_SEARCH_MAX_RESULTS: Final[int] = 5
+DEFAULT_ENABLE_WEB_SEARCH: Final[bool] = True
+DEFAULT_ENABLE_RAG: Final[bool] = True
+DEFAULT_ENABLE_PRODUCT_LOOKUP: Final[bool] = True
 SUPPORTED_PROVIDERS: Final[set[str]] = {"openrouter", "openai"}
 
 
@@ -29,19 +42,6 @@ def _get_env_bool(name: str, default: bool) -> bool:
     return raw_value in {"1", "true", "yes", "y", "on"}
 
 
-def _get_env_int(name: str, default: int, min_value: int | None = None) -> int:
-    """Возвращает целое число из окружения с безопасным fallback."""
-    raw_value = _get_env_str(name, str(default))
-    try:
-        value = int(raw_value)
-    except ValueError:
-        value = default
-
-    if min_value is not None:
-        return max(min_value, value)
-    return value
-
-
 @dataclass(frozen=True)
 class Settings:
     """Конфигурация приложения, загружаемая из `.env` и переменных окружения."""
@@ -51,30 +51,30 @@ class Settings:
     model_name: str = _get_env_str("MODEL_NAME")
     openai_base_url: str = _get_env_str("OPENAI_BASE_URL")
 
-    embedding_model_name: str = _get_env_str("EMBEDDING_MODEL_NAME", DEFAULT_EMBEDDING_MODEL)
+    embedding_model_name: str = DEFAULT_EMBEDDING_MODEL
     embedding_api_key: str = _get_env_str("EMBEDDING_API_KEY")
     embedding_base_url: str = _get_env_str("EMBEDDING_BASE_URL")
 
     telegram_token: str = _get_env_str("TELEGRAM_TOKEN")
     chroma_path: str = _get_env_str("CHROMA_PATH", "./chroma_db")
-    collection_name: str = _get_env_str("COLLECTION_NAME", "sanitary_goods")
+    collection_name: str = DEFAULT_COLLECTION_NAME
 
-    top_k: int = _get_env_int("TOP_K", 6, min_value=1)
-    embedding_batch_size: int = _get_env_int("EMBEDDING_BATCH_SIZE", 64, min_value=1)
-    chunk_size: int = _get_env_int("CHUNK_SIZE", 900, min_value=200)
-    chunk_overlap: int = _get_env_int("CHUNK_OVERLAP", 140, min_value=0)
+    top_k: int = DEFAULT_TOP_K
+    embedding_batch_size: int = DEFAULT_EMBEDDING_BATCH_SIZE
+    chunk_size: int = DEFAULT_CHUNK_SIZE
+    chunk_overlap: int = DEFAULT_CHUNK_OVERLAP
 
     history_db_path: str = _get_env_str("HISTORY_DB_PATH", "./history.db")
-    history_max_messages: int = _get_env_int("HISTORY_MAX_MESSAGES", 24, min_value=1)
-    history_ttl_days: int = _get_env_int("HISTORY_TTL_DAYS", 30, min_value=1)
+    history_max_messages: int = DEFAULT_HISTORY_MAX_MESSAGES
+    history_ttl_days: int = DEFAULT_HISTORY_TTL_DAYS
 
-    web_cache_enabled: bool = _get_env_bool("WEB_CACHE_ENABLED", True)
-    web_cache_ttl_hours: int = _get_env_int("WEB_CACHE_TTL_HOURS", 24, min_value=0)
-    web_search_max_results: int = _get_env_int("WEB_SEARCH_MAX_RESULTS", 5, min_value=1)
+    web_cache_enabled: bool = DEFAULT_WEB_CACHE_ENABLED
+    web_cache_ttl_hours: int = DEFAULT_WEB_CACHE_TTL_HOURS
+    web_search_max_results: int = DEFAULT_WEB_SEARCH_MAX_RESULTS
 
-    enable_web_search: bool = _get_env_bool("ENABLE_WEB_SEARCH", True)
-    enable_rag: bool = _get_env_bool("ENABLE_RAG", True)
-    enable_product_lookup: bool = _get_env_bool("ENABLE_PRODUCT_LOOKUP", True)
+    enable_web_search: bool = DEFAULT_ENABLE_WEB_SEARCH
+    enable_rag: bool = DEFAULT_ENABLE_RAG
+    enable_product_lookup: bool = DEFAULT_ENABLE_PRODUCT_LOOKUP
 
     langfuse_public_key: str = _get_env_str("LANGFUSE_PUBLIC_KEY")
     langfuse_secret_key: str = _get_env_str("LANGFUSE_SECRET_KEY")
