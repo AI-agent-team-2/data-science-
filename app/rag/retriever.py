@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 import chromadb
@@ -10,35 +11,35 @@ from app.rag.embeddings import create_embedding_function
 
 logger = logging.getLogger(__name__)
 
-KEYWORD_STOP_WORDS: set[str] = {
-    "что",
-    "как",
-    "где",
-    "когда",
-    "почему",
-    "зачем",
-    "какой",
-    "сколько",
-    "это",
-}
 
-SANITARY_TERMS: tuple[str, ...] = (
-    "унитаз",
-    "смеситель",
-    "ванна",
-    "душ",
-    "кран",
-    "труба",
-    "фитинг",
-    "инсталляция",
-    "раковина",
-    "бойлер",
-    "полотенцесушитель",
-)
+PRODUCT_COLLECTION_SUFFIX = "_products"
+NON_ALNUM_PATTERN = re.compile(r"[^A-Z0-9]+")
+SKU_PATTERN = re.compile(r"\b[A-Z0-9][A-Z0-9\-_]{4,}\b")
+SKU_SPLIT_PATTERN = re.compile(r"\b([A-Z]{2,}[A-Z0-9]{1,})[\s\-_/]+([0-9]{2,}[A-Z0-9]*)\b")
+WORD_PATTERN = re.compile(r"[a-zA-Zа-яА-Я0-9]+")
+
+
+def _canonical_sku(value: str) -> str:
+    """Нормализует SKU к каноническому виду для точного сравнения."""
+    return NON_ALNUM_PATTERN.sub("", str(value or "").upper())
+
+
+def _split_csv_values(value: str) -> list[str]:
+    """Делит CSV-подобную строку на аккуратный список значений."""
+    if not value:
+        return []
+    raw_parts = re.split(r"[,\n;|]+", value)
+    result = [" ".join(part.strip().split()) for part in raw_parts]
+    return [part for part in result if part]
+
+
+def _tokenize(text: str) -> set[str]:
+    """Разбивает текст на набор токенов для легкого post-rerank."""
+    return {token.lower() for token in WORD_PATTERN.findall(text)}
 
 
 class ChromaRetriever:
-    """Обертка над Chroma для векторного и гибридного поиска."""
+    """Обертка над Chroma для векторного поиска."""
 
     def __init__(self) -> None:
         self.client = chromadb.PersistentClient(path=settings.chroma_path)
@@ -82,40 +83,155 @@ class ChromaRetriever:
 
         return output
 
-    def hybrid_search(self, query: str, top_k: int | None = None, use_keyword: bool = True) -> list[dict[str, Any]]:
-        """Выполняет гибридный поиск: векторный скор + keyword boosting."""
-        n_results = top_k if top_k is not None else settings.top_k
-        n_results = max(1, int(n_results))
 
-        vector_results = self.search(query=query, top_k=n_results * 2)
-        if not use_keyword:
-            return vector_results[:n_results]
+class ProductRetriever:
+    """Ретривер карточек товаров из отдельной product-level коллекции Chroma."""
 
-        keywords = self._extract_keywords(query)
-        for result in vector_results:
-            text = str(result.get("text", "")).lower()
-            original_score = float(result.get("score", 0.0) or 0.0)
+    def __init__(self, collection_name: str | None = None) -> None:
+        self.client = chromadb.PersistentClient(path=settings.chroma_path)
+        self.embedding_function = create_embedding_function()
+        self.collection_name = collection_name or f"{settings.collection_name}{PRODUCT_COLLECTION_SUFFIX}"
 
-            boost = 0.0
-            for keyword in keywords:
-                if keyword in text:
-                    boost += 0.15
+        try:
+            self.collection = self.client.get_collection(name=self.collection_name)
+            self.collection._embedding_function = self.embedding_function
+        except Exception:
+            logger.info("Product-коллекция '%s' не найдена. Создаю новую.", self.collection_name)
+            self.collection = self.client.create_collection(
+                name=self.collection_name,
+                embedding_function=self.embedding_function,
+            )
 
-            result["score_original"] = original_score
-            result["boost"] = boost
-            result["score"] = min(1.0, original_score + boost)
+    def extract_query_skus(self, query: str) -> set[str]:
+        """Извлекает candidate SKU из пользовательского запроса."""
+        skus: set[str] = set()
+        query_upper = str(query or "").upper()
 
-        vector_results.sort(key=lambda item: float(item.get("score", 0.0) or 0.0), reverse=True)
-        return vector_results[:n_results]
+        for raw_sku in SKU_PATTERN.findall(query_upper):
+            normalized = _canonical_sku(raw_sku)
+            if normalized and any(char.isdigit() for char in normalized):
+                skus.add(normalized)
 
-    def _extract_keywords(self, query: str) -> list[str]:
-        """Извлекает ключевые слова запроса для keyword boosting."""
-        lowered_query = query.lower()
-        raw_words = lowered_query.split()
+        # Поддержка "разбитых" артикулов вида `OGBKP 001` / `ABC-12345`.
+        for left, right in SKU_SPLIT_PATTERN.findall(query_upper):
+            normalized = _canonical_sku(f"{left}{right}")
+            if normalized and any(char.isdigit() for char in normalized):
+                skus.add(normalized)
+        return skus
 
-        keywords = [word for word in raw_words if word not in KEYWORD_STOP_WORDS and len(word) > 2]
-        for term in SANITARY_TERMS:
-            if term in lowered_query and term not in keywords:
-                keywords.append(term)
+    def find_exact_sku_matches(self, query: str, limit: int = 5) -> list[dict[str, Any]]:
+        """Ищет карточки по точному совпадению SKU."""
+        query_skus = self.extract_query_skus(query)
+        if not query_skus:
+            return []
 
-        return keywords
+        try:
+            snapshot = self.collection.get(include=["metadatas"])
+        except Exception:
+            logger.exception("Ошибка чтения product-коллекции для exact SKU поиска")
+            return []
+
+        metadatas = snapshot.get("metadatas") or []
+        matches: list[dict[str, Any]] = []
+
+        for metadata in metadatas:
+            if not isinstance(metadata, dict):
+                continue
+
+            item_skus = self._extract_item_skus(metadata)
+            matched = sorted(query_skus.intersection(item_skus))
+            if not matched:
+                continue
+
+            score = 100.0 + 25.0 * len(matched)
+            item = self._serialize_item(metadata=metadata, score=score)
+            item["matched_skus"] = matched
+            matches.append(item)
+
+        matches.sort(key=lambda item: float(item.get("score", 0.0)), reverse=True)
+        return matches[: max(1, int(limit))]
+
+    def semantic_search(self, query: str, limit: int = 5) -> list[dict[str, Any]]:
+        """Делает fallback semantic-поиск по `lookup_text` product-коллекции."""
+        top_n = max(1, int(limit))
+        query_tokens = _tokenize(query)
+
+        try:
+            result = self.collection.query(query_texts=[query], n_results=max(top_n * 3, top_n))
+        except Exception:
+            logger.exception("Ошибка semantic-поиска по product-коллекции для query=%s", query)
+            return []
+
+        documents = result.get("documents", [[]])[0]
+        metadatas = result.get("metadatas", [[]])[0]
+        distances = result.get("distances", [[]])[0]
+
+        candidates: list[dict[str, Any]] = []
+        for document, metadata, distance in zip(documents, metadatas, distances):
+            if not isinstance(metadata, dict):
+                continue
+
+            base_score = float(1 / (1 + distance)) if distance is not None else 0.0
+            lookup_text = str(document or "")
+            overlap = len(query_tokens.intersection(_tokenize(lookup_text)))
+            rerank_bonus = 0.03 * overlap
+            score = min(1.0, base_score + rerank_bonus)
+
+            candidates.append(self._serialize_item(metadata=metadata, score=score))
+
+        # Дедупликация по source/doc_id с сохранением лучшего score.
+        deduped: dict[str, dict[str, Any]] = {}
+        for item in candidates:
+            dedupe_key = str(item.get("source") or "") or str(item.get("doc_id") or "")
+            if not dedupe_key:
+                dedupe_key = str(item.get("name", "unknown"))
+            existing = deduped.get(dedupe_key)
+            if existing is None or float(item.get("score", 0.0)) > float(existing.get("score", 0.0)):
+                deduped[dedupe_key] = item
+
+        ranked = sorted(deduped.values(), key=lambda item: float(item.get("score", 0.0)), reverse=True)
+        return ranked[:top_n]
+
+    def _extract_item_skus(self, metadata: dict[str, Any]) -> set[str]:
+        """Извлекает normalized SKU из metadata карточки."""
+        values: list[str] = []
+
+        raw_articles_norm = metadata.get("articles_norm")
+        if isinstance(raw_articles_norm, str):
+            values.extend(_split_csv_values(raw_articles_norm))
+
+        raw_articles = metadata.get("articles")
+        if isinstance(raw_articles, str):
+            values.extend(_split_csv_values(raw_articles))
+        elif isinstance(raw_articles, list):
+            values.extend(str(value) for value in raw_articles)
+
+        normalized = {_canonical_sku(value) for value in values}
+        return {value for value in normalized if value}
+
+    def _serialize_item(self, metadata: dict[str, Any], score: float) -> dict[str, Any]:
+        """Приводит metadata карточки к единому runtime-формату product_lookup."""
+        name = str(metadata.get("product") or metadata.get("document") or metadata.get("doc_id") or "").strip()
+        brand = str(metadata.get("brand") or "").strip()
+        category = str(metadata.get("category") or "").strip()
+        source = str(metadata.get("source") or "").strip()
+        doc_id = str(metadata.get("doc_id") or "").strip()
+
+        raw_articles = metadata.get("articles")
+        if isinstance(raw_articles, str):
+            sku_list = _split_csv_values(raw_articles)
+        elif isinstance(raw_articles, list):
+            sku_list = [str(value).strip() for value in raw_articles if str(value).strip()]
+        else:
+            sku_list = []
+
+        return {
+            "name": name,
+            "brand": brand,
+            "category": category,
+            "sku_list": sku_list[:20],
+            "source": source,
+            "doc_id": doc_id,
+            "score": round(float(score), 4),
+        }
+

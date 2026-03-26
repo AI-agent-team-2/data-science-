@@ -2,6 +2,26 @@
 
 Формат файла основан на принципах [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/).
 
+## [6] - 2026-03-26
+
+### Крупные изменения
+- Переведен `product_lookup` на product-level индекс в ChromaDB:
+  - runtime-чтение `.txt` файлов из `product_lookup` удалено;
+  - добавлены exact SKU match + semantic fallback по `lookup_text`.
+- Расширен ingestion pipeline:
+  - сохраняется chunk collection для `rag_search`;
+  - добавлена отдельная product collection для `product_lookup`.
+- `rag_search` сохранен как thin-wrapper над chunk retrieval без изменения роли.
+
+### Конфигурация
+- Упрощена конфигурация проекта:
+  - в `.env` оставлены только окруженческие параметры (ключи/токены/base_url/пути/observability);
+  - внутренние tuning/feature-параметры переведены в кодовые defaults.
+
+### Cleanup
+- Удалены неиспользуемые manual tracing helpers из `app/observability/langfuse_client.py`.
+- Удалены неиспользуемые `get_history_stats` и `hybrid_search`.
+
 ## [5] - 2026-03-25
 
 ### Крупные изменения
