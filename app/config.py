@@ -28,6 +28,7 @@ DEFAULT_WEB_SEARCH_MAX_RESULTS: Final[int] = 5
 DEFAULT_ENABLE_WEB_SEARCH: Final[bool] = True
 DEFAULT_ENABLE_RAG: Final[bool] = True
 DEFAULT_ENABLE_PRODUCT_LOOKUP: Final[bool] = True
+DEFAULT_LANGFUSE_AUTO_SCORING_ENABLED: Final[bool] = False
 SUPPORTED_PROVIDERS: Final[set[str]] = {"openrouter", "openai"}
 
 
@@ -80,6 +81,10 @@ class Settings:
     langfuse_secret_key: str = _get_env_str("LANGFUSE_SECRET_KEY")
     langfuse_host: str = _get_env_str("LANGFUSE_HOST", DEFAULT_LANGFUSE_HOST)
     langfuse_enabled: bool = _get_env_bool("LANGFUSE_ENABLED", False)
+    langfuse_auto_scoring_enabled: bool = _get_env_bool(
+        "LANGFUSE_AUTO_SCORING_ENABLED",
+        DEFAULT_LANGFUSE_AUTO_SCORING_ENABLED,
+    )
 
     @property
     def resolved_model_provider(self) -> str:

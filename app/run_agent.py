@@ -19,6 +19,7 @@ from app.history_store import load_messages, save_turn
 from app.observability import (
     get_langchain_callback_handler,
     hash_user_id,
+    score_response_trace,
     sanitize_text,
 )
 from app.prompts import SYSTEM_PROMPT
@@ -260,22 +261,43 @@ def _run_agent_pipeline(payload: dict[str, Any], config: RunnableConfig | None =
 
     if _is_identity_or_capability_query(query):
         assistant_text = _assistant_scope_response()
-        return _save_and_return(session_id=session_id, user_text=user_text, assistant_text=assistant_text)
+        return _save_and_return(
+            session_id=session_id,
+            user_text=user_text,
+            assistant_text=assistant_text,
+            trace_id=trace_id,
+        )
 
     if _is_smalltalk(query):
         assistant_text = _smalltalk_response()
-        return _save_and_return(session_id=session_id, user_text=user_text, assistant_text=assistant_text)
+        return _save_and_return(
+            session_id=session_id,
+            user_text=user_text,
+            assistant_text=assistant_text,
+            trace_id=trace_id,
+        )
 
     if _is_noise_query(query) or _is_offtopic_or_rude_query(query):
         assistant_text = _domain_redirect_response()
-        return _save_and_return(session_id=session_id, user_text=user_text, assistant_text=assistant_text)
+        return _save_and_return(
+            session_id=session_id,
+            user_text=user_text,
+            assistant_text=assistant_text,
+            trace_id=trace_id,
+            blocked=True,
+        )
 
     history_messages = _to_langchain_messages(load_messages(session_id=session_id))
 
     context = _build_context(query, source_order=source_order, config=config)
     if not context.context_text:
         assistant_text = _clarifying_question()
-        return _save_and_return(session_id=session_id, user_text=user_text, assistant_text=assistant_text)
+        return _save_and_return(
+            session_id=session_id,
+            user_text=user_text,
+            assistant_text=assistant_text,
+            trace_id=trace_id,
+        )
 
     final_prompt = _build_final_prompt(user_text=user_text, context_block=context.context_text)
     model_input = [SystemMessage(content=SYSTEM_PROMPT), *history_messages, HumanMessage(content=final_prompt)]
@@ -305,7 +327,12 @@ def _run_agent_pipeline(payload: dict[str, Any], config: RunnableConfig | None =
     if context.used_web:
         assistant_text = _ensure_sources_block(assistant_text, context.web_urls)
 
-    return _save_and_return(session_id=session_id, user_text=user_text, assistant_text=assistant_text)
+    return _save_and_return(
+        session_id=session_id,
+        user_text=user_text,
+        assistant_text=assistant_text,
+        trace_id=trace_id,
+    )
 
 
 def _to_langchain_messages(history: list[tuple[str, str]]) -> list[BaseMessage]:
@@ -321,8 +348,21 @@ def _to_langchain_messages(history: list[tuple[str, str]]) -> list[BaseMessage]:
     return messages
 
 
-def _save_and_return(session_id: str, user_text: str, assistant_text: str) -> str:
+def _save_and_return(
+    session_id: str,
+    user_text: str,
+    assistant_text: str,
+    trace_id: str | None = None,
+    blocked: bool = False,
+) -> str:
     """Единая точка сохранения ответа и возврата результата из pipeline."""
+    if trace_id:
+        score_response_trace(
+            trace_id=trace_id,
+            user_text=user_text,
+            assistant_text=assistant_text,
+            blocked=blocked,
+        )
     save_turn(session_id=session_id, user_text=user_text, assistant_text=assistant_text)
     return assistant_text
 
