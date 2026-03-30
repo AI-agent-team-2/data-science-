@@ -36,7 +36,6 @@ Thumbs.db
 
 # Local notebooks
 rag_notebook.ipynb
-langfuse_notebook.ipynb
 
 # Legacy archived code
 app/legacy/

@@ -43,8 +43,7 @@
 Используются функции санитизации:
 
 - `hash_user_id(user_id)` — стабильный идентификатор вида `u_<16hex>`;
-- `sanitize_text(text, mode)` — RU-ориентированная маскировка PII/секретов;
-- `detect_pii(text, mode)` / `has_pii(text, mode)` — детекция типов PII.
+- `sanitize_text(text)` — маскирование email/телефонов/secret-like токенов;
 
 ## Переменные окружения
 
@@ -53,7 +52,6 @@ LANGFUSE_PUBLIC_KEY=
 LANGFUSE_SECRET_KEY=
 LANGFUSE_HOST=https://cloud.langfuse.com
 LANGFUSE_ENABLED=false
-LANGFUSE_AUTO_SCORING_ENABLED=false
 ```
 
 После выполнения 3–5 реальных запросов проверьте в Langfuse UI:

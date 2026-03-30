@@ -39,7 +39,6 @@ EMBEDDING_API_KEY=
 EMBEDDING_BASE_URL=
 TAVILY_API_KEY=
 LANGFUSE_ENABLED=false
-LANGFUSE_AUTO_SCORING_ENABLED=false
 LANGFUSE_PUBLIC_KEY=
 LANGFUSE_SECRET_KEY=
 LANGFUSE_HOST=https://cloud.langfuse.com
@@ -73,7 +72,7 @@ cd /opt/san_bot
 
 1. Оставить `LANGFUSE_ENABLED=false`.
 2. Перезапустить сервис и убедиться, что бот запускается без ошибок.
-3. Переключить `LANGFUSE_ENABLED=true` (и при необходимости `LANGFUSE_AUTO_SCORING_ENABLED=true`) в `/etc/san-bot/san-bot.env`.
+3. Переключить `LANGFUSE_ENABLED=true` в `/etc/san-bot/san-bot.env`.
 4. Перезапустить сервис:
    - `sudo systemctl restart san-bot.service`
 5. Проверить первые 10–20 запросов:
