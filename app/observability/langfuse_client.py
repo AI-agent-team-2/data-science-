@@ -147,7 +147,12 @@ def log_trace_scores(trace_id: str, scores: dict[str, float]) -> None:
 
         for attempt, delay_sec in enumerate(retry_delays_sec, start=1):
             try:
-                client.score(trace_id=trace_id, name=metric_name, value=metric_value)
+                client.create_score(
+                    trace_id=trace_id,
+                    name=metric_name,
+                    value=metric_value,
+                    data_type="NUMERIC",
+                )
                 last_error = None
                 break
             except Exception as exc:
