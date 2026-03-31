@@ -126,7 +126,8 @@ def _clear_user_history(user_id: int) -> None:
 
 def _handle_unknown_command(message: Message) -> None:
     """Отправляет ответ о неизвестной slash-команде."""
-    command = message.text.split()[0].lower()
+    text = str(message.text or "").strip()
+    command = text.split()[0].lower() if text else "/unknown"
     bot.reply_to(
         message,
         f"❌ Неизвестная команда `{command}`.\n"
@@ -150,13 +151,18 @@ def _send_search_hint(call: CallbackQuery, mode: str) -> None:
 
 def _handle_text_message(message: Message) -> None:
     """Обрабатывает пользовательский текст и возвращает ответ от агента."""
-    if message.text.startswith("/"):
+    text = str(message.text or "").strip()
+    if not text:
+        bot.reply_to(message, "Пожалуйста, отправьте текстовый запрос.")
+        return
+
+    if text.startswith("/"):
         _handle_unknown_command(message)
         return
 
     session_user_id = str(message.from_user.id)
     logger.debug("Обработка сообщения Telegram для сессии=%s", hash_user_id(session_user_id))
-    answer = run_agent(message.text, user_id=session_user_id)
+    answer = run_agent(text, user_id=session_user_id)
     bot.reply_to(message, answer)
 
 
@@ -222,6 +228,9 @@ def callback_handler(call: CallbackQuery) -> None:
             call.message.chat.id,
             call.message.message_id,
         )
+        return
+
+    bot.answer_callback_query(call.id, "Действие не поддерживается")
 
 
 # ========== Основной обработчик текста ==========
