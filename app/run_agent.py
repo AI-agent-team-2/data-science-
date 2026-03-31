@@ -127,6 +127,8 @@ def _run_agent_pipeline(payload: dict[str, Any], config: RunnableConfig | None =
                 "Сформулируйте, пожалуйста, вопрос по сантехническим товарам."
             ),
             question_for_score=safe_query,
+            trace_id=trace_id,
+            config=config,
         )
 
     if is_identity_or_capability_query(safe_query):
@@ -135,6 +137,8 @@ def _run_agent_pipeline(payload: dict[str, Any], config: RunnableConfig | None =
             user_text=user_text,
             raw_assistant_text=assistant_scope_response(),
             question_for_score=safe_query,
+            trace_id=trace_id,
+            config=config,
         )
 
     if is_smalltalk(safe_query):
@@ -143,6 +147,8 @@ def _run_agent_pipeline(payload: dict[str, Any], config: RunnableConfig | None =
             user_text=user_text,
             raw_assistant_text=smalltalk_response(),
             question_for_score=safe_query,
+            trace_id=trace_id,
+            config=config,
         )
 
     if is_noise_query(safe_query) or is_offtopic_or_rude_query(safe_query):
@@ -151,6 +157,8 @@ def _run_agent_pipeline(payload: dict[str, Any], config: RunnableConfig | None =
             user_text=user_text,
             raw_assistant_text=domain_redirect_response(),
             question_for_score=safe_query,
+            trace_id=trace_id,
+            config=config,
         )
 
     history_messages = _to_langchain_messages(load_messages(session_id=session_id))
@@ -161,6 +169,8 @@ def _run_agent_pipeline(payload: dict[str, Any], config: RunnableConfig | None =
             user_text=user_text,
             raw_assistant_text=clarifying_question(),
             question_for_score=safe_query,
+            trace_id=trace_id,
+            config=config,
         )
 
     final_prompt = build_final_prompt(user_text=safe_query, context_block=context.context_text)
@@ -192,7 +202,8 @@ def _run_agent_pipeline(payload: dict[str, Any], config: RunnableConfig | None =
     )
     raw_assistant_text = extract_ai_text(response)
     scores = compute_scores(question=safe_query, answer=raw_assistant_text)
-    log_trace_scores(scores=scores)
+    score_trace_id = _resolve_trace_id_for_scores(config=config, fallback_trace_id=trace_id)
+    log_trace_scores(trace_id=score_trace_id, scores=scores)
     assistant_text = sanitize_text(raw_assistant_text)
     if context.used_web:
         assistant_text = ensure_sources_block(assistant_text, context.web_urls)
@@ -222,12 +233,30 @@ def _score_and_finalize_response(
     user_text: str,
     raw_assistant_text: str,
     question_for_score: str,
+    trace_id: str,
+    config: RunnableConfig | None = None,
 ) -> str:
     """Считает score по сырому ответу, санитизирует и сохраняет итог пользователю."""
     scores = compute_scores(question=question_for_score, answer=raw_assistant_text)
-    log_trace_scores(scores=scores)
+    score_trace_id = _resolve_trace_id_for_scores(config=config, fallback_trace_id=trace_id)
+    log_trace_scores(trace_id=score_trace_id, scores=scores)
     assistant_text = sanitize_text(raw_assistant_text)
     return _save_and_return(session_id=session_id, user_text=user_text, assistant_text=assistant_text)
+
+
+def _resolve_trace_id_for_scores(
+    config: RunnableConfig | None,
+    fallback_trace_id: str,
+) -> str:
+    """Возвращает trace_id из callback, либо fallback из pipeline payload."""
+    if config is not None:
+        callbacks = config.get("callbacks")
+        if isinstance(callbacks, list):
+            for callback in callbacks:
+                value = getattr(callback, "last_trace_id", None)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+    return str(fallback_trace_id or "").strip()
 
 
 def _invoke_tool(

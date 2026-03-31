@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import time
 from typing import Any
 
@@ -12,6 +13,7 @@ _langfuse_client: Any | None = None
 _client_init_attempted = False
 _callback_handler_class: Any | None = None
 _callback_init_error: str | None = None
+TRACE_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
 ALLOWED_SCORE_NAMES: frozenset[str] = frozenset(
     {
         "auto_relevance_score",
@@ -119,7 +121,10 @@ def get_langchain_callback_handler(
             try:
                 callback_handler = _callback_handler_class(**constructor_kwargs)
             except TypeError:
-                # Фолбэк на старые/ограниченные сигнатуры CallbackHandler.
+                logger.warning(
+                    "CallbackHandler не поддерживает параметры trace/session/user/tags. "
+                    "Используется fallback-конструктор без аргументов."
+                )
                 callback_handler = _callback_handler_class()
         else:
             callback_handler = _callback_handler_class()
@@ -137,26 +142,24 @@ def get_langchain_callback_handler(
         return None
 
 
-def log_trace_scores(scores: dict[str, float]) -> None:
-    """Записывает score-метрики в trace Langfuse, если интеграция доступна."""
+def log_trace_scores(trace_id: str, scores: dict[str, float]) -> None:
+    """Записывает score-метрики в Langfuse по явно переданному trace_id."""
     if not _is_enabled():
         return
 
-    try:
-        from langfuse import get_client  # type: ignore
-    except Exception:
-        logger.warning("Не удалось импортировать get_client из langfuse для записи score.")
+    clean_trace_id = str(trace_id or "").strip()
+    if not clean_trace_id:
+        logger.warning("Пустой trace_id: score не будут записаны.")
+        return
+    if not TRACE_ID_PATTERN.fullmatch(clean_trace_id):
+        logger.warning(
+            "Некорректный trace_id '%s': ожидается 32-символьный hex, score не будут записаны.",
+            clean_trace_id,
+        )
         return
 
-    try:
-        client = get_client()
-        trace_id = client.get_current_trace_id()
-    except Exception as exc:
-        logger.warning("Не удалось получить текущий trace_id из Langfuse: %s", exc)
-        return
-
-    if not trace_id:
-        logger.warning("Текущий trace_id отсутствует, score не будут записаны.")
+    client = get_langfuse_client()
+    if client is None:
         return
 
     retry_delays_sec = (0.3, 0.8, 1.5)
@@ -171,7 +174,7 @@ def log_trace_scores(scores: dict[str, float]) -> None:
         for attempt, delay_sec in enumerate(retry_delays_sec, start=1):
             try:
                 client.create_score(
-                    trace_id=trace_id,
+                    trace_id=clean_trace_id,
                     name=metric_name,
                     value=metric_value,
                     data_type="NUMERIC",
@@ -183,7 +186,7 @@ def log_trace_scores(scores: dict[str, float]) -> None:
                 logger.debug(
                     "Не удалось записать score '%s' в Langfuse trace=%s (попытка %d/%d): %s",
                     metric_name,
-                    trace_id,
+                    clean_trace_id,
                     attempt,
                     len(retry_delays_sec),
                     exc,
@@ -195,7 +198,7 @@ def log_trace_scores(scores: dict[str, float]) -> None:
             logger.warning(
                 "Score '%s' не записан в Langfuse trace=%s после %d попыток.",
                 metric_name,
-                trace_id,
+                clean_trace_id,
                 len(retry_delays_sec),
             )
 
