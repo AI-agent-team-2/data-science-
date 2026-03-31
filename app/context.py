@@ -31,9 +31,10 @@ class ContextBuildResult:
     context_text: str
     web_urls: list[str]
     used_web: bool
+    used_source: str
 
 
-EMPTY_CONTEXT_RESULT = ContextBuildResult(context_text="", web_urls=[], used_web=False)
+EMPTY_CONTEXT_RESULT = ContextBuildResult(context_text="", web_urls=[], used_web=False, used_source="none")
 
 
 def build_context(
@@ -103,6 +104,7 @@ def _context_from_lookup(
         context_text=_format_lookup_context(payload, items),
         web_urls=[],
         used_web=False,
+        used_source="lookup",
     )
 
 
@@ -126,6 +128,7 @@ def _context_from_rag(
         context_text=_format_rag_context(items),
         web_urls=[],
         used_web=False,
+        used_source="rag",
     )
 
 
@@ -151,6 +154,7 @@ def _context_from_web(
         context_text=_format_web_context(items),
         web_urls=_extract_web_urls(items),
         used_web=True,
+        used_source="web",
     )
 
 
