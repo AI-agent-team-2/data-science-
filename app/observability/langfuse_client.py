@@ -129,3 +129,19 @@ def get_langchain_callback_handler(
         return None
 
 
+def log_trace_scores(trace_id: str, scores: dict[str, float]) -> None:
+    """Записывает score-метрики в trace Langfuse, если интеграция доступна."""
+    if not trace_id:
+        return
+
+    client = get_langfuse_client()
+    if client is None:
+        return
+
+    for name, value in scores.items():
+        try:
+            client.score(trace_id=trace_id, name=str(name), value=float(value))
+        except Exception:
+            logger.debug("Не удалось записать score '%s' в Langfuse trace=%s", name, trace_id)
+
+
