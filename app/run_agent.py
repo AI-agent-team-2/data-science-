@@ -172,7 +172,7 @@ def _run_agent_pipeline(payload: dict[str, Any], config: RunnableConfig | None =
     assistant_text = extract_ai_text(response)
     assistant_text = sanitize_text(assistant_text)
     scores = compute_scores(question=safe_query, answer=assistant_text)
-    log_trace_scores(trace_id=trace_id, scores=scores)
+    log_trace_scores(scores=scores)
     if context.used_web:
         assistant_text = ensure_sources_block(assistant_text, context.web_urls)
 

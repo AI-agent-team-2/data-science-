@@ -130,13 +130,26 @@ def get_langchain_callback_handler(
         return None
 
 
-def log_trace_scores(trace_id: str, scores: dict[str, float]) -> None:
+def log_trace_scores(scores: dict[str, float]) -> None:
     """Записывает score-метрики в trace Langfuse, если интеграция доступна."""
-    if not trace_id:
+    if not _is_enabled():
         return
 
-    client = get_langfuse_client()
-    if client is None:
+    try:
+        from langfuse import get_client  # type: ignore
+    except Exception:
+        logger.warning("Не удалось импортировать get_client из langfuse для записи score.")
+        return
+
+    try:
+        client = get_client()
+        trace_id = client.get_current_trace_id()
+    except Exception as exc:
+        logger.warning("Не удалось получить текущий trace_id из Langfuse: %s", exc)
+        return
+
+    if not trace_id:
+        logger.warning("Текущий trace_id отсутствует, score не будут записаны.")
         return
 
     retry_delays_sec = (0.3, 0.8, 1.5)
