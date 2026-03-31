@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import re
 import time
+from inspect import signature
 from typing import Any
 
 from app.config import settings
@@ -53,11 +54,16 @@ def get_langfuse_client() -> Any | None:
     try:
         from langfuse import Langfuse  # type: ignore
 
-        _langfuse_client = Langfuse(
-            public_key=settings.langfuse_public_key,
-            secret_key=settings.langfuse_secret_key,
-            host=settings.langfuse_host,
-        )
+        init_kwargs: dict[str, Any] = {
+            "public_key": settings.langfuse_public_key,
+            "secret_key": settings.langfuse_secret_key,
+        }
+        params = signature(Langfuse).parameters
+        if "base_url" in params:
+            init_kwargs["base_url"] = settings.langfuse_host
+        elif "host" in params:
+            init_kwargs["host"] = settings.langfuse_host
+        _langfuse_client = Langfuse(**init_kwargs)
     except Exception:
         logger.exception("Не удалось инициализировать Langfuse, observability отключена.")
         _langfuse_client = None
@@ -128,28 +134,34 @@ def get_langchain_callback_handler(
 def log_trace_scores(trace_id: str, scores: dict[str, float]) -> None:
     """Записывает score-метрики в Langfuse по явно переданному trace_id."""
     if not _is_enabled():
+        logger.debug("Скоринг пропущен: Langfuse отключен или не сконфигурирован.")
         return
 
     clean_trace_id = str(trace_id or "").strip()
     if not clean_trace_id:
-        logger.warning("Пустой trace_id: score не будут записаны.")
+        logger.warning("Скоринг пропущен: пустой trace_id.")
         return
     if not TRACE_ID_PATTERN.fullmatch(clean_trace_id):
         logger.warning(
-            "Некорректный trace_id '%s': ожидается 32-символьный hex, score не будут записаны.",
+            "Скоринг пропущен: некорректный trace_id '%s' (ожидается 32-символьный hex).",
             clean_trace_id,
         )
         return
 
     client = get_langfuse_client()
     if client is None:
+        logger.warning("Скоринг пропущен: клиент Langfuse недоступен.")
         return
 
+    sent_count = 0
+    skipped_count = 0
+    failed_count = 0
     retry_delays_sec = (0.3, 0.8, 1.5)
     for name, value in scores.items():
         metric_name = str(name)
         if metric_name not in ALLOWED_SCORE_NAMES:
             logger.debug("Пропускаю неподдерживаемую score-метрику: %s", metric_name)
+            skipped_count += 1
             continue
         metric_value = float(value)
         last_error: Exception | None = None
@@ -163,6 +175,7 @@ def log_trace_scores(trace_id: str, scores: dict[str, float]) -> None:
                     data_type="NUMERIC",
                 )
                 last_error = None
+                sent_count += 1
                 break
             except Exception as exc:
                 last_error = exc
@@ -178,6 +191,7 @@ def log_trace_scores(trace_id: str, scores: dict[str, float]) -> None:
                     time.sleep(delay_sec)
 
         if last_error is not None:
+            failed_count += 1
             logger.warning(
                 "Score '%s' не записан в Langfuse trace=%s после %d попыток.",
                 metric_name,
@@ -187,6 +201,13 @@ def log_trace_scores(trace_id: str, scores: dict[str, float]) -> None:
 
     try:
         client.flush()
+        logger.debug(
+            "Скоринг завершен: trace_id=%s, отправлено=%d, пропущено=%d, ошибок=%d.",
+            clean_trace_id,
+            sent_count,
+            skipped_count,
+            failed_count,
+        )
     except Exception as exc:
         logger.debug("Не удалось выполнить flush() после записи score в Langfuse: %s", exc)
 
