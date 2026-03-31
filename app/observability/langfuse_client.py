@@ -104,30 +104,13 @@ def get_langchain_callback_handler(
 
             _callback_handler_class = LangfuseCallbackHandler
 
-        constructor_kwargs: dict[str, Any] = {}
-        if trace_id:
-            constructor_kwargs["trace_id"] = str(trace_id).strip()
-        if session_id:
-            constructor_kwargs["session_id"] = str(session_id).strip()
-        if user_id:
-            constructor_kwargs["user_id"] = str(user_id).strip()
-        if parent_observation_id:
-            constructor_kwargs["parent_observation_id"] = str(parent_observation_id).strip()
-        if tags:
-            constructor_kwargs["tags"] = tags
+        if any([trace_id, session_id, user_id, parent_observation_id, tags]):
+            logger.debug(
+                "Параметры trace/session/user/tags для CallbackHandler будут проигнорированы "
+                "в текущем режиме callback-first."
+            )
 
-        callback_handler: Any
-        if constructor_kwargs:
-            try:
-                callback_handler = _callback_handler_class(**constructor_kwargs)
-            except TypeError:
-                logger.warning(
-                    "CallbackHandler не поддерживает параметры trace/session/user/tags. "
-                    "Используется fallback-конструктор без аргументов."
-                )
-                callback_handler = _callback_handler_class()
-        else:
-            callback_handler = _callback_handler_class()
+        callback_handler: Any = _callback_handler_class()
         _callback_init_error = None
         logger.debug("Langfuse CallbackHandler успешно создан для запроса.")
         return callback_handler
