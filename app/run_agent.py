@@ -119,28 +119,49 @@ def _run_agent_pipeline(payload: dict[str, Any], config: RunnableConfig | None =
     safe_query, guard_action, risk_flags = _apply_guard(query)
 
     if guard_action == "block":
-        return _save_and_return(
+        return _score_and_finalize_response(
             session_id=session_id,
             user_text=user_text,
-            assistant_text=(
+            raw_assistant_text=(
                 "Не могу обработать этот запрос в таком виде. "
                 "Сформулируйте, пожалуйста, вопрос по сантехническим товарам."
             ),
+            question_for_score=safe_query,
         )
 
     if is_identity_or_capability_query(safe_query):
-        return _save_and_return(session_id=session_id, user_text=user_text, assistant_text=assistant_scope_response())
+        return _score_and_finalize_response(
+            session_id=session_id,
+            user_text=user_text,
+            raw_assistant_text=assistant_scope_response(),
+            question_for_score=safe_query,
+        )
 
     if is_smalltalk(safe_query):
-        return _save_and_return(session_id=session_id, user_text=user_text, assistant_text=smalltalk_response())
+        return _score_and_finalize_response(
+            session_id=session_id,
+            user_text=user_text,
+            raw_assistant_text=smalltalk_response(),
+            question_for_score=safe_query,
+        )
 
     if is_noise_query(safe_query) or is_offtopic_or_rude_query(safe_query):
-        return _save_and_return(session_id=session_id, user_text=user_text, assistant_text=domain_redirect_response())
+        return _score_and_finalize_response(
+            session_id=session_id,
+            user_text=user_text,
+            raw_assistant_text=domain_redirect_response(),
+            question_for_score=safe_query,
+        )
 
     history_messages = _to_langchain_messages(load_messages(session_id=session_id))
     context = build_context(safe_query, source_order, invoke_tool=_invoke_tool, config=config)
     if not context.context_text:
-        return _save_and_return(session_id=session_id, user_text=user_text, assistant_text=clarifying_question())
+        return _score_and_finalize_response(
+            session_id=session_id,
+            user_text=user_text,
+            raw_assistant_text=clarifying_question(),
+            question_for_score=safe_query,
+        )
 
     final_prompt = build_final_prompt(user_text=safe_query, context_block=context.context_text)
     model_input = [SystemMessage(content=SYSTEM_PROMPT), *history_messages, HumanMessage(content=final_prompt)]
@@ -169,10 +190,10 @@ def _run_agent_pipeline(payload: dict[str, Any], config: RunnableConfig | None =
         model_input,
         timeout_sec=MODEL_TIMEOUT_SEC,
     )
-    assistant_text = extract_ai_text(response)
-    assistant_text = sanitize_text(assistant_text)
-    scores = compute_scores(question=safe_query, answer=assistant_text)
+    raw_assistant_text = extract_ai_text(response)
+    scores = compute_scores(question=safe_query, answer=raw_assistant_text)
     log_trace_scores(scores=scores)
+    assistant_text = sanitize_text(raw_assistant_text)
     if context.used_web:
         assistant_text = ensure_sources_block(assistant_text, context.web_urls)
 
@@ -194,6 +215,19 @@ def _save_and_return(session_id: str, user_text: str, assistant_text: str) -> st
     """Сохраняет шаг диалога и возвращает итоговый ответ."""
     save_turn(session_id=session_id, user_text=user_text, assistant_text=assistant_text)
     return assistant_text
+
+
+def _score_and_finalize_response(
+    session_id: str,
+    user_text: str,
+    raw_assistant_text: str,
+    question_for_score: str,
+) -> str:
+    """Считает score по сырому ответу, санитизирует и сохраняет итог пользователю."""
+    scores = compute_scores(question=question_for_score, answer=raw_assistant_text)
+    log_trace_scores(scores=scores)
+    assistant_text = sanitize_text(raw_assistant_text)
+    return _save_and_return(session_id=session_id, user_text=user_text, assistant_text=assistant_text)
 
 
 def _invoke_tool(

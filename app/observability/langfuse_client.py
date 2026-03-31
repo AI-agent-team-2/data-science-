@@ -12,6 +12,13 @@ _langfuse_client: Any | None = None
 _client_init_attempted = False
 _callback_handler_class: Any | None = None
 _callback_init_error: str | None = None
+ALLOWED_SCORE_NAMES: frozenset[str] = frozenset(
+    {
+        "auto_relevance_score",
+        "auto_pii_risk",
+        "auto_refusal_correctness",
+    }
+)
 
 
 def _is_enabled() -> bool:
@@ -155,6 +162,9 @@ def log_trace_scores(scores: dict[str, float]) -> None:
     retry_delays_sec = (0.3, 0.8, 1.5)
     for name, value in scores.items():
         metric_name = str(name)
+        if metric_name not in ALLOWED_SCORE_NAMES:
+            logger.debug("Пропускаю неподдерживаемую score-метрику: %s", metric_name)
+            continue
         metric_value = float(value)
         last_error: Exception | None = None
 
