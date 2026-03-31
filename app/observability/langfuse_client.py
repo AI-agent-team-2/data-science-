@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any
 
 from app.config import settings
@@ -138,10 +139,36 @@ def log_trace_scores(trace_id: str, scores: dict[str, float]) -> None:
     if client is None:
         return
 
+    retry_delays_sec = (0.3, 0.8, 1.5)
     for name, value in scores.items():
-        try:
-            client.score(trace_id=trace_id, name=str(name), value=float(value))
-        except Exception:
-            logger.debug("Не удалось записать score '%s' в Langfuse trace=%s", name, trace_id)
+        metric_name = str(name)
+        metric_value = float(value)
+        last_error: Exception | None = None
+
+        for attempt, delay_sec in enumerate(retry_delays_sec, start=1):
+            try:
+                client.score(trace_id=trace_id, name=metric_name, value=metric_value)
+                last_error = None
+                break
+            except Exception as exc:
+                last_error = exc
+                logger.debug(
+                    "Не удалось записать score '%s' в Langfuse trace=%s (попытка %d/%d): %s",
+                    metric_name,
+                    trace_id,
+                    attempt,
+                    len(retry_delays_sec),
+                    exc,
+                )
+                if attempt < len(retry_delays_sec):
+                    time.sleep(delay_sec)
+
+        if last_error is not None:
+            logger.warning(
+                "Score '%s' не записан в Langfuse trace=%s после %d попыток.",
+                metric_name,
+                trace_id,
+                len(retry_delays_sec),
+            )
 
 
