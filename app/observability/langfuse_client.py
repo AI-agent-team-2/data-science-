@@ -176,4 +176,9 @@ def log_trace_scores(trace_id: str, scores: dict[str, float]) -> None:
                 len(retry_delays_sec),
             )
 
+    try:
+        client.flush()
+    except Exception as exc:
+        logger.debug("Не удалось выполнить flush() после записи score в Langfuse: %s", exc)
+
 

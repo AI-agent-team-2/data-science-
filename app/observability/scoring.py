@@ -48,9 +48,9 @@ def compute_scores(question: str, answer: str) -> dict[str, float]:
     refusal = check_refusal(answer)
     refusal_correctness = 1.0 if refusal else 0.0
     return {
-        "relevance_score": round(relevance, 3),
-        "pii_risk": pii_risk,
-        "refusal_correctness": refusal_correctness,
+        "auto_relevance_score": round(relevance, 3),
+        "auto_pii_risk": pii_risk,
+        "auto_refusal_correctness": refusal_correctness,
     }
 
 
