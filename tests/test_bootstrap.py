@@ -57,6 +57,21 @@ class BootstrapTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 bootstrap.ensure_index_ready()
 
+    @patch("app.bootstrap.os.execv")
+    @patch("app.bootstrap.ensure_index_ready")
+    def test_main_ensures_index_and_execs_bot(
+        self,
+        mock_ensure_index_ready: MagicMock,
+        mock_execv: MagicMock,
+    ) -> None:
+        bootstrap.main()
+
+        mock_ensure_index_ready.assert_called_once_with()
+        mock_execv.assert_called_once_with(
+            bootstrap.sys.executable,
+            [bootstrap.sys.executable, "-m", "app.bot.telegram_bot"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

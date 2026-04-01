@@ -10,6 +10,9 @@
   - `san_bot_chroma`
   - `san_bot_history`
 
+Важно: поддерживается только Docker-контур.
+Старые сценарии через `systemd`, `.venv` и ручной `deploy.sh` считаются legacy и не должны использоваться параллельно с контейнером.
+
 ## Подготовка VPS (один раз)
 
 1. Установить Docker + Docker Compose plugin.

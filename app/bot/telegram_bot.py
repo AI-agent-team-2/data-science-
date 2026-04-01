@@ -16,7 +16,6 @@ from app.config import settings
 from app.history_store import clear_history
 from app.observability import hash_user_id
 from app.rag.health import get_index_health
-from app.rag.retriever import ChromaRetriever
 from app.run_agent import run_agent
 
 logging.basicConfig(level=logging.INFO)
