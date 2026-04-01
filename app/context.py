@@ -33,9 +33,16 @@ class ContextBuildResult:
     web_urls: list[str]
     used_web: bool
     used_source: str
+    terminal_response: str = ""
 
 
-EMPTY_CONTEXT_RESULT = ContextBuildResult(context_text="", web_urls=[], used_web=False, used_source="none")
+EMPTY_CONTEXT_RESULT = ContextBuildResult(
+    context_text="",
+    web_urls=[],
+    used_web=False,
+    used_source="none",
+    terminal_response="",
+)
 
 ToolCallable: TypeAlias = Callable[[dict[str, Any]], Any]
 ToolPayload: TypeAlias = dict[str, Any]
@@ -49,16 +56,21 @@ def build_context(
     config: RunnableConfig | None = None,
 ) -> ContextBuildResult:
     """Подбирает контекст из доступных источников по приоритету."""
+    logger.debug("build_context start: query=%r source_order=%s", query, source_order)
     for index, source in enumerate(source_order):
         web_mode = "primary" if index == 0 else "fallback"
 
         if source == "lookup" and not settings.enable_product_lookup:
+            logger.debug("build_context skip source=%s: disabled", source)
             continue
         if source == "rag" and not settings.enable_rag:
+            logger.debug("build_context skip source=%s: disabled", source)
             continue
         if source == "web" and not settings.enable_web_search:
+            logger.debug("build_context skip source=%s: disabled", source)
             continue
         if source == "web" and not should_use_web_source(query=query, web_mode=web_mode):
+            logger.debug("build_context skip source=%s: not allowed for query", source)
             continue
 
         result = _context_from_source(
@@ -68,7 +80,15 @@ def build_context(
             invoke_tool=invoke_tool,
             config=config,
         )
-        if result.context_text:
+        logger.debug(
+            "build_context source=%s used_source=%s has_context=%s terminal=%s used_web=%s",
+            source,
+            result.used_source,
+            bool(result.context_text),
+            bool(result.terminal_response),
+            result.used_web,
+        )
+        if result.context_text or result.terminal_response:
             return result
 
     return EMPTY_CONTEXT_RESULT
@@ -101,7 +121,17 @@ def _context_from_lookup(
         "tool_lookup",
         config,
     )
+    mode = str(payload.get("mode", "")).strip()
     items = _extract_results(payload)
+    if mode == "sku_not_found":
+        note = str(payload.get("note", "")).strip() or "Точный артикул не найден в базе товаров."
+        return ContextBuildResult(
+            context_text="",
+            web_urls=[],
+            used_web=False,
+            used_source="lookup",
+            terminal_response=note,
+        )
     if not items:
         return EMPTY_CONTEXT_RESULT
 

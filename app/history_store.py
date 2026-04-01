@@ -27,7 +27,10 @@ CREATE_SESSION_INDEX_SQL = "CREATE INDEX IF NOT EXISTS idx_session_id ON history
 def get_connection() -> sqlite3.Connection:
     """Создает соединение с SQLite и включает словарный доступ к строкам."""
     db_path = Path(settings.history_db_path)
-    connection = sqlite3.connect(db_path)
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    connection = sqlite3.connect(db_path, timeout=5.0)
+    connection.execute("PRAGMA journal_mode=WAL")
+    connection.execute("PRAGMA synchronous=NORMAL")
     connection.row_factory = sqlite3.Row
     return connection
 

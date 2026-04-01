@@ -73,11 +73,11 @@ def run_agent(user_text: str, user_id: str = "unknown") -> str:
     )
     root_config: RunnableConfig = {
         "callbacks": [callback_handler] if callback_handler is not None else [],
-        "run_name": "run_agent",
+        "run_name": "agent_request",
         "metadata": trace_metadata,
     }
 
-    pipeline = RunnableLambda(_run_agent_pipeline)
+    pipeline = RunnableLambda(_run_agent_pipeline).with_config({"run_name": "agent_pipeline"})
     return pipeline.invoke(
         {
             "user_text": user_text,
@@ -135,6 +135,12 @@ def _run_agent_pipeline(payload: dict[str, Any], config: RunnableConfig | None =
     history_messages = _to_langchain_messages(load_messages(session_id=session_id))
     context = build_context(safe_query, source_order, invoke_tool=_invoke_tool, config=config)
     if not context.context_text:
+        if context.terminal_response:
+            return _finalize_response(
+                session_id=session_id,
+                user_text=user_text,
+                raw_assistant_text=context.terminal_response,
+            )
         return _finalize_response(
             session_id=session_id,
             user_text=user_text,
