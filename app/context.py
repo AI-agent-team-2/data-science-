@@ -35,6 +35,9 @@ class ContextBuildResult:
     used_source: str
     terminal_response: str = ""
     failed_sources: list[str] = field(default_factory=list)
+    attempted_sources: list[str] = field(default_factory=list)
+    source_status_map: dict[str, str] = field(default_factory=dict)
+    fallback_reason: str = ""
 
 
 @dataclass(frozen=True)
@@ -54,6 +57,9 @@ EMPTY_CONTEXT_RESULT = ContextBuildResult(
     used_source="none",
     terminal_response="",
     failed_sources=[],
+    attempted_sources=[],
+    source_status_map={},
+    fallback_reason="",
 )
 
 ToolCallable: TypeAlias = Callable[[dict[str, Any]], Any]
@@ -70,22 +76,29 @@ def build_context(
     """Подбирает контекст из доступных источников по приоритету."""
     logger.debug("build_context start: query=%r source_order=%s", query, source_order)
     failed_sources: list[str] = []
+    attempted_sources: list[str] = []
+    source_status_map: dict[str, str] = {}
     for index, source in enumerate(source_order):
         web_mode = "primary" if index == 0 else "fallback"
 
         if source == "lookup" and not settings.enable_product_lookup:
             logger.debug("build_context skip source=%s: disabled", source)
+            source_status_map[source] = "disabled"
             continue
         if source == "rag" and not settings.enable_rag:
             logger.debug("build_context skip source=%s: disabled", source)
+            source_status_map[source] = "disabled"
             continue
         if source == "web" and not settings.enable_web_search:
             logger.debug("build_context skip source=%s: disabled", source)
+            source_status_map[source] = "disabled"
             continue
         if source == "web" and not should_use_web_source(query=query, web_mode=web_mode):
             logger.debug("build_context skip source=%s: not allowed for query", source)
+            source_status_map[source] = "skipped"
             continue
 
+        attempted_sources.append(source)
         result = _context_from_source(
             source=source,
             query=query,
@@ -103,7 +116,19 @@ def build_context(
         )
         if result.failed_sources:
             failed_sources.extend(result.failed_sources)
+            source_status_map[source] = "failed"
+        elif result.terminal_response:
+            source_status_map[source] = "terminal"
+        elif result.context_text:
+            source_status_map[source] = "used"
+        else:
+            source_status_map[source] = "empty"
         if result.context_text or result.terminal_response:
+            fallback_reason = _compute_fallback_reason(
+                source=source,
+                attempted_sources=attempted_sources,
+                source_status_map=source_status_map,
+            )
             if failed_sources and not result.failed_sources:
                 result = ContextBuildResult(
                     context_text=result.context_text,
@@ -112,6 +137,21 @@ def build_context(
                     used_source=result.used_source,
                     terminal_response=result.terminal_response,
                     failed_sources=failed_sources,
+                    attempted_sources=attempted_sources,
+                    source_status_map=source_status_map,
+                    fallback_reason=fallback_reason,
+                )
+            elif not result.attempted_sources and not result.source_status_map and not result.fallback_reason:
+                result = ContextBuildResult(
+                    context_text=result.context_text,
+                    web_urls=result.web_urls,
+                    used_web=result.used_web,
+                    used_source=result.used_source,
+                    terminal_response=result.terminal_response,
+                    failed_sources=result.failed_sources,
+                    attempted_sources=attempted_sources,
+                    source_status_map=source_status_map,
+                    fallback_reason=fallback_reason,
                 )
             return result
 
@@ -124,8 +164,37 @@ def build_context(
             used_source="none",
             terminal_response=tool_failure_response(),
             failed_sources=failed_sources,
+            attempted_sources=attempted_sources,
+            source_status_map=source_status_map,
+            fallback_reason="all_attempted_sources_failed",
+        )
+    if attempted_sources or source_status_map:
+        return ContextBuildResult(
+            context_text="",
+            web_urls=[],
+            used_web=False,
+            used_source="none",
+            terminal_response="",
+            failed_sources=[],
+            attempted_sources=attempted_sources,
+            source_status_map=source_status_map,
+            fallback_reason="no_source_produced_context" if attempted_sources else "no_source_attempted",
         )
     return EMPTY_CONTEXT_RESULT
+
+
+def _compute_fallback_reason(source: str, attempted_sources: list[str], source_status_map: dict[str, str]) -> str:
+    """Кратко объясняет, почему был выбран текущий источник."""
+    if not attempted_sources or attempted_sources[0] == source:
+        return "primary_source_succeeded"
+
+    previous = attempted_sources[:-1]
+    previous_statuses = [source_status_map.get(item, "unknown") for item in previous]
+    if any(status == "failed" for status in previous_statuses):
+        return "fallback_after_source_failure"
+    if any(status == "empty" for status in previous_statuses):
+        return "fallback_after_empty_result"
+    return "fallback_after_skipped_source"
 
 
 def _context_from_source(

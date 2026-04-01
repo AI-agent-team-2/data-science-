@@ -169,6 +169,10 @@ def _run_agent_pipeline(payload: dict[str, Any], config: RunnableConfig | None =
         "model": settings.resolved_model_name,
         "source_order": source_order,
         "used_source": context.used_source,
+        "attempted_sources": context.attempted_sources,
+        "source_status_map": context.source_status_map,
+        "failed_sources": context.failed_sources,
+        "fallback_reason": context.fallback_reason,
         "risk_flags": risk_flags,
         "guard_action": guard_action,
         "trace_session_id": hashed_user,
@@ -255,6 +259,10 @@ def _build_trace_metadata(
         "model": settings.resolved_model_name,
         "intent": intent,
         "source_order": list(source_order),
+        "attempted_sources": [],
+        "source_status_map": {},
+        "failed_sources": [],
+        "fallback_reason": "",
         "risk_flags": list(risk_flags),
         "guard_action": guard_action,
         "trace_session_id": hashed_user,
@@ -276,6 +284,15 @@ def _invoke_tool(
 ) -> dict[str, Any]:
     """Вызывает инструмент с таймаутом и возвращает JSON-объект."""
     tool_config = _child_config(config, op_name)
+    if tool_config is not None:
+        metadata = tool_config.get("metadata")
+        if isinstance(metadata, dict):
+            tool_name = op_name.replace("tool_", "", 1)
+            tool_config["metadata"] = {
+                **metadata,
+                "tool_name": tool_name,
+                "tool_operation": op_name,
+            }
     raw = _invoke_with_timeout(
         lambda tool_payload: func(tool_payload, config=tool_config),
         payload,

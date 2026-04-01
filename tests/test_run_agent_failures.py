@@ -26,6 +26,9 @@ class RunAgentFailureTests(unittest.TestCase):
                 "used_source": "rag",
                 "terminal_response": "",
                 "failed_sources": [],
+                "attempted_sources": ["rag"],
+                "source_status_map": {"rag": "used"},
+                "fallback_reason": "primary_source_succeeded",
             },
         )()
         mock_invoke.return_value = InvocationResult(
