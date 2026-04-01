@@ -4,6 +4,7 @@ import logging
 import re
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from contextvars import copy_context
+from dataclasses import dataclass
 from typing import Any, Callable
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
@@ -20,6 +21,8 @@ from app.context import (
     extract_ai_text,
     parse_tool_payload,
     smalltalk_response,
+    tool_failure_response,
+    ToolExecutionResult,
 )
 from app.graph import model
 from app.history_store import load_messages, save_turn
@@ -51,6 +54,16 @@ INJECTION_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"(?i)раскрой\s+системн"),
 )
 TRUNCATED_MARKER_PATTERN = re.compile(r"[\[\(\{]?\s*\.{0,3}\s*truncated\s*[\]\)\}]?", re.IGNORECASE)
+
+
+@dataclass(frozen=True)
+class InvocationResult:
+    """Результат выполнения модели/инструмента с явным статусом."""
+
+    status: str
+    value: Any = None
+    error_type: str = ""
+    error_message: str = ""
 
 
 def run_agent(user_text: str, user_id: str = "unknown") -> str:
@@ -173,7 +186,15 @@ def _run_agent_pipeline(payload: dict[str, Any], config: RunnableConfig | None =
         model_input,
         timeout_sec=MODEL_TIMEOUT_SEC,
     )
-    raw_assistant_text = extract_ai_text(response)
+    if response.status != "ok":
+        logger.warning("model_invoke failed: %s %s", response.error_type, response.error_message)
+        return _finalize_response(
+            session_id=session_id,
+            user_text=user_text,
+            raw_assistant_text=tool_failure_response(),
+        )
+
+    raw_assistant_text = extract_ai_text(response.value)
     assistant_text = _prepare_user_answer(raw_assistant_text)
     if context.used_web:
         assistant_text = ensure_sources_block(assistant_text, context.web_urls)
@@ -260,7 +281,25 @@ def _invoke_tool(
         payload,
         timeout_sec=TOOL_TIMEOUT_SEC,
     )
-    return parse_tool_payload(raw)
+    if raw.status != "ok":
+        return ToolExecutionResult(
+            status="failed",
+            payload={},
+            error_type=raw.error_type,
+            error_message=raw.error_message,
+        )
+
+    parsed = parse_tool_payload(raw.value)
+    if parsed:
+        return ToolExecutionResult(status="ok", payload=parsed)
+
+    logger.warning("Tool %s returned unparseable payload", op_name)
+    return ToolExecutionResult(
+        status="failed",
+        payload={},
+        error_type="parse_error",
+        error_message=f"{op_name} returned an unparseable payload",
+    )
 
 
 def _invoke_with_timeout(
@@ -277,13 +316,17 @@ def _invoke_with_timeout(
         ctx = copy_context()
         future = executor.submit(ctx.run, _runner)
         try:
-            return future.result(timeout=max(1, timeout_sec))
+            return InvocationResult(status="ok", value=future.result(timeout=max(1, timeout_sec)))
         except FuturesTimeoutError:
             logger.warning("Операция превысила таймаут %s сек", timeout_sec)
-            return ""
-        except Exception:
+            return InvocationResult(status="failed", error_type="timeout", error_message=f"timeout>{timeout_sec}s")
+        except Exception as exc:
             logger.exception("Операция завершилась с ошибкой")
-            return ""
+            return InvocationResult(
+                status="failed",
+                error_type="exception",
+                error_message=exc.__class__.__name__,
+            )
 
 
 def _child_config(config: RunnableConfig | None, run_name: str) -> RunnableConfig | None:

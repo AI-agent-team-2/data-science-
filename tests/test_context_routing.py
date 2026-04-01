@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from app.context import build_context
+from app.context import ToolExecutionResult, build_context
 
 
 class ContextRoutingTests(unittest.TestCase):
@@ -12,13 +12,16 @@ class ContextRoutingTests(unittest.TestCase):
         def invoke_tool(func, payload, op_name, config=None):
             calls.append(op_name)
             if op_name == "tool_lookup":
-                return {
-                    "query": payload["query"],
-                    "count": 0,
-                    "results": [],
-                    "mode": "sku_not_found",
-                    "note": "Точный артикул не найден в базе товаров.",
-                }
+                return ToolExecutionResult(
+                    status="ok",
+                    payload={
+                        "query": payload["query"],
+                        "count": 0,
+                        "results": [],
+                        "mode": "sku_not_found",
+                        "note": "Точный артикул не найден в базе товаров.",
+                    },
+                )
             raise AssertionError(f"Unexpected fallback call: {op_name}")
 
         result = build_context(
@@ -38,17 +41,20 @@ class ContextRoutingTests(unittest.TestCase):
         def invoke_tool(func, payload, op_name, config=None):
             calls.append(op_name)
             if op_name == "tool_rag":
-                return {
-                    "query": payload["query"],
-                    "count": 1,
-                    "results": [
-                        {
-                            "text": "Срок службы трубы составляет до 50 лет.",
-                            "score": 0.9,
-                            "metadata": {"source": "kb.txt", "section": "SPEC", "doc_id": "doc1", "product": "PE-Xa"},
-                        }
-                    ],
-                }
+                return ToolExecutionResult(
+                    status="ok",
+                    payload={
+                        "query": payload["query"],
+                        "count": 1,
+                        "results": [
+                            {
+                                "text": "Срок службы трубы составляет до 50 лет.",
+                                "score": 0.9,
+                                "metadata": {"source": "kb.txt", "section": "SPEC", "doc_id": "doc1", "product": "PE-Xa"},
+                            }
+                        ],
+                    },
+                )
             raise AssertionError(f"Unexpected fallback call: {op_name}")
 
         result = build_context(
@@ -60,6 +66,29 @@ class ContextRoutingTests(unittest.TestCase):
         self.assertEqual(calls, ["tool_rag"])
         self.assertEqual(result.used_source, "rag")
         self.assertTrue(result.context_text)
+
+    def test_failed_source_does_not_look_like_empty_result(self) -> None:
+        calls: list[str] = []
+
+        def invoke_tool(func, payload, op_name, config=None):
+            calls.append(op_name)
+            return ToolExecutionResult(
+                status="failed",
+                payload={},
+                error_type="timeout",
+                error_message="timeout>20s",
+            )
+
+        result = build_context(
+            query="Какой срок службы у трубы PE-Xa EVOH ONDO?",
+            source_order=["rag"],
+            invoke_tool=invoke_tool,
+        )
+
+        self.assertEqual(calls, ["tool_rag"])
+        self.assertEqual(result.context_text, "")
+        self.assertEqual(result.failed_sources, ["rag"])
+        self.assertIn("временно недоступны", result.terminal_response)
 
 
 if __name__ == "__main__":

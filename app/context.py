@@ -3,9 +3,9 @@ from __future__ import annotations
 import json
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Callable, TypeAlias
+from typing import Any, Callable, Literal, TypeAlias
 
 from langchain_core.runnables import RunnableConfig
 
@@ -34,6 +34,17 @@ class ContextBuildResult:
     used_web: bool
     used_source: str
     terminal_response: str = ""
+    failed_sources: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class ToolExecutionResult:
+    """Результат вызова инструмента с явным статусом выполнения."""
+
+    status: Literal["ok", "failed"]
+    payload: dict[str, Any]
+    error_type: str = ""
+    error_message: str = ""
 
 
 EMPTY_CONTEXT_RESULT = ContextBuildResult(
@@ -42,11 +53,12 @@ EMPTY_CONTEXT_RESULT = ContextBuildResult(
     used_web=False,
     used_source="none",
     terminal_response="",
+    failed_sources=[],
 )
 
 ToolCallable: TypeAlias = Callable[[dict[str, Any]], Any]
 ToolPayload: TypeAlias = dict[str, Any]
-InvokeToolFn: TypeAlias = Callable[[ToolCallable, ToolPayload, str, RunnableConfig | None], ToolPayload]
+InvokeToolFn: TypeAlias = Callable[[ToolCallable, ToolPayload, str, RunnableConfig | None], ToolExecutionResult]
 
 
 def build_context(
@@ -57,6 +69,7 @@ def build_context(
 ) -> ContextBuildResult:
     """Подбирает контекст из доступных источников по приоритету."""
     logger.debug("build_context start: query=%r source_order=%s", query, source_order)
+    failed_sources: list[str] = []
     for index, source in enumerate(source_order):
         web_mode = "primary" if index == 0 else "fallback"
 
@@ -88,9 +101,30 @@ def build_context(
             bool(result.terminal_response),
             result.used_web,
         )
+        if result.failed_sources:
+            failed_sources.extend(result.failed_sources)
         if result.context_text or result.terminal_response:
+            if failed_sources and not result.failed_sources:
+                result = ContextBuildResult(
+                    context_text=result.context_text,
+                    web_urls=result.web_urls,
+                    used_web=result.used_web,
+                    used_source=result.used_source,
+                    terminal_response=result.terminal_response,
+                    failed_sources=failed_sources,
+                )
             return result
 
+    if failed_sources:
+        logger.warning("build_context finished with source failures: %s", failed_sources)
+        return ContextBuildResult(
+            context_text="",
+            web_urls=[],
+            used_web=False,
+            used_source="none",
+            terminal_response=tool_failure_response(),
+            failed_sources=failed_sources,
+        )
     return EMPTY_CONTEXT_RESULT
 
 
@@ -115,12 +149,16 @@ def _context_from_lookup(
     config: RunnableConfig | None = None,
 ) -> ContextBuildResult:
     """Пытается получить контекст из базы товаров (LOOKUP)."""
-    payload = invoke_tool(
+    execution = invoke_tool(
         product_lookup.invoke,
         {"query": query, "limit": 5},
         "tool_lookup",
         config,
     )
+    if execution.status == "failed":
+        logger.warning("LOOKUP failed: %s %s", execution.error_type, execution.error_message)
+        return ContextBuildResult("", [], False, "lookup", failed_sources=["lookup"])
+    payload = execution.payload
     mode = str(payload.get("mode", "")).strip()
     items = _extract_results(payload)
     if mode == "sku_not_found":
@@ -131,6 +169,7 @@ def _context_from_lookup(
             used_web=False,
             used_source="lookup",
             terminal_response=note,
+            failed_sources=[],
         )
     if not items:
         return EMPTY_CONTEXT_RESULT
@@ -149,12 +188,16 @@ def _context_from_rag(
     config: RunnableConfig | None = None,
 ) -> ContextBuildResult:
     """Пытается получить контекст из RAG-базы знаний."""
-    payload = invoke_tool(
+    execution = invoke_tool(
         rag_search.invoke,
         {"query": query},
         "tool_rag",
         config,
     )
+    if execution.status == "failed":
+        logger.warning("RAG failed: %s %s", execution.error_type, execution.error_message)
+        return ContextBuildResult("", [], False, "rag", failed_sources=["rag"])
+    payload = execution.payload
     items = _extract_results(payload)
     if not _is_rag_useful(items):
         return EMPTY_CONTEXT_RESULT
@@ -175,12 +218,16 @@ def _context_from_web(
 ) -> ContextBuildResult:
     """Пытается получить контекст из web-поиска."""
     enhanced_query = enhance_search_query(query, mode)
-    payload = invoke_tool(
+    execution = invoke_tool(
         web_search.invoke,
         {"query": enhanced_query, "max_results": settings.web_search_max_results},
         "tool_web",
         config,
     )
+    if execution.status == "failed":
+        logger.warning("WEB failed: %s %s", execution.error_type, execution.error_message)
+        return ContextBuildResult("", [], False, "web", failed_sources=["web"])
+    payload = execution.payload
     items = _extract_results(payload)
     if not (_is_web_useful(items) and _is_sanitary_relevant(items)):
         return EMPTY_CONTEXT_RESULT
@@ -264,6 +311,14 @@ def clarifying_question() -> str:
         "Пока не нашел достаточно надежных данных по вашему запросу. "
         "Уточните, пожалуйста, бренд, артикул (если есть) или ключевой параметр "
         "(например, диаметр/тип подключения/назначение)."
+    )
+
+
+def tool_failure_response() -> str:
+    """Возвращает честный ответ, когда внутренние источники не отработали корректно."""
+    return (
+        "Сейчас один или несколько внутренних источников временно недоступны. "
+        "Попробуйте повторить запрос через минуту."
     )
 
 
