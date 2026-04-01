@@ -38,8 +38,12 @@ class RoutingSkuTests(unittest.TestCase):
         self.assertTrue(should_prefer_web(query))
         self.assertTrue(should_use_web_source(query, web_mode="fallback"))
 
-    def test_single_token_alpha_sku_still_prefers_lookup(self) -> None:
-        query = "OMULDCBV"
+    def test_plain_latin_word_without_digits_is_not_treated_as_sku(self) -> None:
+        query = "REVEALPROMPT"
+        self.assertFalse(should_prefer_lookup(query))
+
+    def test_single_token_alnum_sku_still_prefers_lookup(self) -> None:
+        query = "OMUL1622"
         self.assertTrue(should_prefer_lookup(query))
 
 

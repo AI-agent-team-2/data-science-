@@ -1,22 +1,30 @@
 from __future__ import annotations
 
-import json
 from typing import Any
 
 
-def to_json(payload: dict[str, Any]) -> str:
-    """Сериализует payload в единый JSON-формат для инструментов."""
-    return json.dumps(payload, ensure_ascii=False, indent=2)
+def build_tool_payload(
+    query: str,
+    results: list[dict[str, Any]] | None = None,
+    note: str = "",
+    meta: dict[str, Any] | None = None,
+    **extra: Any,
+) -> dict[str, Any]:
+    """Строит единый payload для runtime-инструментов."""
+    normalized_results = list(results or [])
+    payload: dict[str, Any] = {
+        "query": query,
+        "count": len(normalized_results),
+        "results": normalized_results,
+        "note": note,
+        "meta": dict(meta or {}),
+    }
+    payload.update(extra)
+    return payload
 
 
 def empty_results_payload(query: str, note: str = "", **extra: Any) -> dict[str, Any]:
     """Строит типовой payload для пустой выдачи инструмента."""
-    base: dict[str, Any] = {
-        "query": query,
-        "count": 0,
-        "results": [],
-    }
-    if note:
-        base["note"] = note
+    base = build_tool_payload(query=query, results=[], note=note)
     base.update(extra)
     return base

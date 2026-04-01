@@ -4,37 +4,30 @@ import logging
 import os
 import sys
 
-import chromadb
-
 from app.config import settings
+from app.rag.health import get_index_health
 
 logger = logging.getLogger(__name__)
-PRODUCT_COLLECTION_SUFFIX = "_products"
-
-
-def _auto_ingest_enabled() -> bool:
-    raw = os.getenv("AUTO_INGEST_ON_START", "true").strip().lower()
-    return raw in {"1", "true", "yes", "y", "on"}
-
-
-def _product_collection_name() -> str:
-    return f"{settings.collection_name}{PRODUCT_COLLECTION_SUFFIX}"
-
-
-def _collection_count(client: chromadb.PersistentClient, collection_name: str) -> int:
-    try:
-        return client.get_collection(collection_name).count()
-    except Exception:
-        return 0
 
 
 def should_run_ingest() -> bool:
-    if not _auto_ingest_enabled():
-        logger.info("AUTO_INGEST_ON_START disabled; skipping startup ingest")
+    mode = settings.resolved_startup_index_mode
+    if mode == "never":
+        logger.info("STARTUP_INDEX_MODE=never; skipping startup ingest")
         return False
+    if mode == "always":
+        logger.info("STARTUP_INDEX_MODE=always; startup ingest will run")
+        return True
 
-    logger.info("AUTO_INGEST_ON_START enabled; startup ingest will run")
-    return True
+    health = get_index_health()
+    logger.info(
+        "STARTUP_INDEX_MODE=if_empty; current index state: %s=%d, %s=%d",
+        health.chunk_collection,
+        health.chunk_count,
+        health.product_collection,
+        health.product_count,
+    )
+    return not health.is_ready
 
 
 def ensure_index_ready() -> None:
@@ -48,13 +41,12 @@ def ensure_index_ready() -> None:
     if exit_code != 0:
         raise RuntimeError(f"Startup ingest failed with exit code {exit_code}")
 
-    client = chromadb.PersistentClient(path=settings.chroma_path)
-    main_count = _collection_count(client, settings.collection_name)
-    product_count = _collection_count(client, _product_collection_name())
-    if main_count == 0 or product_count == 0:
+    health = get_index_health()
+    if not health.is_ready:
         raise RuntimeError(
             "Startup ingest completed but Chroma collections are still empty: "
-            f"{settings.collection_name}={main_count}, {_product_collection_name()}={product_count}"
+            f"{health.chunk_collection}={health.chunk_count}, "
+            f"{health.product_collection}={health.product_count}"
         )
 
     logger.info("Startup ingest completed successfully")

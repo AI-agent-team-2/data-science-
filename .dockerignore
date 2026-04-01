@@ -3,6 +3,7 @@
 .ruff_cache
 .web_cache
 myenv
+.venv
 __pycache__
 *.pyc
 *.pyo

@@ -8,6 +8,9 @@ docker compose ps
 docker compose logs --tail=100 san-bot
 ```
 
+Поддерживаемый runtime только один: контейнер `san-bot` через `docker compose`.
+Не запускайте параллельно старый `systemd`-сервис или ручной Python-процесс, иначе Telegram polling начнет возвращать `409 Conflict`.
+
 ## Health-check
 
 ```bash
@@ -46,6 +49,7 @@ docker compose up -d san-bot
 2. Бот молчит в Telegram:
    - проверить `TELEGRAM_TOKEN`;
    - проверить сетевую доступность провайдера LLM.
+   - убедиться, что не запущен второй poller вне Docker (`systemctl status san-bot.service`, `pgrep -af "telegram_bot.py|app.bot.telegram_bot"`).
 3. Пустые ответы из базы:
    - проверить `CHROMA_PATH`;
    - при необходимости переиндексировать `python -m app.rag.ingest` в сервисном окружении.

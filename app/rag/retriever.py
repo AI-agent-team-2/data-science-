@@ -8,6 +8,7 @@ import chromadb
 
 from app.config import settings
 from app.rag.embeddings import create_embedding_function
+from app.rag.sku_index import load_sku_index
 from app.utils.sku import canonical_sku, extract_sku_candidates
 
 logger = logging.getLogger(__name__)
@@ -31,22 +32,31 @@ def _tokenize(text: str) -> set[str]:
     return {token.lower() for token in WORD_PATTERN.findall(text)}
 
 
+def _load_collection(
+    client: chromadb.PersistentClient,
+    collection_name: str,
+    embedding_function: Any,
+) -> Any:
+    """Загружает существующую коллекцию и не маскирует отсутствие индекса."""
+    try:
+        collection = client.get_collection(name=collection_name)
+    except Exception as exc:
+        raise RuntimeError(f"Chroma collection '{collection_name}' is missing or unavailable") from exc
+    collection._embedding_function = embedding_function
+    return collection
+
+
 class ChromaRetriever:
     """Обертка над Chroma для векторного поиска."""
 
     def __init__(self) -> None:
         self.client = chromadb.PersistentClient(path=settings.chroma_path)
         self.embedding_function = create_embedding_function()
-
-        try:
-            self.collection = self.client.get_collection(name=settings.collection_name)
-            self.collection._embedding_function = self.embedding_function
-        except Exception:
-            logger.info("Коллекция '%s' не найдена. Создаю новую.", settings.collection_name)
-            self.collection = self.client.create_collection(
-                name=settings.collection_name,
-                embedding_function=self.embedding_function,
-            )
+        self.collection = _load_collection(
+            client=self.client,
+            collection_name=settings.collection_name,
+            embedding_function=self.embedding_function,
+        )
 
     def search(self, query: str, top_k: int | None = None) -> list[dict[str, Any]]:
         """Выполняет векторный поиск по текстовому запросу."""
@@ -84,16 +94,12 @@ class ProductRetriever:
         self.client = chromadb.PersistentClient(path=settings.chroma_path)
         self.embedding_function = create_embedding_function()
         self.collection_name = collection_name or f"{settings.collection_name}{PRODUCT_COLLECTION_SUFFIX}"
-
-        try:
-            self.collection = self.client.get_collection(name=self.collection_name)
-            self.collection._embedding_function = self.embedding_function
-        except Exception:
-            logger.info("Product-коллекция '%s' не найдена. Создаю новую.", self.collection_name)
-            self.collection = self.client.create_collection(
-                name=self.collection_name,
-                embedding_function=self.embedding_function,
-            )
+        self._sku_index = load_sku_index()
+        self.collection = _load_collection(
+            client=self.client,
+            collection_name=self.collection_name,
+            embedding_function=self.embedding_function,
+        )
 
     def extract_query_skus(self, query: str) -> set[str]:
         """Извлекает candidate SKU из пользовательского запроса."""
@@ -104,6 +110,10 @@ class ProductRetriever:
         query_skus = self.extract_query_skus(query)
         if not query_skus:
             return []
+
+        indexed_matches = self._find_exact_sku_matches_from_index(query_skus)
+        if indexed_matches:
+            return indexed_matches[: max(1, int(limit))]
 
         try:
             snapshot = self.collection.get(include=["metadatas"])
@@ -130,6 +140,29 @@ class ProductRetriever:
 
         matches.sort(key=lambda item: float(item.get("score", 0.0)), reverse=True)
         return matches[: max(1, int(limit))]
+
+    def _find_exact_sku_matches_from_index(self, query_skus: set[str]) -> list[dict[str, Any]]:
+        """Использует локальный SKU-индекс вместо полного scan product metadata."""
+        matches: list[dict[str, Any]] = []
+        for query_sku in sorted(query_skus):
+            for metadata in self._sku_index.get(query_sku, []):
+                item = self._serialize_item(metadata=metadata, score=125.0)
+                item["matched_skus"] = [query_sku]
+                matches.append(item)
+
+        deduped: dict[str, dict[str, Any]] = {}
+        for item in matches:
+            dedupe_key = str(item.get("source") or "") or str(item.get("doc_id") or "") or str(item.get("name") or "")
+            existing = deduped.get(dedupe_key)
+            if existing is None:
+                deduped[dedupe_key] = item
+                continue
+            existing_skus = set(existing.get("matched_skus") or [])
+            merged_skus = sorted(existing_skus.union(item.get("matched_skus") or []))
+            existing["matched_skus"] = merged_skus
+            existing["score"] = round(100.0 + 25.0 * len(merged_skus), 4)
+
+        return sorted(deduped.values(), key=lambda item: float(item.get("score", 0.0)), reverse=True)
 
     def semantic_search(self, query: str, limit: int = 5) -> list[dict[str, Any]]:
         """Делает fallback semantic-поиск по `lookup_text` product-коллекции."""

@@ -15,7 +15,7 @@ if __package__ is None or __package__ == "":
 from app.config import settings
 from app.history_store import clear_history
 from app.observability import hash_user_id
-from app.rag.retriever import ChromaRetriever
+from app.rag.health import get_index_health
 from app.run_agent import run_agent
 
 logging.basicConfig(level=logging.INFO)
@@ -86,9 +86,14 @@ def _format_status_text() -> str:
     """Формирует текст статуса бота с проверкой доступности RAG-хранилища."""
     rag_status: str
     try:
-        retriever = ChromaRetriever()
-        chunks_count = retriever.collection.count()
-        rag_status = f"✅ ({chunks_count} чанков)"
+        health = get_index_health()
+        if health.is_ready:
+            rag_status = f"✅ ({health.chunk_count} чанков, {health.product_count} товаров)"
+        else:
+            rag_status = (
+                f"⚠️ ({health.chunk_collection}={health.chunk_count}, "
+                f"{health.product_collection}={health.product_count})"
+            )
     except Exception as exc:
         logger.exception("Не удалось инициализировать RAG-ретривер")
         rag_status = f"❌ ({_safe_error_text(exc)})"

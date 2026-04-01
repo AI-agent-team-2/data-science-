@@ -28,7 +28,9 @@ DEFAULT_WEB_SEARCH_MAX_RESULTS: Final[int] = 5
 DEFAULT_ENABLE_WEB_SEARCH: Final[bool] = True
 DEFAULT_ENABLE_RAG: Final[bool] = True
 DEFAULT_ENABLE_PRODUCT_LOOKUP: Final[bool] = True
+DEFAULT_STARTUP_INDEX_MODE: Final[str] = "if_empty"
 SUPPORTED_PROVIDERS: Final[set[str]] = {"openrouter", "openai"}
+SUPPORTED_STARTUP_INDEX_MODES: Final[set[str]] = {"never", "if_empty", "always"}
 
 
 def _get_env_str(name: str, default: str = "") -> str:
@@ -75,6 +77,7 @@ class Settings:
     enable_web_search: bool = DEFAULT_ENABLE_WEB_SEARCH
     enable_rag: bool = DEFAULT_ENABLE_RAG
     enable_product_lookup: bool = DEFAULT_ENABLE_PRODUCT_LOOKUP
+    startup_index_mode: str = _get_env_str("STARTUP_INDEX_MODE", DEFAULT_STARTUP_INDEX_MODE).lower()
 
     langfuse_public_key: str = _get_env_str("LANGFUSE_PUBLIC_KEY")
     langfuse_secret_key: str = _get_env_str("LANGFUSE_SECRET_KEY")
@@ -127,6 +130,13 @@ class Settings:
     def resolved_embedding_base_url(self) -> str:
         """Возвращает базовый URL embedding API (или общий базовый URL)."""
         return self.embedding_base_url or self.resolved_openai_base_url
+
+    @property
+    def resolved_startup_index_mode(self) -> str:
+        """Возвращает валидный режим стартовой индексации."""
+        if self.startup_index_mode in SUPPORTED_STARTUP_INDEX_MODES:
+            return self.startup_index_mode
+        return DEFAULT_STARTUP_INDEX_MODE
 
 
 settings = Settings()

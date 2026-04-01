@@ -26,6 +26,6 @@ RUN useradd --create-home --shell /usr/sbin/nologin appuser \
 USER appuser
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD python -c "import app.graph; from app.run_agent import run_agent; print('healthy')" || exit 1
+    CMD python -c "from app.rag.health import require_ready_index; import app.graph; require_ready_index(); print('healthy')" || exit 1
 
 CMD ["python", "-m", "app.bootstrap"]

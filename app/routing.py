@@ -271,4 +271,4 @@ def _has_sku_signal(query: str) -> bool:
         return True
 
     compact = re.sub(r"[^\w\-]+", "", str(query or "").strip().upper())
-    return bool(SINGLE_TOKEN_PATTERN.fullmatch(compact))
+    return bool(SINGLE_TOKEN_PATTERN.fullmatch(compact)) and any(char.isdigit() for char in compact)
