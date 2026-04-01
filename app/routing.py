@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from typing import Literal
 
-from app.utils.sku import contains_sku_candidate
+from app.utils.sku import extract_sku_candidates
 
 ToolName = Literal["lookup", "rag", "web"]
 
@@ -140,6 +140,8 @@ DOMAIN_MARKERS: tuple[str, ...] = SANITARY_KEYWORDS + (
     "тепл",
 )
 
+SINGLE_TOKEN_PATTERN = re.compile(r"^[A-Z0-9\-_]{6,}$")
+
 
 def resolve_source_order(query: str) -> list[ToolName]:
     """Возвращает порядок источников в зависимости от типа запроса."""
@@ -151,12 +153,12 @@ def resolve_source_order(query: str) -> list[ToolName]:
 
 
 def should_use_web_source(query: str, web_mode: str) -> bool:
-    """Ограничивает WEB: как fallback используем только для доменных запросов."""
+    """Ограничивает WEB: как fallback используем только для явных внешних запросов."""
     lowered_query = query.lower()
     if is_noise_query(query):
         return False
     if web_mode == "fallback":
-        return is_domain_query(lowered_query)
+        return should_prefer_web(query)
     return should_prefer_web(query) or is_domain_query(lowered_query)
 
 
@@ -167,7 +169,7 @@ def should_prefer_web(query: str) -> bool:
     has_web_marker = any(marker in lowered_query for marker in WEB_PRIORITY_MARKERS)
     has_web_year_marker = WEB_YEAR_PATTERN.search(lowered_query) is not None
     has_lookup_marker = any(marker in lowered_query for marker in LOOKUP_PRIORITY_MARKERS)
-    has_sku = contains_sku_candidate(query, require_digit=False)
+    has_sku = _has_sku_signal(query)
 
     if (has_web_marker or has_web_year_marker) and not has_lookup_marker and not has_sku:
         return True
@@ -183,7 +185,7 @@ def should_prefer_web(query: str) -> bool:
 
 def should_prefer_lookup(query: str) -> bool:
     """Определяет, когда LOOKUP должен быть первым источником."""
-    if contains_sku_candidate(query, require_digit=False):
+    if _has_sku_signal(query):
         return True
 
     lowered_query = query.lower()
@@ -258,6 +260,15 @@ def is_offtopic_or_rude_query(query: str) -> bool:
 
 def is_domain_query(lowered_query: str) -> bool:
     """Проверяет, что запрос относится к товарам/техтематике проекта."""
-    if contains_sku_candidate(lowered_query, require_digit=False):
+    if _has_sku_signal(lowered_query):
         return True
     return any(marker in lowered_query for marker in DOMAIN_MARKERS)
+
+
+def _has_sku_signal(query: str) -> bool:
+    """Определяет SKU-сигнал без ложных срабатываний на слова вроде EVOH."""
+    if extract_sku_candidates(query, require_digit=True):
+        return True
+
+    compact = re.sub(r"[^\w\-]+", "", str(query or "").strip().upper())
+    return bool(SINGLE_TOKEN_PATTERN.fullmatch(compact))

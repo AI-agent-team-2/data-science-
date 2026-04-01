@@ -2,7 +2,13 @@ from __future__ import annotations
 
 import unittest
 
-from app.routing import is_domain_query, resolve_source_order, should_prefer_lookup, should_prefer_web
+from app.routing import (
+    is_domain_query,
+    resolve_source_order,
+    should_prefer_lookup,
+    should_prefer_web,
+    should_use_web_source,
+)
 
 
 class RoutingSkuTests(unittest.TestCase):
@@ -19,6 +25,22 @@ class RoutingSkuTests(unittest.TestCase):
     def test_sku_is_domain_signal_even_with_noise(self) -> None:
         self.assertTrue(is_domain_query("что это за OXSF-1616"))
         self.assertTrue(is_domain_query("артикул opxa16221"))
+
+    def test_web_fallback_disabled_for_regular_domain_question(self) -> None:
+        query = "Какой срок службы у трубы PE-Xa EVOH ONDO?"
+        self.assertFalse(should_prefer_web(query))
+        self.assertFalse(should_prefer_lookup(query))
+        self.assertEqual(resolve_source_order(query), ["rag", "lookup", "web"])
+        self.assertFalse(should_use_web_source(query, web_mode="fallback"))
+
+    def test_web_fallback_allowed_for_explicit_external_question(self) -> None:
+        query = "Какие новинки сантехники 2026?"
+        self.assertTrue(should_prefer_web(query))
+        self.assertTrue(should_use_web_source(query, web_mode="fallback"))
+
+    def test_single_token_alpha_sku_still_prefers_lookup(self) -> None:
+        query = "OMULDCBV"
+        self.assertTrue(should_prefer_lookup(query))
 
 
 if __name__ == "__main__":
