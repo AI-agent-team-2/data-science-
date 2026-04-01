@@ -55,7 +55,13 @@ jobs:
         id: prep
         shell: bash
         run: |
-          IMAGE_REPO="$(echo "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')"
+          OWNER="$(echo "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
+          REPO_RAW="${GITHUB_REPOSITORY#*/}"
+          REPO="$(echo "${REPO_RAW}" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9._-]+/-/g; s/^[._-]+//; s/[._-]+$//; s/-+/-/g')"
+          if [ -z "${REPO}" ]; then
+            REPO="san-bot"
+          fi
+          IMAGE_REPO="${OWNER}/${REPO}"
           echo "image_repo=${IMAGE_REPO}" >> "$GITHUB_OUTPUT"
 
       - name: Build and push image
