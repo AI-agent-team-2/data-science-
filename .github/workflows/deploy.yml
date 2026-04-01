@@ -99,6 +99,15 @@ jobs:
 
             cd "$APP_DIR"
 
+            if docker compose version >/dev/null 2>&1; then
+              COMPOSE_CMD="docker compose"
+            elif command -v docker-compose >/dev/null 2>&1; then
+              COMPOSE_CMD="docker-compose"
+            else
+              echo "Neither 'docker compose' nor 'docker-compose' is available on VPS."
+              exit 1
+            fi
+
             CURRENT_IMAGE="$(docker inspect san-bot --format '{{.Config.Image}}' 2>/dev/null || true)"
             if [ -n "$CURRENT_IMAGE" ]; then
               echo "$CURRENT_IMAGE" > .previous_image_tag
@@ -111,8 +120,8 @@ jobs:
               echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
             fi
 
-            docker compose pull san-bot
-            docker compose up -d san-bot
+            $COMPOSE_CMD pull san-bot
+            $COMPOSE_CMD up -d san-bot
 
             HEALTHY=0
             for _ in $(seq 1 18); do
@@ -128,14 +137,14 @@ jobs:
               echo "Health-check failed; attempting rollback."
               if [ -f .previous_image_tag ]; then
                 export BOT_IMAGE="$(cat .previous_image_tag)"
-                docker compose up -d san-bot
+                $COMPOSE_CMD up -d san-bot
                 exit 1
               fi
               exit 1
             fi
 
             echo "$BOT_IMAGE" > .deployed_image_tag
-            docker compose ps
+            $COMPOSE_CMD ps
         env:
           BOT_IMAGE: ${{ needs.build-and-publish.outputs.image_ref }}
           APP_DIR: ${{ secrets.VPS_APP_DIR }}
