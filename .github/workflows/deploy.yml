@@ -14,6 +14,9 @@ permissions:
   contents: read
   packages: write
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   build-and-publish:
     runs-on: ubuntu-latest
@@ -48,6 +51,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Prepare image name
+        id: prep
+        shell: bash
+        run: |
+          IMAGE_REPO="$(echo "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')"
+          echo "image_repo=${IMAGE_REPO}" >> "$GITHUB_OUTPUT"
+
       - name: Build and push image
         uses: docker/build-push-action@v6
         with:
@@ -55,12 +65,12 @@ jobs:
           file: ./Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}:${{ github.sha }}
-            ghcr.io/${{ github.repository }}:latest
+            ghcr.io/${{ steps.prep.outputs.image_repo }}:${{ github.sha }}
+            ghcr.io/${{ steps.prep.outputs.image_repo }}:latest
 
       - name: Export image metadata
         id: meta
-        run: echo "image_ref=ghcr.io/${{ github.repository }}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+        run: echo "image_ref=ghcr.io/${{ steps.prep.outputs.image_repo }}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
 
   deploy:
     runs-on: ubuntu-latest
