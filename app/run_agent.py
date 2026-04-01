@@ -50,6 +50,7 @@ INJECTION_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"(?i)игнорируй\s+предыдущ"),
     re.compile(r"(?i)раскрой\s+системн"),
 )
+TRUNCATED_MARKER_PATTERN = re.compile(r"[\[\(\{]?\s*\.{0,3}\s*truncated\s*[\]\)\}]?", re.IGNORECASE)
 
 
 def run_agent(user_text: str, user_id: str = "unknown") -> str:
@@ -167,7 +168,7 @@ def _run_agent_pipeline(payload: dict[str, Any], config: RunnableConfig | None =
         timeout_sec=MODEL_TIMEOUT_SEC,
     )
     raw_assistant_text = extract_ai_text(response)
-    assistant_text = sanitize_text(raw_assistant_text)
+    assistant_text = _prepare_user_answer(raw_assistant_text)
     if context.used_web:
         assistant_text = ensure_sources_block(assistant_text, context.web_urls)
 
@@ -196,9 +197,20 @@ def _finalize_response(
     user_text: str,
     raw_assistant_text: str,
 ) -> str:
-    """Санитизирует и сохраняет итоговый ответ пользователю."""
-    assistant_text = sanitize_text(raw_assistant_text)
+    """Подготавливает и сохраняет итоговый ответ пользователю."""
+    assistant_text = _prepare_user_answer(raw_assistant_text)
     return _save_and_return(session_id=session_id, user_text=user_text, assistant_text=assistant_text)
+
+
+def _prepare_user_answer(raw_assistant_text: str) -> str:
+    """Очищает только технический мусор и сохраняет валидные пользовательские ссылки."""
+    value = str(raw_assistant_text or "").strip()
+    if not value:
+        return "Не удалось получить ответ."
+    cleaned = TRUNCATED_MARKER_PATTERN.sub(" ", value)
+    cleaned = re.sub(r"[ \t]+", " ", cleaned)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+    return cleaned
 
 
 def _build_trace_metadata(
