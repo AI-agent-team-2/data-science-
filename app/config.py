@@ -29,6 +29,19 @@ DEFAULT_ENABLE_WEB_SEARCH: Final[bool] = True
 DEFAULT_ENABLE_RAG: Final[bool] = True
 DEFAULT_ENABLE_PRODUCT_LOOKUP: Final[bool] = True
 DEFAULT_STARTUP_INDEX_MODE: Final[str] = "if_empty"
+
+# ========== Новые константы для таймаутов и порогов ==========
+DEFAULT_TOOL_TIMEOUT_SEC: Final[int] = 20
+DEFAULT_MODEL_TIMEOUT_SEC: Final[int] = 45
+DEFAULT_MIN_RAG_SCORE: Final[float] = 0.2
+DEFAULT_MAX_RAG_CONTEXT_ITEMS: Final[int] = 4
+DEFAULT_MAX_LOOKUP_CONTEXT_ITEMS: Final[int] = 5
+DEFAULT_MAX_WEB_CONTEXT_ITEMS: Final[int] = 5
+
+# ========== Rate limiting ==========
+DEFAULT_RATE_LIMIT_REQUESTS: Final[int] = 10
+DEFAULT_RATE_LIMIT_WINDOW_SEC: Final[int] = 60
+
 SUPPORTED_PROVIDERS: Final[set[str]] = {"openrouter", "openai"}
 SUPPORTED_STARTUP_INDEX_MODES: Final[set[str]] = {"never", "if_empty", "always"}
 
@@ -83,6 +96,20 @@ class Settings:
     langfuse_secret_key: str = _get_env_str("LANGFUSE_SECRET_KEY")
     langfuse_host: str = _get_env_str("LANGFUSE_HOST", DEFAULT_LANGFUSE_HOST)
     langfuse_enabled: bool = _get_env_bool("LANGFUSE_ENABLED", False)
+
+    # ========== Timeouts ==========
+    tool_timeout_sec: int = DEFAULT_TOOL_TIMEOUT_SEC
+    model_timeout_sec: int = DEFAULT_MODEL_TIMEOUT_SEC
+
+    # ========== RAG thresholds ==========
+    min_rag_score: float = DEFAULT_MIN_RAG_SCORE
+    max_rag_context_items: int = DEFAULT_MAX_RAG_CONTEXT_ITEMS
+    max_lookup_context_items: int = DEFAULT_MAX_LOOKUP_CONTEXT_ITEMS
+    max_web_context_items: int = DEFAULT_MAX_WEB_CONTEXT_ITEMS
+
+    # ========== Rate limiting ==========
+    rate_limit_requests: int = DEFAULT_RATE_LIMIT_REQUESTS
+    rate_limit_window_sec: int = DEFAULT_RATE_LIMIT_WINDOW_SEC
 
     @property
     def resolved_model_provider(self) -> str:

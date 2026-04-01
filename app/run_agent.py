@@ -44,8 +44,7 @@ from app.routing import (
 
 logger = logging.getLogger(__name__)
 
-TOOL_TIMEOUT_SEC = 20
-MODEL_TIMEOUT_SEC = 45
+
 INJECTION_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"(?i)ignore (all|previous|prior) instructions"),
     re.compile(r"(?i)system prompt"),
@@ -188,7 +187,7 @@ def _run_agent_pipeline(payload: dict[str, Any], config: RunnableConfig | None =
     response = _invoke_with_timeout(
         lambda payload_input: model.invoke(payload_input, config=effective_model_config),
         model_input,
-        timeout_sec=MODEL_TIMEOUT_SEC,
+        timeout_sec=settings.model_timeout_sec,
     )
     if response.status != "ok":
         logger.warning("model_invoke failed: %s %s", response.error_type, response.error_message)
@@ -296,7 +295,7 @@ def _invoke_tool(
     raw = _invoke_with_timeout(
         lambda tool_payload: func(tool_payload, config=tool_config),
         payload,
-        timeout_sec=TOOL_TIMEOUT_SEC,
+        timeout_sec=settings.tool_timeout_sec,
     )
     if raw.status != "ok":
         return ToolExecutionResult(

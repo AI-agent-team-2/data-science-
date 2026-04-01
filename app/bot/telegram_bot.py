@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import logging
 import sys
 from pathlib import Path
@@ -15,6 +16,7 @@ if __package__ is None or __package__ == "":
 from app.config import settings
 from app.history_store import clear_history
 from app.observability import hash_user_id
+from app.observability.rate_limiter import rate_limiter
 from app.rag.health import get_index_health
 from app.run_agent import run_agent
 
@@ -28,6 +30,7 @@ INLINE_KEYBOARD_ROW_WIDTH: Final[int] = 2
 WELCOME_TEXT: Final[str] = (
     "Привет! Я ассистент по сантехническим товарам. "
     "Задай вопрос по товару, параметрам или совместимости.\n\n"
+    "📸 Также можешь отправить фото детали — я распознаю товар и найду аналоги.\n\n"
     "Используй /help для списка команд."
 )
 
@@ -46,6 +49,7 @@ HELP_TEXT: Final[str] = """
 - По модели: `смеситель Hansgrohe`
 - По цене: `сколько стоит унитаз`
 - По новинкам: `новинки 2026`
+- 📸 **Отправьте фото детали** — я распознаю товар и найду похожие в каталоге
 
 *Источники информации:*
 - База товаров (по артикулам)
@@ -56,6 +60,27 @@ HELP_TEXT: Final[str] = """
 GENERIC_PROCESS_ERROR_TEXT: Final[str] = (
     "❌ Не удалось обработать запрос. Попробуйте еще раз через минуту."
 )
+
+# Тексты для фото-обработки
+PHOTO_RECEIVED_TEXT: Final[str] = "📸 Получил фото. Распознаю товар..."
+PHOTO_ERROR_TEXT: Final[str] = (
+    "❌ Не удалось распознать товар на фото. Попробуй:\n"
+    "- сфотографировать деталь крупнее\n"
+    "- сделать фото при хорошем освещении\n"
+    "- добавить текстовое описание к фото"
+)
+
+# Vision LLM промпт
+VISION_SYSTEM_PROMPT: Final[str] = """Ты эксперт по сантехнике. 
+Определи, что за товар на фото. 
+Отвечай строго в формате:
+- ТИП: [что это]
+- БРЕНД: [если виден на фото]
+- ХАРАКТЕРИСТИКИ: [резьба, диаметр, материал, назначение]
+- АРТИКУЛЫ: [если видны на фото]
+- ОПИСАНИЕ: [краткое описание в 1-2 предложениях]"""
+
+VISION_USER_PROMPT: Final[str] = "Что это за сантехническое изделие? Определи тип, бренд, характеристики."
 
 # Список поддерживаемых команд.
 KNOWN_COMMANDS: Final[list[str]] = ["start", "help", "clear", "status", "id"]
@@ -87,13 +112,10 @@ def _format_status_text() -> str:
     rag_status: str
     try:
         health = get_index_health()
-        if health.is_ready:
+        if hasattr(health, 'is_ready') and health.is_ready:
             rag_status = f"✅ ({health.chunk_count} чанков, {health.product_count} товаров)"
         else:
-            rag_status = (
-                f"⚠️ ({health.chunk_collection}={health.chunk_count}, "
-                f"{health.product_collection}={health.product_count})"
-            )
+            rag_status = f"⚠️ (чанки: {getattr(health, 'chunk_count', 0)}, товары: {getattr(health, 'product_count', 0)})"
     except Exception as exc:
         logger.exception("Не удалось инициализировать RAG-ретривер")
         rag_status = f"❌ ({_safe_error_text(exc)})"
@@ -104,7 +126,9 @@ def _format_status_text() -> str:
         f"*LLM:* {settings.resolved_model_name}\n"
         f"*RAG:* {rag_status}\n"
         f"*Веб-поиск:* {'✅' if settings.enable_web_search else '❌'}\n"
-        f"*История:* {'✅' if settings.history_db_path else '❌'}\n\n"
+        f"*История:* {'✅' if settings.history_db_path else '❌'}\n"
+        f"*Распознавание фото:* ✅ (Vision LLM)\n"
+        f"*Rate limiting:* ✅ ({settings.rate_limit_requests} запросов/{settings.rate_limit_window_sec} сек)\n\n"
         f"*Команды:* {', '.join('/' + cmd for cmd in KNOWN_COMMANDS)}\n"
     )
 
@@ -127,6 +151,7 @@ def _format_id_text(message: Message) -> str:
 def _clear_user_history(user_id: int) -> None:
     """Очищает историю диалога пользователя по его идентификатору."""
     clear_history(session_id=str(user_id))
+    rate_limiter.reset(str(user_id))
 
 
 def _handle_unknown_command(message: Message) -> None:
@@ -154,6 +179,62 @@ def _send_search_hint(call: CallbackQuery, mode: str) -> None:
     bot.send_message(call.message.chat.id, message_text)
 
 
+def _recognize_photo(image_bytes: bytes) -> str:
+    """Отправляет фото в Vision LLM и возвращает распознанное описание."""
+    from app.graph import model
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+
+    response = model.invoke([
+        SystemMessage(content=VISION_SYSTEM_PROMPT),
+        HumanMessage(content=[
+            {"type": "text", "text": VISION_USER_PROMPT},
+            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}}
+        ])
+    ])
+
+    return response.content.strip()
+
+
+def _find_similar_products(description: str, limit: int = 3) -> list[dict]:
+    """Ищет товары в каталоге по описанию."""
+    import json
+    from app.tools.product_lookup import product_lookup
+
+    result = product_lookup.invoke({"query": description, "limit": limit})
+    data = json.loads(result)
+    return data.get("results", [])
+
+
+def _format_photo_response(description: str, products: list[dict]) -> str:
+    """Форматирует ответ пользователю с результатами распознавания."""
+    lines = [f"🔍 **Распознано:**\n{description}\n"]
+
+    if products:
+        lines.append("📦 **Похожие товары в каталоге:**")
+        for item in products[:3]:
+            name = item.get('name', '')
+            brand = item.get('brand', '')
+            sku_list = item.get('sku_list', [])
+            category = item.get('category', '')
+
+            line = f"\n• **{name}**"
+            if brand:
+                line += f" ({brand})"
+            if sku_list:
+                skus = sku_list[:3]
+                line += f"\n  📌 Артикулы: {', '.join(skus)}"
+            if category:
+                line += f"\n  📁 Категория: {category}"
+            lines.append(line)
+    else:
+        lines.append("❌ Не нашёл похожих товаров в каталоге.")
+        lines.append("Попробуй сфотографировать деталь крупнее, с разных ракурсов, или добавь текстовое описание.")
+
+    return "\n".join(lines)
+
+
 def _handle_text_message(message: Message) -> None:
     """Обрабатывает пользовательский текст и возвращает ответ от агента."""
     text = str(message.text or "").strip()
@@ -163,6 +244,14 @@ def _handle_text_message(message: Message) -> None:
 
     if text.startswith("/"):
         _handle_unknown_command(message)
+        return
+
+    user_id = str(message.from_user.id)
+
+    # Rate limiting
+    allowed, wait_seconds = rate_limiter.is_allowed(user_id)
+    if not allowed:
+        bot.reply_to(message, f"⏳ Слишком много запросов. Подождите {wait_seconds} секунд.")
         return
 
     session_user_id = str(message.from_user.id)
@@ -212,6 +301,42 @@ def unknown_command_handler(message: Message) -> None:
     _handle_unknown_command(message)
 
 
+# ========== Обработчик фото ==========
+
+@bot.message_handler(content_types=['photo'])
+def photo_handler(message: Message) -> None:
+    """Обрабатывает фотографии: распознаёт товар через Vision LLM и ищет аналоги."""
+    user_id = str(message.from_user.id)
+
+    # Rate limiting
+    allowed, wait_seconds = rate_limiter.is_allowed(user_id)
+    if not allowed:
+        bot.reply_to(message, f"⏳ Слишком много запросов. Подождите {wait_seconds} секунд.")
+        return
+
+    try:
+        bot.reply_to(message, PHOTO_RECEIVED_TEXT)
+
+        # Получить самое большое фото
+        photo = message.photo[-1]
+        file_info = bot.get_file(photo.file_id)
+        downloaded = bot.download_file(file_info.file_path)
+
+        # Распознать через Vision LLM
+        description = _recognize_photo(downloaded)
+
+        # Найти похожие товары
+        products = _find_similar_products(description)
+
+        # Сформировать и отправить ответ
+        response_text = _format_photo_response(description, products)
+        bot.reply_to(message, response_text, parse_mode="Markdown")
+
+    except Exception:
+        logger.exception("Ошибка при обработке фото")
+        bot.reply_to(message, PHOTO_ERROR_TEXT)
+
+
 # ========== Инлайн-кнопки ==========
 
 @bot.callback_query_handler(func=lambda call: True)
@@ -253,4 +378,6 @@ def text_handler(message: Message) -> None:
 if __name__ == "__main__":
     logger.info("Запуск SAN Bot v%s", BOT_VERSION)
     logger.info("Доступные команды: %s", KNOWN_COMMANDS)
+    logger.info("Распознавание фото: включено (Vision LLM)")
+    logger.info("Rate limiting: %s запросов / %s сек", settings.rate_limit_requests, settings.rate_limit_window_sec)
     bot.infinity_polling()

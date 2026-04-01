@@ -27,10 +27,7 @@ WEB_INJECTION_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"(?i)игнориру(?:й|йте).{0,40}(инструкц|предыдущ|систем|промпт|разработчик)"),
     re.compile(r"(?i)(системн\w*\s+промпт|сообщени\w*\s+разработчик\w*)"),
 )
-MIN_RAG_SCORE = 0.2
-MAX_RAG_CONTEXT_ITEMS = 4
-MAX_LOOKUP_CONTEXT_ITEMS = 5
-MAX_WEB_CONTEXT_ITEMS = 5
+
 
 
 @dataclass(frozen=True)
@@ -441,7 +438,7 @@ def _is_rag_useful(items: list[dict[str, Any]]) -> bool:
     for item in items:
         text = str(item.get("text", "")).strip()
         score = float(item.get("score", 0.0) or 0.0)
-        if text and score >= MIN_RAG_SCORE:
+        if text and score >= settings.min_rag_score:
             return True
     return False
 
@@ -494,7 +491,7 @@ def _contains_instruction_like_text(value: str) -> bool:
 def _format_rag_context(items: list[dict[str, Any]]) -> str:
     """Форматирует контекстный блок из результатов RAG."""
     lines: list[str] = []
-    for index, item in enumerate(items[:MAX_RAG_CONTEXT_ITEMS], start=1):
+    for index, item in enumerate(items[:settings.max_rag_context_items], start=1):
         metadata = item.get("metadata") or {}
         source = str(metadata.get("source", "unknown"))
         section = str(metadata.get("section", "")).strip()
@@ -513,7 +510,7 @@ def _format_lookup_context(payload: dict[str, Any], items: list[dict[str, Any]])
     """Форматирует контекстный блок из результатов LOOKUP."""
     mode = str(payload.get("mode", "lookup"))
     lines = [f"[LOOKUP] mode={mode} count={len(items)}"]
-    for index, item in enumerate(items[:MAX_LOOKUP_CONTEXT_ITEMS], start=1):
+    for index, item in enumerate(items[:settings.max_lookup_context_items], start=1):
         name = str(item.get("name", "")).strip()
         brand = str(item.get("brand", "")).strip()
         category = str(item.get("category", "")).strip()
@@ -531,7 +528,7 @@ def _format_lookup_context(payload: dict[str, Any], items: list[dict[str, Any]])
 def _format_web_context(items: list[dict[str, Any]]) -> str:
     """Форматирует контекстный блок из результатов WEB-поиска."""
     lines: list[str] = []
-    for index, item in enumerate(items[:MAX_WEB_CONTEXT_ITEMS], start=1):
+    for index, item in enumerate(items[:settings.max_web_context_items], start=1):
         title = _clean_web_text(str(item.get("title", "")).strip())
         snippet = _clean_web_text(str(item.get("snippet", "")).strip().replace("\n", " "))
         url = str(item.get("url", "")).strip()
