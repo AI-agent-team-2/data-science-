@@ -13,6 +13,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from app.config import settings
 from app.rag.embeddings import create_embedding_function
 from app.rag.preprocess_text import preprocess_for_rag
+from app.rag.sku_index import save_sku_index
 from app.utils.sku import canonical_sku
 
 logger = logging.getLogger(__name__)
@@ -508,6 +509,23 @@ def store_products_in_chroma(records: list[ProductRecord]) -> None:
     )
 
 
+def build_sku_index(records: list[ProductRecord]) -> dict[str, list[dict[str, Any]]]:
+    """Строит прямой индекс SKU -> product metadata для быстрого exact lookup."""
+    index: dict[str, list[dict[str, Any]]] = {}
+
+    for record in records:
+        metadata = dict(record.metadata)
+        raw_articles = str(metadata.get("articles", ""))
+        for raw_sku in [item.strip() for item in raw_articles.split(",") if item.strip()]:
+            normalized = canonical_sku(raw_sku)
+            if not normalized:
+                continue
+            bucket = index.setdefault(normalized, [])
+            bucket.append(metadata)
+
+    return index
+
+
 def main() -> int:
     """Точка входа CLI для индексации локальной базы знаний."""
     logging.basicConfig(level=logging.INFO)
@@ -517,6 +535,7 @@ def main() -> int:
     product_records = build_product_records(documents)
     store_in_chroma(chunks)
     store_products_in_chroma(product_records)
+    save_sku_index(build_sku_index(product_records))
     logger.info("Проиндексировано %d чанков", len(chunks))
     return 0
 
