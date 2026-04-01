@@ -17,6 +17,10 @@ docker compose logs --tail=100 san-bot
 docker inspect san-bot --format '{{json .State.Health}}'
 ```
 
+Health-check отражает не только факт запуска контейнера, но и readiness retrieval-данных:
+- chunk collection должна быть непустой;
+- product collection должна быть непустой.
+
 ## Перезапуск
 
 ```bash
@@ -28,8 +32,19 @@ docker compose restart san-bot
 
 ```bash
 docker volume ls | grep san_bot
-docker volume inspect san_bot_chroma
-docker volume inspect san_bot_history
+docker volume inspect san_bot_san_bot_chroma
+docker volume inspect san_bot_san_bot_history
+```
+
+Проверка readiness индекса изнутри контейнера:
+
+```bash
+docker exec -i san-bot python - <<'PY'
+from app.rag.health import get_index_health
+health = get_index_health()
+print(health)
+print("ready=", health.is_ready)
+PY
 ```
 
 ## Manual rollback
@@ -52,4 +67,6 @@ docker compose up -d san-bot
    - убедиться, что не запущен второй poller вне Docker (`systemctl status san-bot.service`, `pgrep -af "telegram_bot.py|app.bot.telegram_bot"`).
 3. Пустые ответы из базы:
    - проверить `CHROMA_PATH`;
-   - при необходимости переиндексировать `python -m app.rag.ingest` в сервисном окружении.
+   - проверить readiness индекса внутри контейнера;
+   - при необходимости переиндексировать `python -m app.rag.ingest` в сервисном окружении;
+   - проверить `STARTUP_INDEX_MODE`, если контейнер стартует на новой пустой базе.

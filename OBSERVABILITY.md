@@ -13,7 +13,8 @@
 
 Ожидаемая структура trace:
 
-- `run_agent` (root)
+- `agent_request` (root)
+- `agent_pipeline`
 - `tool_lookup`
 - `tool_rag`
 - `tool_web`
@@ -25,12 +26,13 @@
 
 1. В `app/run_agent.py` создается один `CallbackHandler` через
    `get_langchain_callback_handler()`.
-2. Весь pipeline запускается как `RunnableLambda` с `run_name="run_agent"`.
-3. Для каждого вызова инструмента используется дочерний config:
+2. Корневой runnable запускается с `run_name="agent_request"`.
+3. Внутренний pipeline запускается как `RunnableLambda` с `run_name="agent_pipeline"`.
+4. Для каждого вызова инструмента используется дочерний config:
    - `run_name="tool_lookup"`
    - `run_name="tool_rag"`
    - `run_name="tool_web"`
-4. Для модели используется тот же callback-контекст с `run_name="model_invoke"`.
+5. Для модели используется тот же callback-контекст с `run_name="model_invoke"`.
 
 ## Что больше не используется как основной путь
 
@@ -57,8 +59,9 @@ LANGFUSE_ENABLED=false
 После выполнения 3–5 реальных запросов проверьте в Langfuse UI:
 
 1. Для каждого из 3 запросов ровно один root trace `run_agent`.
-2. Внутри trace есть `model_invoke` и tool-steps (`tool_lookup/tool_rag/tool_web` по сценарию).
-3. Нет отдельных root traces вида `history_save` или `model_invoke`.
+2. Для каждого запроса ровно один root trace `agent_request`.
+3. Внутри trace есть `agent_pipeline`, `model_invoke` и tool-steps (`tool_lookup/tool_rag/tool_web` по сценарию).
+4. Нет отдельных root traces вида `history_save` или `model_invoke`.
 
 ## Диагностика
 

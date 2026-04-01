@@ -15,7 +15,9 @@
 
 ## Подготовка VPS (один раз)
 
-1. Установить Docker + Docker Compose plugin.
+1. Установить Docker и один из вариантов Compose:
+   - `docker compose` plugin, или
+   - standalone `docker-compose`.
 2. Подготовить директорию проекта, например `/opt/san_bot`.
 3. Разместить в ней `docker-compose.yml`.
 4. Создать env-файл, например `/etc/san-bot/san-bot.env`.
@@ -31,6 +33,7 @@ MODEL_NAME=
 OPENAI_BASE_URL=
 CHROMA_PATH=/app/chroma_db
 HISTORY_DB_PATH=/app/history/history.db
+STARTUP_INDEX_MODE=if_empty
 ```
 
 Опционально:
@@ -75,6 +78,11 @@ LANGFUSE_HOST=https://cloud.langfuse.com
    - `docker compose up -d san-bot`
 4. Post-deploy health-check контейнера.
 5. Rollback на предыдущий image tag при неуспешном health-check.
+
+Замечание по indexing:
+- при `STARTUP_INDEX_MODE=if_empty` контейнер сам выполнит ingest только на пустой базе;
+- при `STARTUP_INDEX_MODE=always` ingest будет запускаться на каждом старте;
+- для production по умолчанию рекомендуется `if_empty`.
 
 ## Локальные команды диагностики на VPS
 
