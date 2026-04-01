@@ -1,12 +1,6 @@
 from __future__ import annotations
 
-import json
 from typing import Any
-
-
-def to_json(payload: dict[str, Any]) -> str:
-    """Сериализует payload в единый JSON-формат для инструментов."""
-    return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
 def empty_results_payload(query: str, note: str = "", **extra: Any) -> dict[str, Any]:

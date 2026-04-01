@@ -12,7 +12,7 @@ from langchain_core.tools import tool
 
 from app.config import settings
 from app.observability import sanitize_text
-from app.tools.response_utils import to_json
+from app.tools.response_utils import empty_results_payload
 
 logger = logging.getLogger(__name__)
 
@@ -70,12 +70,12 @@ def _save_to_cache(key: str, result: dict[str, Any]) -> None:
     }
 
     try:
-        cache_file.write_text(to_json(payload), encoding="utf-8")
+        cache_file.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     except Exception:
         logger.exception("Не удалось сохранить кэш WEB-поиска в %s", cache_file)
 
 
-def _normalize_results(query: str, items: list[dict[str, Any]], provider: str) -> str:
+def _normalize_results(query: str, items: list[dict[str, Any]], provider: str) -> dict[str, Any]:
     """Приводит результаты разных провайдеров к единому формату."""
     normalized_items: list[dict[str, str]] = []
 
@@ -95,31 +95,28 @@ def _normalize_results(query: str, items: list[dict[str, Any]], provider: str) -
             }
         )
 
-    return to_json(
-        {
-            "query": query,
-            "provider": provider,
-            "count": len(normalized_items),
-            "results": normalized_items,
-            "error": "",
-        }
-    )
+    return {
+        "query": query,
+        "provider": provider,
+        "count": len(normalized_items),
+        "results": normalized_items,
+        "error": "",
+    }
 
 
-def _error_object(query: str, provider: str, message: str) -> str:
+def _error_object(query: str, provider: str, message: str) -> dict[str, Any]:
     """Формирует JSON-ответ с ошибкой в едином формате."""
-    return to_json(
+    payload = empty_results_payload(query=query)
+    payload.update(
         {
-            "query": query,
             "provider": provider,
-            "count": 0,
-            "results": [],
             "error": message,
         }
     )
+    return payload
 
 
-def _duckduckgo_search(query: str, max_results: int) -> str:
+def _duckduckgo_search(query: str, max_results: int) -> dict[str, Any]:
     """Выполняет web-поиск через DDGS/DuckDuckGo."""
     try:
         try:
@@ -159,7 +156,7 @@ def _duckduckgo_search(query: str, max_results: int) -> str:
     return _normalize_results(query=query, items=items, provider="duckduckgo")
 
 
-def _tavily_search(query: str, max_results: int, api_key: str) -> str:
+def _tavily_search(query: str, max_results: int, api_key: str) -> dict[str, Any]:
     """Выполняет веб-поиск через Tavily."""
     try:
         from tavily import TavilyClient  # type: ignore
@@ -199,7 +196,7 @@ def _tavily_search(query: str, max_results: int, api_key: str) -> str:
 
 
 @tool
-def web_search(query: str, max_results: int = 5) -> str:
+def web_search(query: str, max_results: int = 5) -> dict[str, Any]:
     """
     Ищет актуальную внешнюю информацию в интернете.
 
@@ -224,20 +221,19 @@ def web_search(query: str, max_results: int = 5) -> str:
     cache_key = _get_cache_key(query, normalized_max_results)
     cached_result = _load_from_cache(cache_key)
     if cached_result is not None:
-        return to_json(cached_result)
+        return cached_result
 
     tavily_key = os.getenv("TAVILY_API_KEY", "").strip()
     if tavily_key:
-        raw_result = _tavily_search(query=query, max_results=normalized_max_results, api_key=tavily_key)
+        result = _tavily_search(query=query, max_results=normalized_max_results, api_key=tavily_key)
     else:
-        raw_result = _duckduckgo_search(query=query, max_results=normalized_max_results)
+        result = _duckduckgo_search(query=query, max_results=normalized_max_results)
 
     try:
-        parsed_result = json.loads(raw_result)
-        if isinstance(parsed_result, dict) and parsed_result.get("results"):
-            _save_to_cache(cache_key, parsed_result)
+        if isinstance(result, dict) and result.get("results"):
+            _save_to_cache(cache_key, result)
     except Exception as exc:
         logger.exception("Не удалось разобрать ответ web_search для кэширования")
         logger.debug("Детали ошибки web_search: %s", sanitize_text(str(exc)))
 
-    return raw_result
+    return result
