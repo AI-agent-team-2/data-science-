@@ -2,6 +2,58 @@
 
 Формат файла основан на принципах [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/).
 
+## [7] - 2026-04-01
+
+### Крупные изменения
+- Укреплен runtime pipeline:
+  - стартовая индексация управляется через `STARTUP_INDEX_MODE=never|if_empty|always`;
+  - readiness retrieval-данных вынесен в отдельную проверку;
+  - runtime retrievers перестали молча создавать пустые коллекции.
+- Оркестратор стал явно различать `success`, `empty` и `failed`:
+  - timeout/exception инструментов больше не маскируются под пустой результат;
+  - сбой model invoke отдает явный internal failure-response.
+- Контракт инструментов упрощен:
+  - убран JSON-roundtrip между tools и orchestration;
+  - инструменты возвращают структурированные `dict`-payload;
+  - payload schema унифицирована для `lookup`, `rag` и `web`.
+- Ускорен exact SKU lookup:
+  - добавлен прямой SKU-индекс;
+  - exact match сначала ищется по индексу, а не только через полный scan product metadata.
+- Улучшен routing и observability:
+  - добавлены `attempted_sources`, `source_status_map`, `failed_sources`, `fallback_reason`;
+  - trace структура переведена на `agent_request -> agent_pipeline -> tool_* / model_invoke`.
+- Усилен security для внешнего web-контекста:
+  - suspicious instruction-like snippets отбрасываются до prompt assembly;
+  - финальный prompt явно маркирует внешний контекст как недоверенный.
+
+### Docker / CI/CD / Ops
+- Добавлен production Docker-контур:
+  - `Dockerfile`;
+  - `docker-compose.yml`;
+  - health-check с проверкой readiness индекса.
+- Настроен CI/CD workflow:
+  - compile/tests/import smoke;
+  - Docker build/push;
+  - SSH deploy;
+  - health-check и rollback.
+- Legacy `systemd`/`.venv` deploy-path выведен из поддерживаемого контура.
+
+### Тесты
+- Добавлены integration/failure-mode тесты для:
+  - startup lifecycle;
+  - `run_agent`;
+  - routing short-circuit;
+  - security фильтрации web-контекста;
+  - SKU-индекса.
+
+### Документация
+- Обновлены:
+  - `README.md`;
+  - `DEPLOY_VPS.md`;
+  - `OPERATIONS.md`;
+  - `OBSERVABILITY.md`.
+- Документация синхронизирована с текущим runtime, tracing и Docker/CI-CD контуром.
+
 ## [6] - 2026-03-26
 
 ### Крупные изменения
