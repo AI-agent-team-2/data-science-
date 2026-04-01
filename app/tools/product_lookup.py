@@ -7,7 +7,7 @@ from langchain_core.tools import tool
 
 from app.observability import sanitize_text
 from app.rag.retriever import ProductRetriever
-from app.tools.response_utils import empty_results_payload
+from app.tools.response_utils import build_tool_payload, empty_results_payload
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +50,7 @@ def _clamp_limit(limit: int) -> int:
 
 def _build_empty_response(query: str, note: str) -> dict[str, Any]:
     """Формирует типовой пустой ответ для ошибок/пустых результатов."""
-    return empty_results_payload(query=query, note=note)
+    return empty_results_payload(query=query, note=note, meta={"tool": "lookup"})
 
 
 def _serialize_item(item: dict[str, Any]) -> SearchResult:
@@ -93,28 +93,31 @@ def product_lookup(query: str, limit: int = 5) -> dict[str, Any]:
             if exact_matches:
                 mode = "sku_first"
                 results = [_serialize_item(item) for item in exact_matches[:top_n]]
-                return {
-                    "query": normalized_query,
-                    "count": len(results),
-                    "mode": mode,
-                    "results": results,
-                }
+                return build_tool_payload(
+                    query=normalized_query,
+                    results=results,
+                    note="",
+                    meta={"tool": "lookup", "mode": mode},
+                    mode=mode,
+                )
 
             # Для SKU-запросов не подставляем «похожие» товары, если exact не найден.
             return empty_results_payload(
                 query=normalized_query,
                 note="Точный артикул не найден в базе товаров.",
+                meta={"tool": "lookup", "mode": "sku_not_found"},
                 mode="sku_not_found",
             )
 
         semantic_matches = retriever.semantic_search(query=normalized_query, limit=top_n)
         results = [_serialize_item(item) for item in semantic_matches[:top_n]]
-        return {
-            "query": normalized_query,
-            "count": len(results),
-            "mode": mode,
-            "results": results,
-        }
+        return build_tool_payload(
+            query=normalized_query,
+            results=results,
+            note="" if results else "Ничего не найдено в базе товаров.",
+            meta={"tool": "lookup", "mode": mode},
+            mode=mode,
+        )
     except Exception as exc:
         logger.exception("Ошибка product_lookup для запроса: %s", normalized_query)
         logger.debug("Детали ошибки product_lookup: %s", sanitize_text(str(exc)))

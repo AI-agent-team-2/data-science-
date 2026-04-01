@@ -12,12 +12,33 @@ from langchain_core.tools import tool
 
 from app.config import settings
 from app.observability import sanitize_text
-from app.tools.response_utils import empty_results_payload
+from app.tools.response_utils import build_tool_payload, empty_results_payload
 
 logger = logging.getLogger(__name__)
 
 CACHE_DIR: Final[Path] = Path(__file__).resolve().parents[2] / ".web_cache"
 MAX_RESULTS_HARD_LIMIT: Final[int] = 10
+
+
+def _coerce_web_payload(payload: dict[str, Any], provider: str = "") -> dict[str, Any]:
+    """Приводит web-payload к единой runtime-схеме независимо от источника/версии кэша."""
+    normalized_provider = str(payload.get("provider") or provider or "unknown")
+    results = payload.get("results")
+    normalized_results = results if isinstance(results, list) else []
+    error = str(payload.get("error") or "")
+    note = str(payload.get("note") or ("" if normalized_results else "Ничего не найдено во внешнем поиске."))
+    meta = payload.get("meta")
+    if not isinstance(meta, dict):
+        meta = {"tool": "web", "provider": normalized_provider}
+
+    return build_tool_payload(
+        query=str(payload.get("query") or ""),
+        results=[item for item in normalized_results if isinstance(item, dict)],
+        note=note,
+        meta=meta,
+        provider=normalized_provider,
+        error=error,
+    )
 
 
 def _get_cache_ttl() -> timedelta:
@@ -51,7 +72,7 @@ def _load_from_cache(key: str) -> dict[str, Any] | None:
             return None
 
         result = payload.get("result")
-        return result if isinstance(result, dict) else None
+        return _coerce_web_payload(result) if isinstance(result, dict) else None
     except Exception:
         logger.exception("Не удалось загрузить кэш WEB-поиска из %s", cache_file)
         return None
@@ -95,13 +116,14 @@ def _normalize_results(query: str, items: list[dict[str, Any]], provider: str) -
             }
         )
 
-    return {
-        "query": query,
-        "provider": provider,
-        "count": len(normalized_items),
-        "results": normalized_items,
-        "error": "",
-    }
+    return build_tool_payload(
+        query=query,
+        results=normalized_items,
+        note="" if normalized_items else "Ничего не найдено во внешнем поиске.",
+        meta={"tool": "web", "provider": provider},
+        provider=provider,
+        error="",
+    )
 
 
 def _error_object(query: str, provider: str, message: str) -> dict[str, Any]:
@@ -111,9 +133,10 @@ def _error_object(query: str, provider: str, message: str) -> dict[str, Any]:
         {
             "provider": provider,
             "error": message,
+            "meta": {"tool": "web", "provider": provider},
         }
     )
-    return payload
+    return _coerce_web_payload(payload, provider=provider)
 
 
 def _duckduckgo_search(query: str, max_results: int) -> dict[str, Any]:
@@ -221,7 +244,7 @@ def web_search(query: str, max_results: int = 5) -> dict[str, Any]:
     cache_key = _get_cache_key(query, normalized_max_results)
     cached_result = _load_from_cache(cache_key)
     if cached_result is not None:
-        return cached_result
+        return _coerce_web_payload(cached_result)
 
     tavily_key = os.getenv("TAVILY_API_KEY", "").strip()
     if tavily_key:
@@ -236,4 +259,4 @@ def web_search(query: str, max_results: int = 5) -> dict[str, Any]:
         logger.exception("Не удалось разобрать ответ web_search для кэширования")
         logger.debug("Детали ошибки web_search: %s", sanitize_text(str(exc)))
 
-    return result
+    return _coerce_web_payload(result)
