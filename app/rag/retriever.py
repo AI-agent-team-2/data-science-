@@ -31,22 +31,31 @@ def _tokenize(text: str) -> set[str]:
     return {token.lower() for token in WORD_PATTERN.findall(text)}
 
 
+def _load_collection(
+    client: chromadb.PersistentClient,
+    collection_name: str,
+    embedding_function: Any,
+) -> Any:
+    """Загружает существующую коллекцию и не маскирует отсутствие индекса."""
+    try:
+        collection = client.get_collection(name=collection_name)
+    except Exception as exc:
+        raise RuntimeError(f"Chroma collection '{collection_name}' is missing or unavailable") from exc
+    collection._embedding_function = embedding_function
+    return collection
+
+
 class ChromaRetriever:
     """Обертка над Chroma для векторного поиска."""
 
     def __init__(self) -> None:
         self.client = chromadb.PersistentClient(path=settings.chroma_path)
         self.embedding_function = create_embedding_function()
-
-        try:
-            self.collection = self.client.get_collection(name=settings.collection_name)
-            self.collection._embedding_function = self.embedding_function
-        except Exception:
-            logger.info("Коллекция '%s' не найдена. Создаю новую.", settings.collection_name)
-            self.collection = self.client.create_collection(
-                name=settings.collection_name,
-                embedding_function=self.embedding_function,
-            )
+        self.collection = _load_collection(
+            client=self.client,
+            collection_name=settings.collection_name,
+            embedding_function=self.embedding_function,
+        )
 
     def search(self, query: str, top_k: int | None = None) -> list[dict[str, Any]]:
         """Выполняет векторный поиск по текстовому запросу."""
@@ -84,16 +93,11 @@ class ProductRetriever:
         self.client = chromadb.PersistentClient(path=settings.chroma_path)
         self.embedding_function = create_embedding_function()
         self.collection_name = collection_name or f"{settings.collection_name}{PRODUCT_COLLECTION_SUFFIX}"
-
-        try:
-            self.collection = self.client.get_collection(name=self.collection_name)
-            self.collection._embedding_function = self.embedding_function
-        except Exception:
-            logger.info("Product-коллекция '%s' не найдена. Создаю новую.", self.collection_name)
-            self.collection = self.client.create_collection(
-                name=self.collection_name,
-                embedding_function=self.embedding_function,
-            )
+        self.collection = _load_collection(
+            client=self.client,
+            collection_name=self.collection_name,
+            embedding_function=self.embedding_function,
+        )
 
     def extract_query_skus(self, query: str) -> set[str]:
         """Извлекает candidate SKU из пользовательского запроса."""
