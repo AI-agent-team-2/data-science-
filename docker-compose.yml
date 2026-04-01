@@ -1,0 +1,17 @@
+services:
+  san-bot:
+    container_name: san-bot
+    image: ${BOT_IMAGE:-san-bot:local}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - ${BOT_ENV_FILE:-.env}
+    restart: unless-stopped
+    volumes:
+      - san_bot_chroma:/app/chroma_db
+      - san_bot_history:/app/history
+
+volumes:
+  san_bot_chroma:
+  san_bot_history:

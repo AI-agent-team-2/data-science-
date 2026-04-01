@@ -5,7 +5,7 @@ import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Callable
+from typing import Any, Callable, TypeAlias
 
 from langchain_core.runnables import RunnableConfig
 
@@ -36,11 +36,15 @@ class ContextBuildResult:
 
 EMPTY_CONTEXT_RESULT = ContextBuildResult(context_text="", web_urls=[], used_web=False, used_source="none")
 
+ToolCallable: TypeAlias = Callable[[dict[str, Any]], Any]
+ToolPayload: TypeAlias = dict[str, Any]
+InvokeToolFn: TypeAlias = Callable[[ToolCallable, ToolPayload, str, RunnableConfig | None], ToolPayload]
+
 
 def build_context(
     query: str,
     source_order: list[ToolName],
-    invoke_tool: Callable[[Callable[[dict[str, Any]], Any], dict[str, Any], str, RunnableConfig | None], dict[str, Any]],
+    invoke_tool: InvokeToolFn,
     config: RunnableConfig | None = None,
 ) -> ContextBuildResult:
     """Подбирает контекст из доступных источников по приоритету."""
@@ -73,7 +77,7 @@ def _context_from_source(
     source: ToolName,
     query: str,
     web_mode: str,
-    invoke_tool: Callable[[Callable[[dict[str, Any]], Any], dict[str, Any], str, RunnableConfig | None], dict[str, Any]],
+    invoke_tool: InvokeToolFn,
     config: RunnableConfig | None = None,
 ) -> ContextBuildResult:
     """Строит контекст из указанного источника данных."""
@@ -86,7 +90,7 @@ def _context_from_source(
 
 def _context_from_lookup(
     query: str,
-    invoke_tool: Callable[[Callable[[dict[str, Any]], Any], dict[str, Any], str, RunnableConfig | None], dict[str, Any]],
+    invoke_tool: InvokeToolFn,
     config: RunnableConfig | None = None,
 ) -> ContextBuildResult:
     """Пытается получить контекст из базы товаров (LOOKUP)."""
@@ -110,7 +114,7 @@ def _context_from_lookup(
 
 def _context_from_rag(
     query: str,
-    invoke_tool: Callable[[Callable[[dict[str, Any]], Any], dict[str, Any], str, RunnableConfig | None], dict[str, Any]],
+    invoke_tool: InvokeToolFn,
     config: RunnableConfig | None = None,
 ) -> ContextBuildResult:
     """Пытается получить контекст из RAG-базы знаний."""
@@ -135,7 +139,7 @@ def _context_from_rag(
 def _context_from_web(
     query: str,
     mode: str,
-    invoke_tool: Callable[[Callable[[dict[str, Any]], Any], dict[str, Any], str, RunnableConfig | None], dict[str, Any]],
+    invoke_tool: InvokeToolFn,
     config: RunnableConfig | None = None,
 ) -> ContextBuildResult:
     """Пытается получить контекст из web-поиска."""

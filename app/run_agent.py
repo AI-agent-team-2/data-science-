@@ -5,7 +5,6 @@ import re
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from contextvars import copy_context
 from typing import Any, Callable
-from uuid import uuid4
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig, RunnableLambda
@@ -27,10 +26,8 @@ from app.history_store import load_messages, save_turn
 from app.observability import (
     get_langchain_callback_handler,
     hash_user_id,
-    log_trace_scores,
     sanitize_text,
 )
-from app.observability.scoring import compute_scores
 from app.prompts import SYSTEM_PROMPT
 from app.routing import (
     ToolName,
@@ -60,35 +57,23 @@ def run_agent(user_text: str, user_id: str = "unknown") -> str:
     session_id = user_id or "unknown"
     query = user_text.strip()
     hashed_user = hash_user_id(session_id)
-    trace_id = uuid4().hex
     source_order = resolve_source_order(query)
     intent = _detect_intent(query)
     _, guard_action, risk_flags = _apply_guard(query)
 
-    callback_handler = get_langchain_callback_handler(
-        session_id=hashed_user,
-        user_id=hashed_user,
-        tags=["telegram", "san-bot", "run_agent"],
+    callback_handler = get_langchain_callback_handler()
+    trace_metadata = _build_trace_metadata(
+        query=query,
+        source_order=source_order,
+        intent=intent,
+        risk_flags=risk_flags,
+        guard_action=guard_action,
+        hashed_user=hashed_user,
     )
     root_config: RunnableConfig = {
         "callbacks": [callback_handler] if callback_handler is not None else [],
         "run_name": "run_agent",
-        "metadata": {
-            "query": sanitize_text(query),
-            "model": settings.resolved_model_name,
-            "provider": settings.resolved_model_provider,
-            "source_order": source_order,
-            "intent": intent,
-            "risk_flags": risk_flags,
-            "guard_action": guard_action,
-            "enable_web_search": settings.enable_web_search,
-            "enable_rag": settings.enable_rag,
-            "enable_product_lookup": settings.enable_product_lookup,
-            "langfuse_trace_id": trace_id,
-            "langfuse_session_id": hashed_user,
-            "langfuse_user_id": hashed_user,
-            "langfuse_tags": ["telegram", "san-bot", "run_agent"],
-        },
+        "metadata": trace_metadata,
     }
 
     pipeline = RunnableLambda(_run_agent_pipeline)
@@ -97,7 +82,6 @@ def run_agent(user_text: str, user_id: str = "unknown") -> str:
             "user_text": user_text,
             "session_id": session_id,
             "hashed_user": hashed_user,
-            "trace_id": trace_id,
             "source_order": source_order,
         },
         config=root_config,
@@ -109,7 +93,6 @@ def _run_agent_pipeline(payload: dict[str, Any], config: RunnableConfig | None =
     user_text = str(payload.get("user_text", ""))
     session_id = str(payload.get("session_id", "unknown"))
     hashed_user = str(payload.get("hashed_user", hash_user_id(session_id)))
-    trace_id = str(payload.get("trace_id", "")).strip()
     source_order = payload.get("source_order")
     if not isinstance(source_order, list):
         source_order = resolve_source_order(user_text.strip())
@@ -118,58 +101,43 @@ def _run_agent_pipeline(payload: dict[str, Any], config: RunnableConfig | None =
     safe_query, guard_action, risk_flags = _apply_guard(query)
 
     if guard_action == "block":
-        return _score_and_finalize_response(
+        return _finalize_response(
             session_id=session_id,
             user_text=user_text,
             raw_assistant_text=(
                 "Не могу обработать этот запрос в таком виде. "
                 "Сформулируйте, пожалуйста, вопрос по сантехническим товарам."
             ),
-            question_for_score=safe_query,
-            trace_id=trace_id,
-            config=config,
         )
 
     if is_identity_or_capability_query(safe_query):
-        return _score_and_finalize_response(
+        return _finalize_response(
             session_id=session_id,
             user_text=user_text,
             raw_assistant_text=assistant_scope_response(),
-            question_for_score=safe_query,
-            trace_id=trace_id,
-            config=config,
         )
 
     if is_smalltalk(safe_query):
-        return _score_and_finalize_response(
+        return _finalize_response(
             session_id=session_id,
             user_text=user_text,
             raw_assistant_text=smalltalk_response(),
-            question_for_score=safe_query,
-            trace_id=trace_id,
-            config=config,
         )
 
     if is_noise_query(safe_query) or is_offtopic_or_rude_query(safe_query):
-        return _score_and_finalize_response(
+        return _finalize_response(
             session_id=session_id,
             user_text=user_text,
             raw_assistant_text=domain_redirect_response(),
-            question_for_score=safe_query,
-            trace_id=trace_id,
-            config=config,
         )
 
     history_messages = _to_langchain_messages(load_messages(session_id=session_id))
     context = build_context(safe_query, source_order, invoke_tool=_invoke_tool, config=config)
     if not context.context_text:
-        return _score_and_finalize_response(
+        return _finalize_response(
             session_id=session_id,
             user_text=user_text,
             raw_assistant_text=clarifying_question(),
-            question_for_score=safe_query,
-            trace_id=trace_id,
-            config=config,
         )
 
     final_prompt = build_final_prompt(user_text=safe_query, context_block=context.context_text)
@@ -183,10 +151,9 @@ def _run_agent_pipeline(payload: dict[str, Any], config: RunnableConfig | None =
         "used_source": context.used_source,
         "risk_flags": risk_flags,
         "guard_action": guard_action,
-        "langfuse_trace_id": trace_id,
-        "langfuse_session_id": hashed_user,
-        "langfuse_user_id": hashed_user,
-        "langfuse_tags": ["telegram", "san-bot", "run_agent"],
+        "trace_session_id": hashed_user,
+        "trace_user_id": hashed_user,
+        "trace_tags": ["telegram", "san-bot", "run_agent"],
     }
     existing_meta = effective_model_config.get("metadata")
     if isinstance(existing_meta, dict):
@@ -200,8 +167,6 @@ def _run_agent_pipeline(payload: dict[str, Any], config: RunnableConfig | None =
         timeout_sec=MODEL_TIMEOUT_SEC,
     )
     raw_assistant_text = extract_ai_text(response)
-    scores = compute_scores(question=safe_query, answer=raw_assistant_text)
-    log_trace_scores(trace_id=trace_id, scores=scores)
     assistant_text = sanitize_text(raw_assistant_text)
     if context.used_web:
         assistant_text = ensure_sources_block(assistant_text, context.web_urls)
@@ -226,19 +191,42 @@ def _save_and_return(session_id: str, user_text: str, assistant_text: str) -> st
     return assistant_text
 
 
-def _score_and_finalize_response(
+def _finalize_response(
     session_id: str,
     user_text: str,
     raw_assistant_text: str,
-    question_for_score: str,
-    trace_id: str,
-    config: RunnableConfig | None = None,
 ) -> str:
-    """Считает score по сырому ответу, санитизирует и сохраняет итог пользователю."""
-    scores = compute_scores(question=question_for_score, answer=raw_assistant_text)
-    log_trace_scores(trace_id=trace_id, scores=scores)
+    """Санитизирует и сохраняет итоговый ответ пользователю."""
     assistant_text = sanitize_text(raw_assistant_text)
     return _save_and_return(session_id=session_id, user_text=user_text, assistant_text=assistant_text)
+
+
+def _build_trace_metadata(
+    query: str,
+    source_order: list[ToolName],
+    intent: str,
+    risk_flags: list[str],
+    guard_action: str,
+    hashed_user: str,
+) -> dict[str, Any]:
+    """Формирует единый metadata-формат для run/model/tool шагов."""
+    return {
+        "query": sanitize_text(query),
+        "provider": settings.resolved_model_provider,
+        "model": settings.resolved_model_name,
+        "intent": intent,
+        "source_order": list(source_order),
+        "risk_flags": list(risk_flags),
+        "guard_action": guard_action,
+        "trace_session_id": hashed_user,
+        "trace_user_id": hashed_user,
+        "trace_tags": ["telegram", "san-bot", "run_agent"],
+        "features": {
+            "enable_web_search": settings.enable_web_search,
+            "enable_rag": settings.enable_rag,
+            "enable_product_lookup": settings.enable_product_lookup,
+        },
+    }
 
 
 def _invoke_tool(
