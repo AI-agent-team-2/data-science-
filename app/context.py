@@ -204,18 +204,15 @@ def extract_ai_text(message: Any) -> str:
 
 
 def ensure_sources_block(answer: str, urls: list[str], max_urls: int = 5) -> str:
-    """Добавляет блок `Источники`, если использовался WEB и блока еще нет."""
-    if "Источники:" in answer:
-        return answer
-
+    """Нормализует блок `Источники` на основе реальных URL из WEB-контекста."""
+    base = re.sub(r"\n?Источники:\s*(?:\n-\s*.*)*\s*$", "", str(answer or "").rstrip(), flags=re.IGNORECASE)
     lines = ["", "Источники:"]
     if urls:
         for url in urls[:max_urls]:
             lines.append(f"- {url}")
     else:
         lines.append("- внешние ссылки не найдены")
-
-    return answer.rstrip() + "\n" + "\n".join(lines)
+    return base + "\n" + "\n".join(lines)
 
 
 def build_final_prompt(user_text: str, context_block: str) -> str:
@@ -375,7 +372,21 @@ def _extract_web_urls(items: list[dict[str, Any]]) -> list[str]:
 
 
 def parse_tool_payload(raw: Any) -> dict[str, Any]:
-    """Парсит JSON-ответ инструмента в dict."""
+    """Парсит ответ инструмента в dict (str JSON / dict / ToolMessage.content)."""
+    if isinstance(raw, dict):
+        return raw
+    if hasattr(raw, "content"):
+        raw = getattr(raw, "content")
+        if isinstance(raw, list):
+            parts: list[str] = []
+            for item in raw:
+                if isinstance(item, dict):
+                    text = item.get("text")
+                    if isinstance(text, str):
+                        parts.append(text)
+                elif isinstance(item, str):
+                    parts.append(item)
+            raw = "".join(parts)
     if not isinstance(raw, str):
         return {}
     try:
