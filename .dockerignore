@@ -1,0 +1,15 @@
+.git
+.github
+.ruff_cache
+.web_cache
+myenv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.db
+chroma_db
+artifacts
+langfuse_notebook.ipynb
+rag_notebook.ipynb
+TEST.txt

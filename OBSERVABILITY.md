@@ -24,7 +24,7 @@
 ## Как это реализовано
 
 1. В `app/run_agent.py` создается один `CallbackHandler` через
-   `get_langchain_callback_handler(...)`.
+   `get_langchain_callback_handler()`.
 2. Весь pipeline запускается как `RunnableLambda` с `run_name="run_agent"`.
 3. Для каждого вызова инструмента используется дочерний config:
    - `run_name="tool_lookup"`

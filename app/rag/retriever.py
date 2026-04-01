@@ -8,20 +8,13 @@ import chromadb
 
 from app.config import settings
 from app.rag.embeddings import create_embedding_function
+from app.utils.sku import canonical_sku, extract_sku_candidates
 
 logger = logging.getLogger(__name__)
 
 
 PRODUCT_COLLECTION_SUFFIX = "_products"
-NON_ALNUM_PATTERN = re.compile(r"[^A-Z0-9]+")
-SKU_PATTERN = re.compile(r"\b[A-Z0-9][A-Z0-9\-_]{4,}\b")
-SKU_SPLIT_PATTERN = re.compile(r"\b([A-Z]{2,}[A-Z0-9]{1,})[\s\-_/]+([0-9]{2,}[A-Z0-9]*)\b")
 WORD_PATTERN = re.compile(r"[a-zA-Zа-яА-Я0-9]+")
-
-
-def _canonical_sku(value: str) -> str:
-    """Нормализует SKU к каноническому виду для точного сравнения."""
-    return NON_ALNUM_PATTERN.sub("", str(value or "").upper())
 
 
 def _split_csv_values(value: str) -> list[str]:
@@ -104,20 +97,7 @@ class ProductRetriever:
 
     def extract_query_skus(self, query: str) -> set[str]:
         """Извлекает candidate SKU из пользовательского запроса."""
-        skus: set[str] = set()
-        query_upper = str(query or "").upper()
-
-        for raw_sku in SKU_PATTERN.findall(query_upper):
-            normalized = _canonical_sku(raw_sku)
-            if normalized and any(char.isdigit() for char in normalized):
-                skus.add(normalized)
-
-        # Поддержка "разбитых" артикулов вида `OGBKP 001` / `ABC-12345`.
-        for left, right in SKU_SPLIT_PATTERN.findall(query_upper):
-            normalized = _canonical_sku(f"{left}{right}")
-            if normalized and any(char.isdigit() for char in normalized):
-                skus.add(normalized)
-        return skus
+        return extract_sku_candidates(query, require_digit=True)
 
     def find_exact_sku_matches(self, query: str, limit: int = 5) -> list[dict[str, Any]]:
         """Ищет карточки по точному совпадению SKU."""
@@ -206,7 +186,7 @@ class ProductRetriever:
         elif isinstance(raw_articles, list):
             values.extend(str(value) for value in raw_articles)
 
-        normalized = {_canonical_sku(value) for value in values}
+        normalized = {canonical_sku(value) for value in values}
         return {value for value in normalized if value}
 
     def _serialize_item(self, metadata: dict[str, Any], score: float) -> dict[str, Any]:

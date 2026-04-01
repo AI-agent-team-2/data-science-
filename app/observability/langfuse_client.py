@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import logging
-import re
-import time
 from inspect import signature
 from typing import Any
 
@@ -13,15 +11,6 @@ logger = logging.getLogger(__name__)
 _langfuse_client: Any | None = None
 _client_init_attempted = False
 _callback_handler_class: Any | None = None
-_callback_init_error: str | None = None
-TRACE_ID_PATTERN = re.compile(r"^[0-9a-f]{32}$")
-ALLOWED_SCORE_NAMES: frozenset[str] = frozenset(
-    {
-        "auto_relevance_score",
-        "auto_pii_risk",
-        "auto_refusal_correctness",
-    }
-)
 
 
 def _is_enabled() -> bool:
@@ -71,35 +60,16 @@ def get_langfuse_client() -> Any | None:
     return _langfuse_client
 
 
-def get_langchain_callback_handler(
-    trace_id: str | None = None,
-    session_id: str | None = None,
-    user_id: str | None = None,
-    parent_observation_id: str | None = None,
-    tags: list[str] | None = None,
-) -> Any | None:
+def get_langchain_callback_handler() -> Any | None:
     """
     Возвращает singleton `CallbackHandler` для LangChain.
-
-    Parameters
-    ----------
-    trace_id : str | None
-        Аргумент сохранен для совместимости сигнатуры.
-    session_id : str | None
-        Аргумент сохранен для совместимости сигнатуры.
-    user_id : str | None
-        Аргумент сохранен для совместимости сигнатуры.
-    parent_observation_id : str | None
-        Идентификатор родительского observation для явной привязки callback.
-    tags : list[str] | None
-        Теги trace/наблюдения для callback handler.
 
     Returns
     -------
     Any | None
         Экземпляр callback handler или `None`, если инициализация не удалась.
     """
-    global _callback_handler_class, _callback_init_error
+    global _callback_handler_class
     if not _is_enabled():
         return None
 
@@ -110,105 +80,16 @@ def get_langchain_callback_handler(
 
             _callback_handler_class = LangfuseCallbackHandler
 
-        if any([trace_id, session_id, user_id, parent_observation_id, tags]):
-            logger.debug(
-                "Параметры trace/session/user/tags для CallbackHandler будут проигнорированы "
-                "в текущем режиме callback-first."
-            )
-
         callback_handler: Any = _callback_handler_class()
-        _callback_init_error = None
         logger.debug("Langfuse CallbackHandler успешно создан для запроса.")
         return callback_handler
     except Exception as exc:
         _callback_handler_class = None
-        _callback_init_error = str(exc)
         logger.error(
             "Не удалось инициализировать Langfuse CallbackHandler: %s. "
             "Проверьте совместимость версий langfuse/langchain.",
-            _callback_init_error,
+            exc,
         )
         return None
-
-
-def log_trace_scores(trace_id: str, scores: dict[str, float]) -> None:
-    """Записывает score-метрики в Langfuse по явно переданному trace_id."""
-    if not _is_enabled():
-        logger.debug("Скоринг пропущен: Langfuse отключен или не сконфигурирован.")
-        return
-
-    clean_trace_id = str(trace_id or "").strip()
-    if not clean_trace_id:
-        logger.warning("Скоринг пропущен: пустой trace_id.")
-        return
-    if not TRACE_ID_PATTERN.fullmatch(clean_trace_id):
-        logger.warning(
-            "Скоринг пропущен: некорректный trace_id '%s' (ожидается 32-символьный hex).",
-            clean_trace_id,
-        )
-        return
-
-    client = get_langfuse_client()
-    if client is None:
-        logger.warning("Скоринг пропущен: клиент Langfuse недоступен.")
-        return
-
-    sent_count = 0
-    skipped_count = 0
-    failed_count = 0
-    retry_delays_sec = (0.3, 0.8, 1.5)
-    for name, value in scores.items():
-        metric_name = str(name)
-        if metric_name not in ALLOWED_SCORE_NAMES:
-            logger.debug("Пропускаю неподдерживаемую score-метрику: %s", metric_name)
-            skipped_count += 1
-            continue
-        metric_value = float(value)
-        last_error: Exception | None = None
-
-        for attempt, delay_sec in enumerate(retry_delays_sec, start=1):
-            try:
-                client.create_score(
-                    trace_id=clean_trace_id,
-                    name=metric_name,
-                    value=metric_value,
-                    data_type="NUMERIC",
-                )
-                last_error = None
-                sent_count += 1
-                break
-            except Exception as exc:
-                last_error = exc
-                logger.debug(
-                    "Не удалось записать score '%s' в Langfuse trace=%s (попытка %d/%d): %s",
-                    metric_name,
-                    clean_trace_id,
-                    attempt,
-                    len(retry_delays_sec),
-                    exc,
-                )
-                if attempt < len(retry_delays_sec):
-                    time.sleep(delay_sec)
-
-        if last_error is not None:
-            failed_count += 1
-            logger.warning(
-                "Score '%s' не записан в Langfuse trace=%s после %d попыток.",
-                metric_name,
-                clean_trace_id,
-                len(retry_delays_sec),
-            )
-
-    try:
-        client.flush()
-        logger.debug(
-            "Скоринг завершен: trace_id=%s, отправлено=%d, пропущено=%d, ошибок=%d.",
-            clean_trace_id,
-            sent_count,
-            skipped_count,
-            failed_count,
-        )
-    except Exception as exc:
-        logger.debug("Не удалось выполнить flush() после записи score в Langfuse: %s", exc)
 
 

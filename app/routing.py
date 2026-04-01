@@ -3,9 +3,10 @@ from __future__ import annotations
 import re
 from typing import Literal
 
+from app.utils.sku import contains_sku_candidate
+
 ToolName = Literal["lookup", "rag", "web"]
 
-SKU_PATTERN = re.compile(r"\b[A-Z][A-Z0-9]{4,}\b")
 WEB_YEAR_PATTERN = re.compile(r"\bв\s+20\d{2}\b")
 
 SMALLTALK_MARKERS: tuple[str, ...] = (
@@ -166,7 +167,7 @@ def should_prefer_web(query: str) -> bool:
     has_web_marker = any(marker in lowered_query for marker in WEB_PRIORITY_MARKERS)
     has_web_year_marker = WEB_YEAR_PATTERN.search(lowered_query) is not None
     has_lookup_marker = any(marker in lowered_query for marker in LOOKUP_PRIORITY_MARKERS)
-    has_sku = SKU_PATTERN.search(query.upper()) is not None
+    has_sku = contains_sku_candidate(query, require_digit=False)
 
     if (has_web_marker or has_web_year_marker) and not has_lookup_marker and not has_sku:
         return True
@@ -182,7 +183,7 @@ def should_prefer_web(query: str) -> bool:
 
 def should_prefer_lookup(query: str) -> bool:
     """Определяет, когда LOOKUP должен быть первым источником."""
-    if SKU_PATTERN.search(query.upper()):
+    if contains_sku_candidate(query, require_digit=False):
         return True
 
     lowered_query = query.lower()
@@ -257,6 +258,6 @@ def is_offtopic_or_rude_query(query: str) -> bool:
 
 def is_domain_query(lowered_query: str) -> bool:
     """Проверяет, что запрос относится к товарам/техтематике проекта."""
-    if SKU_PATTERN.search(lowered_query.upper()):
+    if contains_sku_candidate(lowered_query, require_digit=False):
         return True
     return any(marker in lowered_query for marker in DOMAIN_MARKERS)

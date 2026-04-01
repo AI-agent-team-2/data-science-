@@ -13,6 +13,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from app.config import settings
 from app.rag.embeddings import create_embedding_function
 from app.rag.preprocess_text import preprocess_for_rag
+from app.utils.sku import canonical_sku
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +24,6 @@ MISSING_DATA_MARKER = "[НЕТ ДАННЫХ В ИСХОДНОМ ДОКУМЕНТ
 HEADER_LINE_PATTERN = re.compile(r"^\s*([A-Z][A-Z0-9_ ]{1,50})\s*:\s*(.+?)\s*$")
 SECTION_HEADER_PATTERN = re.compile(r"^[A-Z][A-Z0-9 ()/&_-]{2,}$")
 NON_ID_CHARS_PATTERN = re.compile(r"[^a-z0-9]+")
-NON_SKU_CHARS_PATTERN = re.compile(r"[^A-Z0-9]+")
 MULTI_VALUE_SPLIT_PATTERN = re.compile(r"[,\n;|]+")
 PRODUCT_COLLECTION_SUFFIX = "_products"
 
@@ -190,11 +190,6 @@ def _split_multi_values(raw: str) -> list[str]:
     return items
 
 
-def _canonical_sku(value: str) -> str:
-    """Нормализует SKU для стабильного сравнения и dedupe."""
-    return NON_SKU_CHARS_PATTERN.sub("", value.upper())
-
-
 def _extract_articles_values(structured: StructuredDocument) -> list[str]:
     """
     Извлекает артикулы в порядке приоритета:
@@ -211,7 +206,7 @@ def _extract_articles_values(structured: StructuredDocument) -> list[str]:
     deduped: list[str] = []
     seen: set[str] = set()
     for value in values:
-        normalized = _canonical_sku(value)
+        normalized = canonical_sku(value)
         if not normalized:
             continue
         if normalized in seen:
@@ -360,6 +355,8 @@ def build_product_records(documents: list[SourceDocument]) -> list[ProductRecord
             continue
 
         product_id = f"product:{structured.source}"
+        normalized_articles = [normalized for article in articles if (normalized := canonical_sku(article))]
+
         metadata = {
             "source": structured.source,
             "doc_id": fields.get("DOC_ID", ""),
@@ -372,7 +369,7 @@ def build_product_records(documents: list[SourceDocument]) -> list[ProductRecord
             "country": fields.get("COUNTRY", ""),
             "aliases": ", ".join(aliases),
             "articles": ", ".join(articles),
-            "articles_norm": ", ".join(_canonical_sku(article) for article in articles if _canonical_sku(article)),
+            "articles_norm": ", ".join(normalized_articles),
             "content_hash": hashlib.sha256(lookup_text.encode("utf-8")).hexdigest(),
         }
 
