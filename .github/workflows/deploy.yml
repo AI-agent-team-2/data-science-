@@ -99,6 +99,13 @@ jobs:
 
             cd "$APP_DIR"
 
+            COMPOSE_FILE="$(find "$APP_DIR" -maxdepth 4 -type f \( -name docker-compose.yml -o -name docker-compose.yaml -o -name compose.yml -o -name compose.yaml \) | head -n 1)"
+            if [ -z "$COMPOSE_FILE" ]; then
+              echo "Compose file not found under APP_DIR=$APP_DIR"
+              ls -la "$APP_DIR"
+              exit 1
+            fi
+
             if docker compose version >/dev/null 2>&1; then
               COMPOSE_CMD="docker compose"
             elif command -v docker-compose >/dev/null 2>&1; then
@@ -120,8 +127,8 @@ jobs:
               echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
             fi
 
-            $COMPOSE_CMD pull san-bot
-            $COMPOSE_CMD up -d san-bot
+            $COMPOSE_CMD -f "$COMPOSE_FILE" pull san-bot
+            $COMPOSE_CMD -f "$COMPOSE_FILE" up -d san-bot
 
             HEALTHY=0
             for _ in $(seq 1 18); do
@@ -137,14 +144,14 @@ jobs:
               echo "Health-check failed; attempting rollback."
               if [ -f .previous_image_tag ]; then
                 export BOT_IMAGE="$(cat .previous_image_tag)"
-                $COMPOSE_CMD up -d san-bot
+                $COMPOSE_CMD -f "$COMPOSE_FILE" up -d san-bot
                 exit 1
               fi
               exit 1
             fi
 
             echo "$BOT_IMAGE" > .deployed_image_tag
-            $COMPOSE_CMD ps
+            $COMPOSE_CMD -f "$COMPOSE_FILE" ps
         env:
           BOT_IMAGE: ${{ needs.build-and-publish.outputs.image_ref }}
           APP_DIR: ${{ secrets.VPS_APP_DIR }}

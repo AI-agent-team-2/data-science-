@@ -18,6 +18,7 @@ from app.tools.web_search import web_search
 logger = logging.getLogger(__name__)
 
 YEAR_PATTERN = re.compile(r"\b(20\d{2})\b")
+CLEAN_TRUNCATED_MARKER_PATTERN = re.compile(r"[\[\(\{]?\s*\.{0,3}\s*truncated\s*[\]\)\}]?", re.IGNORECASE)
 MIN_RAG_SCORE = 0.2
 MAX_RAG_CONTEXT_ITEMS = 4
 MAX_LOOKUP_CONTEXT_ITEMS = 5
@@ -225,7 +226,8 @@ def build_final_prompt(user_text: str, context_block: str) -> str:
         "Ответь строго по вопросу пользователя. "
         "Если вопрос только про сантехнику — отвечай только про сантехнику. "
         "Не добавляй информацию про ремонт, стройматериалы, мебель и другие темы, "
-        "если пользователь о них не спрашивал. Будь краток и точен."
+        "если пользователь о них не спрашивал. Будь краток и точен. "
+        "Не копируй в финальный ответ служебные маркеры обрезки источников вроде [truncated]."
     )
 
 
@@ -343,11 +345,18 @@ def _format_web_context(items: list[dict[str, Any]]) -> str:
     """Форматирует контекстный блок из результатов WEB-поиска."""
     lines: list[str] = []
     for index, item in enumerate(items[:MAX_WEB_CONTEXT_ITEMS], start=1):
-        title = str(item.get("title", "")).strip()
-        snippet = str(item.get("snippet", "")).strip().replace("\n", " ")
+        title = _clean_web_text(str(item.get("title", "")).strip())
+        snippet = _clean_web_text(str(item.get("snippet", "")).strip().replace("\n", " "))
         url = str(item.get("url", "")).strip()
         lines.append(f"[WEB {index}] {title} | {snippet} | {url}")
     return "\n".join(lines).strip()
+
+
+def _clean_web_text(value: str) -> str:
+    """Удаляет служебные маркеры обрезки из web-фрагментов и нормализует пробелы."""
+    cleaned = CLEAN_TRUNCATED_MARKER_PATTERN.sub(" ", str(value or ""))
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" .;|")
+    return cleaned
 
 
 def _extract_web_urls(items: list[dict[str, Any]]) -> list[str]:
