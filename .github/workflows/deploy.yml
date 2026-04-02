@@ -98,6 +98,13 @@ jobs:
             BOT_ENV_FILE="${BOT_ENV_FILE:-/etc/san-bot/san-bot.env}"
 
             cd "$APP_DIR"
+            if [ -d .git ]; then
+              git fetch origin main
+              git checkout -f main
+              git reset --hard origin/main
+            else
+              echo "Warning: $APP_DIR is not a git repository; compose file will not be auto-updated from Git."
+            fi
 
             COMPOSE_FILE="$(find "$APP_DIR" -maxdepth 4 -type f \( -name docker-compose.yml -o -name docker-compose.yaml -o -name compose.yml -o -name compose.yaml \) | head -n 1)"
             if [ -z "$COMPOSE_FILE" ]; then
