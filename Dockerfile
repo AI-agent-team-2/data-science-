@@ -18,6 +18,7 @@ RUN python -m pip install --upgrade pip \
 
 COPY app ./app
 COPY data ./data
+COPY web ./web
 
 RUN useradd --create-home --shell /usr/sbin/nologin appuser \
     && mkdir -p /app/chroma_db /app/history \
