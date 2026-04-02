@@ -12,6 +12,22 @@ services:
       - san_bot_chroma:/app/chroma_db
       - san_bot_history:/app/history
 
+  san-bot-web:
+    container_name: san-bot-web
+    image: ${BOT_IMAGE:-san-bot:local}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - ${BOT_ENV_FILE:-.env}
+    command: ["python", "-m", "uvicorn", "web.api:app", "--host", "0.0.0.0", "--port", "8000"]
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - san_bot_chroma:/app/chroma_db
+      - san_bot_history:/app/history
+
 volumes:
   san_bot_chroma:
   san_bot_history:

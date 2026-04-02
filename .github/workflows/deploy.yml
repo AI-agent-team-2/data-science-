@@ -127,13 +127,14 @@ jobs:
               echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
             fi
 
-            $COMPOSE_CMD -f "$COMPOSE_FILE" pull san-bot
-            $COMPOSE_CMD -f "$COMPOSE_FILE" up -d san-bot
+            $COMPOSE_CMD -f "$COMPOSE_FILE" pull san-bot san-bot-web
+            $COMPOSE_CMD -f "$COMPOSE_FILE" up -d san-bot san-bot-web
 
             HEALTHY=0
             for _ in $(seq 1 18); do
               STATUS="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}running{{end}}' san-bot 2>/dev/null || echo missing)"
-              if [ "$STATUS" = "healthy" ] || [ "$STATUS" = "running" ]; then
+              STATUS_WEB="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}running{{end}}' san-bot-web 2>/dev/null || echo missing)"
+              if [ \( "$STATUS" = "healthy" -o "$STATUS" = "running" \) -a \( "$STATUS_WEB" = "healthy" -o "$STATUS_WEB" = "running" \) ]; then
                 HEALTHY=1
                 break
               fi
@@ -144,7 +145,7 @@ jobs:
               echo "Health-check failed; attempting rollback."
               if [ -f .previous_image_tag ]; then
                 export BOT_IMAGE="$(cat .previous_image_tag)"
-                $COMPOSE_CMD -f "$COMPOSE_FILE" up -d san-bot
+                $COMPOSE_CMD -f "$COMPOSE_FILE" up -d san-bot san-bot-web
                 exit 1
               fi
               exit 1
