@@ -38,6 +38,7 @@ DEFAULT_MIN_RAG_SCORE: Final[float] = 0.2
 DEFAULT_MAX_RAG_CONTEXT_ITEMS: Final[int] = 4
 DEFAULT_MAX_LOOKUP_CONTEXT_ITEMS: Final[int] = 5
 DEFAULT_MAX_WEB_CONTEXT_ITEMS: Final[int] = 5
+DEFAULT_WEB_MIN_SOURCES: Final[int] = 2
 
 # ========== Rate limiting ==========
 DEFAULT_RATE_LIMIT_REQUESTS: Final[int] = 10
@@ -128,6 +129,7 @@ class Settings:
     max_rag_context_items: int = DEFAULT_MAX_RAG_CONTEXT_ITEMS
     max_lookup_context_items: int = DEFAULT_MAX_LOOKUP_CONTEXT_ITEMS
     max_web_context_items: int = DEFAULT_MAX_WEB_CONTEXT_ITEMS
+    web_min_sources: int = DEFAULT_WEB_MIN_SOURCES
 
     # ========== Rate limiting ==========
     rate_limit_requests: int = DEFAULT_RATE_LIMIT_REQUESTS
@@ -141,6 +143,7 @@ class Settings:
             ["http://localhost:8000", "http://127.0.0.1:8000"],
         )
     )
+    web_trusted_domains: list[str] = field(default_factory=lambda: _get_env_list("WEB_TRUSTED_DOMAINS", []))
 
     @property
     def resolved_model_provider(self) -> str:
