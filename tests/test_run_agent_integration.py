@@ -5,12 +5,13 @@ from unittest.mock import MagicMock, patch
 
 from langchain_core.messages import AIMessage
 
-from app.run_agent import InvocationResult, run_agent
+from app.agent.invoke import InvocationResult
+from app.run_agent import run_agent
 
 
 class RunAgentIntegrationTests(unittest.TestCase):
     @patch("app.run_agent.save_turn")
-    @patch("app.run_agent._invoke_with_timeout")
+    @patch("app.run_agent.invoke_with_timeout")
     @patch("app.run_agent.build_context")
     @patch("app.run_agent.load_messages", return_value=[])
     def test_run_agent_returns_clarifying_question_without_model_when_no_context(
@@ -43,7 +44,7 @@ class RunAgentIntegrationTests(unittest.TestCase):
         mock_save_turn.assert_called_once()
 
     @patch("app.run_agent.save_turn")
-    @patch("app.run_agent._invoke_with_timeout")
+    @patch("app.run_agent.invoke_with_timeout")
     @patch("app.run_agent.build_context")
     @patch("app.run_agent.load_messages", return_value=[])
     def test_run_agent_adds_sources_block_for_web_context(
@@ -77,7 +78,7 @@ class RunAgentIntegrationTests(unittest.TestCase):
         mock_save_turn.assert_called_once()
 
     @patch("app.run_agent.save_turn")
-    @patch("app.run_agent._invoke_with_timeout")
+    @patch("app.run_agent.invoke_with_timeout")
     @patch("app.run_agent.build_context")
     @patch("app.run_agent.load_messages", return_value=[])
     def test_run_agent_blocks_prompt_injection_before_context_build(
@@ -95,7 +96,7 @@ class RunAgentIntegrationTests(unittest.TestCase):
         mock_save_turn.assert_called_once()
 
     @patch("app.run_agent.save_turn")
-    @patch("app.run_agent._invoke_with_timeout")
+    @patch("app.run_agent.invoke_with_timeout")
     @patch("app.run_agent.build_context")
     @patch("app.run_agent.load_messages", return_value=[])
     def test_run_agent_returns_terminal_tool_failure_without_model(

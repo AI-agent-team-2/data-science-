@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from app.context import ToolExecutionResult, build_context
+from app.context_engine import ToolExecutionResult, build_context
 
 
 class ContextRoutingTests(unittest.TestCase):

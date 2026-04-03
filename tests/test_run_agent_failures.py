@@ -3,11 +3,12 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from app.run_agent import InvocationResult, _run_agent_pipeline
+from app.agent.invoke import InvocationResult
+from app.run_agent import _run_agent_pipeline
 
 
 class RunAgentFailureTests(unittest.TestCase):
-    @patch("app.run_agent._invoke_with_timeout")
+    @patch("app.run_agent.invoke_with_timeout")
     @patch("app.run_agent.build_context")
     @patch("app.run_agent.load_messages", return_value=[])
     def test_model_failure_returns_explicit_internal_error(
