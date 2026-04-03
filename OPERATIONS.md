@@ -6,6 +6,7 @@
 cd /opt/san_bot
 docker compose ps
 docker compose logs --tail=100 san-bot
+docker compose logs --tail=100 san-bot-web
 ```
 
 Поддерживаемый runtime только один: контейнер `san-bot` через `docker compose`.
@@ -15,6 +16,7 @@ docker compose logs --tail=100 san-bot
 
 ```bash
 docker inspect san-bot --format '{{json .State.Health}}'
+docker inspect san-bot-web --format '{{json .State.Health}}'
 ```
 
 Health-check отражает не только факт запуска контейнера, но и readiness retrieval-данных:
@@ -25,7 +27,7 @@ Health-check отражает не только факт запуска конт
 
 ```bash
 cd /opt/san_bot
-docker compose restart san-bot
+docker compose restart san-bot san-bot-web
 ```
 
 ## Проверка данных
@@ -53,7 +55,7 @@ PY
 cd /opt/san_bot
 export BOT_IMAGE="$(cat .previous_image_tag)"
 export BOT_ENV_FILE=/etc/san-bot/san-bot.env
-docker compose up -d san-bot
+docker compose up -d san-bot san-bot-web
 ```
 
 ## Инциденты
@@ -70,3 +72,7 @@ docker compose up -d san-bot
    - проверить readiness индекса внутри контейнера;
    - при необходимости переиндексировать `python -m app.rag.ingest` в сервисном окружении;
    - проверить `STARTUP_INDEX_MODE`, если контейнер стартует на новой пустой базе.
+4. Web UI/API возвращает `401` или `503`:
+   - проверить, что в env задан `WEB_API_KEY`;
+   - проверить, что клиент передает заголовок `X-API-Key`;
+   - проверить `WEB_ALLOWED_ORIGINS` для используемого домена/IP и порта.

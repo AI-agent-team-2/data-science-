@@ -58,10 +58,9 @@ LANGFUSE_ENABLED=false
 
 После выполнения 3–5 реальных запросов проверьте в Langfuse UI:
 
-1. Для каждого из 3 запросов ровно один root trace `run_agent`.
-2. Для каждого запроса ровно один root trace `agent_request`.
-3. Внутри trace есть `agent_pipeline`, `model_invoke` и tool-steps (`tool_lookup/tool_rag/tool_web` по сценарию).
-4. Нет отдельных root traces вида `history_save` или `model_invoke`.
+1. Для каждого запроса ровно один root trace `agent_request`.
+2. Внутри trace есть `agent_pipeline`, `model_invoke` и tool-steps (`tool_lookup/tool_rag/tool_web` по сценарию).
+3. Нет отдельных root traces вида `history_save` или `model_invoke`.
 
 ## Диагностика
 

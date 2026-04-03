@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Final
 
 from dotenv import load_dotenv
@@ -33,6 +33,7 @@ DEFAULT_STARTUP_INDEX_MODE: Final[str] = "if_empty"
 # ========== Новые константы для таймаутов и порогов ==========
 DEFAULT_TOOL_TIMEOUT_SEC: Final[int] = 20
 DEFAULT_MODEL_TIMEOUT_SEC: Final[int] = 45
+DEFAULT_MODEL_MAX_RETRIES: Final[int] = 2
 DEFAULT_MIN_RAG_SCORE: Final[float] = 0.2
 DEFAULT_MAX_RAG_CONTEXT_ITEMS: Final[int] = 4
 DEFAULT_MAX_LOOKUP_CONTEXT_ITEMS: Final[int] = 5
@@ -55,6 +56,26 @@ def _get_env_bool(name: str, default: bool) -> bool:
     """Преобразует переменную окружения в bool (`true/false`, `1/0`, `yes/no`)."""
     raw_value = _get_env_str(name, "true" if default else "false").lower()
     return raw_value in {"1", "true", "yes", "y", "on"}
+
+
+def _get_env_int(name: str, default: int) -> int:
+    """Преобразует переменную окружения в int с fallback на default."""
+    raw_value = _get_env_str(name)
+    if not raw_value:
+        return default
+    try:
+        return int(raw_value)
+    except ValueError:
+        return default
+
+
+def _get_env_list(name: str, default: list[str]) -> list[str]:
+    """Преобразует CSV-строку из env в список непустых значений."""
+    raw_value = _get_env_str(name)
+    if not raw_value:
+        return list(default)
+    parts = [item.strip() for item in raw_value.split(",")]
+    return [item for item in parts if item]
 
 
 @dataclass(frozen=True)
@@ -100,6 +121,7 @@ class Settings:
     # ========== Timeouts ==========
     tool_timeout_sec: int = DEFAULT_TOOL_TIMEOUT_SEC
     model_timeout_sec: int = DEFAULT_MODEL_TIMEOUT_SEC
+    model_max_retries: int = _get_env_int("MODEL_MAX_RETRIES", DEFAULT_MODEL_MAX_RETRIES)
 
     # ========== RAG thresholds ==========
     min_rag_score: float = DEFAULT_MIN_RAG_SCORE
@@ -110,6 +132,15 @@ class Settings:
     # ========== Rate limiting ==========
     rate_limit_requests: int = DEFAULT_RATE_LIMIT_REQUESTS
     rate_limit_window_sec: int = DEFAULT_RATE_LIMIT_WINDOW_SEC
+
+    # ========== Web API security ==========
+    web_api_key: str = _get_env_str("WEB_API_KEY")
+    web_allowed_origins: list[str] = field(
+        default_factory=lambda: _get_env_list(
+            "WEB_ALLOWED_ORIGINS",
+            ["http://localhost:8000", "http://127.0.0.1:8000"],
+        )
+    )
 
     @property
     def resolved_model_provider(self) -> str:

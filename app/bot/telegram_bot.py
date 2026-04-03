@@ -199,34 +199,33 @@ def _recognize_photo(image_bytes: bytes) -> str:
 
 def _find_similar_products(description: str, limit: int = 3) -> list[dict]:
     """Ищет товары в каталоге по описанию."""
-    import json
     from app.tools.product_lookup import product_lookup
 
     result = product_lookup.invoke({"query": description, "limit": limit})
-    data = json.loads(result)
+    data = result if isinstance(result, dict) else {}
     return data.get("results", [])
 
 
 def _format_photo_response(description: str, products: list[dict]) -> str:
     """Форматирует ответ пользователю с результатами распознавания."""
-    lines = [f"🔍 **Распознано:**\n{description}\n"]
+    lines = [f"Распознано:\n{description}\n"]
 
     if products:
-        lines.append("📦 **Похожие товары в каталоге:**")
+        lines.append("Похожие товары в каталоге:")
         for item in products[:3]:
             name = item.get('name', '')
             brand = item.get('brand', '')
             sku_list = item.get('sku_list', [])
             category = item.get('category', '')
 
-            line = f"\n• **{name}**"
+            line = f"\n- {name}"
             if brand:
                 line += f" ({brand})"
             if sku_list:
                 skus = sku_list[:3]
-                line += f"\n  📌 Артикулы: {', '.join(skus)}"
+                line += f"\n  Артикулы: {', '.join(skus)}"
             if category:
-                line += f"\n  📁 Категория: {category}"
+                line += f"\n  Категория: {category}"
             lines.append(line)
     else:
         lines.append("❌ Не нашёл похожих товаров в каталоге.")
@@ -330,7 +329,7 @@ def photo_handler(message: Message) -> None:
 
         # Сформировать и отправить ответ
         response_text = _format_photo_response(description, products)
-        bot.reply_to(message, response_text, parse_mode="Markdown")
+        bot.reply_to(message, response_text)
 
     except Exception:
         logger.exception("Ошибка при обработке фото")
