@@ -82,7 +82,7 @@ def load_messages(session_id: str, limit: int | None = None) -> list[HistoryMess
                 FROM history
                 WHERE session_id = ?
                   AND created_at > datetime('now', ?)
-                ORDER BY created_at DESC
+                ORDER BY created_at DESC, id DESC
                 LIMIT ?
                 """,
                 (session_id, f"-{ttl_days} days", effective_limit),
@@ -126,5 +126,3 @@ def _cleanup_old(session_id: str) -> None:
     except Exception:
         logger.exception("Не удалось удалить устаревшую историю для session_id=%s", session_id)
 
-
-init_db()

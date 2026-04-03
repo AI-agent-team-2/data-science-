@@ -41,6 +41,7 @@ DEFAULT_MAX_WEB_CONTEXT_ITEMS: Final[int] = 5
 # ========== Rate limiting ==========
 DEFAULT_RATE_LIMIT_REQUESTS: Final[int] = 10
 DEFAULT_RATE_LIMIT_WINDOW_SEC: Final[int] = 60
+DEFAULT_WEB_API_ALLOWED_ORIGINS: Final[str] = "http://localhost:8000,http://127.0.0.1:8000"
 
 SUPPORTED_PROVIDERS: Final[set[str]] = {"openrouter", "openai"}
 SUPPORTED_STARTUP_INDEX_MODES: Final[set[str]] = {"never", "if_empty", "always"}
@@ -110,6 +111,8 @@ class Settings:
     # ========== Rate limiting ==========
     rate_limit_requests: int = DEFAULT_RATE_LIMIT_REQUESTS
     rate_limit_window_sec: int = DEFAULT_RATE_LIMIT_WINDOW_SEC
+    web_api_key: str = _get_env_str("WEB_API_KEY")
+    web_api_allowed_origins: str = _get_env_str("WEB_API_ALLOWED_ORIGINS", DEFAULT_WEB_API_ALLOWED_ORIGINS)
 
     @property
     def resolved_model_provider(self) -> str:
@@ -164,6 +167,14 @@ class Settings:
         if self.startup_index_mode in SUPPORTED_STARTUP_INDEX_MODES:
             return self.startup_index_mode
         return DEFAULT_STARTUP_INDEX_MODE
+
+    @property
+    def resolved_web_api_allowed_origins(self) -> list[str]:
+        """Возвращает список разрешенных origins для web API."""
+        raw = self.web_api_allowed_origins.strip()
+        if not raw:
+            return []
+        return [item.strip() for item in raw.split(",") if item.strip()]
 
 
 settings = Settings()

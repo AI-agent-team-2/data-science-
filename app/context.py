@@ -28,6 +28,36 @@ WEB_INJECTION_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"(?i)(системн\w*\s+промпт|сообщени\w*\s+разработчик\w*)"),
 )
 
+REGULATORY_MARKERS: tuple[str, ...] = (
+    "стандарт",
+    "норматив",
+    "требован",
+    "правил",
+    "сп ",
+    "снип",
+    "гост",
+    "дбн",
+    "минстрой",
+    "росстандарт",
+)
+
+REGULATORY_DOMAIN_MARKERS: tuple[str, ...] = (
+    "gov.ru",
+    "gost.ru",
+    "docs.cntd.ru",
+    "publication.pravo.gov.ru",
+    "rosstandart.gov.ru",
+    "minstroyrf.gov.ru",
+)
+
+LOW_TRUST_WEB_MARKERS: tuple[str, ...] = (
+    "instagram.com",
+    "wildberries.ru",
+    "ozon.",
+    "forum",
+    "vk.com",
+)
+
 
 
 @dataclass(frozen=True)
@@ -233,6 +263,9 @@ def _context_from_lookup(
         logger.warning("LOOKUP failed: %s %s", execution.error_type, execution.error_message)
         return ContextBuildResult("", [], False, "lookup", failed_sources=["lookup"])
     payload = execution.payload
+    if _has_payload_error(payload):
+        logger.warning("LOOKUP payload error: %s", str(payload.get("error", "")))
+        return ContextBuildResult("", [], False, "lookup", failed_sources=["lookup"])
     mode = str(payload.get("mode", "")).strip()
     items = _extract_results(payload)
     if mode == "sku_not_found":
@@ -272,6 +305,9 @@ def _context_from_rag(
         logger.warning("RAG failed: %s %s", execution.error_type, execution.error_message)
         return ContextBuildResult("", [], False, "rag", failed_sources=["rag"])
     payload = execution.payload
+    if _has_payload_error(payload):
+        logger.warning("RAG payload error: %s", str(payload.get("error", "")))
+        return ContextBuildResult("", [], False, "rag", failed_sources=["rag"])
     items = _extract_results(payload)
     if not _is_rag_useful(items):
         return EMPTY_CONTEXT_RESULT
@@ -302,7 +338,10 @@ def _context_from_web(
         logger.warning("WEB failed: %s %s", execution.error_type, execution.error_message)
         return ContextBuildResult("", [], False, "web", failed_sources=["web"])
     payload = execution.payload
-    items = _filter_safe_web_items(_extract_results(payload))
+    if _has_payload_error(payload):
+        logger.warning("WEB payload error: %s", str(payload.get("error", "")))
+        return ContextBuildResult("", [], False, "web", failed_sources=["web"])
+    items = _filter_safe_web_items(_extract_results(payload), query=query)
     if not (_is_web_useful(items) and _is_sanitary_relevant(items)):
         return EMPTY_CONTEXT_RESULT
 
@@ -320,6 +359,14 @@ def enhance_search_query(original_query: str, search_type: str = "general") -> s
 
     if any(marker in lowered_query for marker in ("сантехник", "унитаз", "смеситель")):
         return original_query
+
+    if _is_regulatory_query(lowered_query):
+        year_match = YEAR_PATTERN.search(lowered_query)
+        target_year = year_match.group(1) if year_match else str(datetime.now().year)
+        return (
+            f"изменения стандартов монтажа отопления {target_year} "
+            "Россия СП СНиП ГОСТ официальный документ Минстрой Росстандарт"
+        )
 
     if "новинк" in lowered_query or "новые" in lowered_query:
         year_match = YEAR_PATTERN.search(lowered_query)
@@ -433,6 +480,11 @@ def _extract_results(payload: dict[str, Any]) -> list[dict[str, Any]]:
     return [item for item in items if isinstance(item, dict)]
 
 
+def _has_payload_error(payload: dict[str, Any]) -> bool:
+    """Проверяет, что инструмент вернул явную ошибку в payload."""
+    return bool(str(payload.get("error", "")).strip())
+
+
 def _is_rag_useful(items: list[dict[str, Any]]) -> bool:
     """Проверяет, что RAG-результаты содержат полезный текст с приемлемым score."""
     for item in items:
@@ -463,15 +515,20 @@ def _is_sanitary_relevant(items: list[dict[str, Any]]) -> bool:
     return False
 
 
-def _filter_safe_web_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _filter_safe_web_items(items: list[dict[str, Any]], query: str = "") -> list[dict[str, Any]]:
     """Отбрасывает WEB-результаты с инструкционными/инъекционными фрагментами."""
     safe_items: list[dict[str, Any]] = []
     dropped = 0
+    regulatory_query = _is_regulatory_query(query.lower())
     for item in items:
         title = str(item.get("title", "")).strip()
         snippet = str(item.get("snippet", "")).strip()
+        url = str(item.get("url", "")).strip().lower()
         combined = f"{title}\n{snippet}"
         if _contains_instruction_like_text(combined):
+            dropped += 1
+            continue
+        if regulatory_query and _is_low_trust_regulatory_result(url=url, text=combined):
             dropped += 1
             continue
         safe_items.append(item)
@@ -486,6 +543,24 @@ def _contains_instruction_like_text(value: str) -> bool:
     if not normalized:
         return False
     return any(pattern.search(normalized) for pattern in WEB_INJECTION_PATTERNS)
+
+
+def _is_regulatory_query(query: str) -> bool:
+    """Определяет запросы про нормы/стандарты, где важны более надежные источники."""
+    normalized = str(query or "").lower()
+    return any(marker in normalized for marker in REGULATORY_MARKERS)
+
+
+def _is_low_trust_regulatory_result(url: str, text: str) -> bool:
+    """
+    Для нормативных запросов отбрасывает слаборелевантные/сомнительные источники.
+    Оставляет документы и профильные страницы со следами нормативной тематики.
+    """
+    _ = text
+    if any(marker in url for marker in LOW_TRUST_WEB_MARKERS):
+        return True
+    has_domain_trust = any(marker in url for marker in REGULATORY_DOMAIN_MARKERS)
+    return not has_domain_trust
 
 
 def _format_rag_context(items: list[dict[str, Any]]) -> str:

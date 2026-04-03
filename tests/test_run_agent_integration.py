@@ -13,6 +13,64 @@ class RunAgentIntegrationTests(unittest.TestCase):
     @patch("app.run_agent._invoke_with_timeout")
     @patch("app.run_agent.build_context")
     @patch("app.run_agent.load_messages", return_value=[])
+    def test_run_agent_noise_query_returns_clarification_without_tools(
+        self,
+        _mock_history: MagicMock,
+        mock_build_context: MagicMock,
+        mock_invoke: MagicMock,
+        mock_save_turn: MagicMock,
+    ) -> None:
+        answer = run_agent("хз что написать", user_id="u1")
+
+        self.assertIn("Уточните", answer)
+        mock_build_context.assert_not_called()
+        mock_invoke.assert_not_called()
+        mock_save_turn.assert_called_once()
+
+    @patch("app.run_agent.save_turn")
+    @patch("app.run_agent._invoke_with_timeout")
+    @patch("app.run_agent.build_context")
+    @patch("app.run_agent.load_messages", return_value=[])
+    def test_run_agent_multiflex_flow_query_uses_consistent_direct_answer(
+        self,
+        _mock_history: MagicMock,
+        mock_build_context: MagicMock,
+        mock_invoke: MagicMock,
+        mock_save_turn: MagicMock,
+    ) -> None:
+        answer = run_agent("краном на мультифлексе можно душить поток?", user_id="u1")
+
+        self.assertIn("не используют для регулировки", answer)
+        mock_build_context.assert_not_called()
+        mock_invoke.assert_not_called()
+        mock_save_turn.assert_called_once()
+
+    @patch("app.run_agent.save_turn")
+    @patch("app.run_agent._invoke_with_timeout")
+    @patch("app.run_agent.build_context")
+    @patch(
+        "app.run_agent.load_messages",
+        return_value=[("human", "Что за товар OSPNC220?"), ("ai", "Это сервопривод ONDO.")],
+    )
+    def test_run_agent_followup_nc_no_answer_is_direct_and_consistent(
+        self,
+        _mock_history: MagicMock,
+        mock_build_context: MagicMock,
+        mock_invoke: MagicMock,
+        mock_save_turn: MagicMock,
+    ) -> None:
+        answer = run_agent("Какой из них нормально закрытый?", user_id="u1")
+
+        self.assertIn("Нормально закрытый вариант", answer)
+        self.assertIn("OSPNC220", answer)
+        mock_build_context.assert_not_called()
+        mock_invoke.assert_not_called()
+        mock_save_turn.assert_called_once()
+
+    @patch("app.run_agent.save_turn")
+    @patch("app.run_agent._invoke_with_timeout")
+    @patch("app.run_agent.build_context")
+    @patch("app.run_agent.load_messages", return_value=[])
     def test_run_agent_returns_clarifying_question_without_model_when_no_context(
         self,
         _mock_history: MagicMock,

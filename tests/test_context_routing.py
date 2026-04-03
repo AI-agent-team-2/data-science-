@@ -165,6 +165,44 @@ class ContextRoutingTests(unittest.TestCase):
         self.assertEqual(result.source_status_map["web"], "empty")
         self.assertEqual(result.fallback_reason, "no_source_produced_context")
 
+    def test_regulatory_web_query_filters_low_trust_sources(self) -> None:
+        calls: list[str] = []
+
+        def invoke_tool(func, payload, op_name, config=None):
+            calls.append(op_name)
+            if op_name == "tool_web":
+                return ToolExecutionResult(
+                    status="ok",
+                    payload={
+                        "query": payload["query"],
+                        "count": 2,
+                        "results": [
+                            {
+                                "title": "Случайный блог",
+                                "snippet": "Новые стандарты монтажа отопления 2026",
+                                "url": "https://example-blog.ru/post",
+                            },
+                            {
+                                "title": "Минстрой обновил СП",
+                                "snippet": "Официальная публикация требований к монтажу отопления",
+                                "url": "https://minstroyrf.gov.ru/docs/sp",
+                            },
+                        ],
+                    },
+                )
+            raise AssertionError(f"Unexpected call: {op_name}")
+
+        result = build_context(
+            query="Что нового по стандартам монтажа отопления в 2026 году?",
+            source_order=["web"],
+            invoke_tool=invoke_tool,
+        )
+
+        self.assertEqual(calls, ["tool_web"])
+        self.assertEqual(result.used_source, "web")
+        self.assertIn("minstroyrf.gov.ru", result.context_text)
+        self.assertNotIn("example-blog.ru", result.context_text)
+
 
 if __name__ == "__main__":
     unittest.main()

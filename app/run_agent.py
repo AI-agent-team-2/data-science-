@@ -24,6 +24,11 @@ from app.context import (
     tool_failure_response,
     ToolExecutionResult,
 )
+from app.dialog_rules import (
+    direct_nc_no_answer_if_possible,
+    is_multiflex_flow_control_query,
+    resolve_followup_reference,
+)
 from app.graph import model
 from app.history_store import load_messages, save_turn
 from app.observability import (
@@ -137,15 +142,43 @@ def _run_agent_pipeline(payload: dict[str, Any], config: RunnableConfig | None =
             raw_assistant_text=smalltalk_response(),
         )
 
-    if is_noise_query(safe_query) or is_offtopic_or_rude_query(safe_query):
+    if is_noise_query(safe_query):
+        return _finalize_response(
+            session_id=session_id,
+            user_text=user_text,
+            raw_assistant_text=clarifying_question(),
+        )
+
+    if is_offtopic_or_rude_query(safe_query):
         return _finalize_response(
             session_id=session_id,
             user_text=user_text,
             raw_assistant_text=domain_redirect_response(),
         )
 
-    history_messages = _to_langchain_messages(load_messages(session_id=session_id))
-    context = build_context(safe_query, source_order, invoke_tool=_invoke_tool, config=config)
+    history_turns = load_messages(session_id=session_id)
+    if is_multiflex_flow_control_query(safe_query):
+        return _finalize_response(
+            session_id=session_id,
+            user_text=user_text,
+            raw_assistant_text=(
+                "Шаровые краны мультифлекса не используют для регулировки/дросселирования потока. "
+                "Их назначение — только полное открытие или полное закрытие."
+            ),
+        )
+
+    resolved_query = resolve_followup_reference(safe_query, history_turns)
+    direct_servo_answer = direct_nc_no_answer_if_possible(resolved_query)
+    if direct_servo_answer:
+        return _finalize_response(
+            session_id=session_id,
+            user_text=user_text,
+            raw_assistant_text=direct_servo_answer,
+        )
+
+    resolved_source_order = resolve_source_order(resolved_query)
+    history_messages = _to_langchain_messages(history_turns)
+    context = build_context(resolved_query, resolved_source_order, invoke_tool=_invoke_tool, config=config)
     if not context.context_text:
         if context.terminal_response:
             return _finalize_response(
@@ -159,14 +192,14 @@ def _run_agent_pipeline(payload: dict[str, Any], config: RunnableConfig | None =
             raw_assistant_text=clarifying_question(),
         )
 
-    final_prompt = build_final_prompt(user_text=safe_query, context_block=context.context_text)
+    final_prompt = build_final_prompt(user_text=resolved_query, context_block=context.context_text)
     model_input = [SystemMessage(content=SYSTEM_PROMPT), *history_messages, HumanMessage(content=final_prompt)]
 
     effective_model_config = _child_config(config, "model_invoke") or {}
     model_metadata = {
         "provider": settings.resolved_model_provider,
         "model": settings.resolved_model_name,
-        "source_order": source_order,
+        "source_order": resolved_source_order,
         "used_source": context.used_source,
         "attempted_sources": context.attempted_sources,
         "source_status_map": context.source_status_map,

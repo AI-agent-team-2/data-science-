@@ -14,7 +14,7 @@ if __package__ is None or __package__ == "":
     sys.path.append(str(Path(__file__).resolve().parents[2]))
 
 from app.config import settings
-from app.history_store import clear_history
+from app.history_store import clear_history, init_db
 from app.observability import hash_user_id
 from app.observability.rate_limiter import rate_limiter
 from app.rag.health import get_index_health
@@ -199,12 +199,12 @@ def _recognize_photo(image_bytes: bytes) -> str:
 
 def _find_similar_products(description: str, limit: int = 3) -> list[dict]:
     """Ищет товары в каталоге по описанию."""
-    import json
     from app.tools.product_lookup import product_lookup
 
     result = product_lookup.invoke({"query": description, "limit": limit})
-    data = json.loads(result)
-    return data.get("results", [])
+    if not isinstance(result, dict):
+        return []
+    return result.get("results", []) if isinstance(result.get("results"), list) else []
 
 
 def _format_photo_response(description: str, products: list[dict]) -> str:
@@ -376,6 +376,7 @@ def text_handler(message: Message) -> None:
 
 
 if __name__ == "__main__":
+    init_db()
     logger.info("Запуск SAN Bot v%s", BOT_VERSION)
     logger.info("Доступные команды: %s", KNOWN_COMMANDS)
     logger.info("Распознавание фото: включено (Vision LLM)")

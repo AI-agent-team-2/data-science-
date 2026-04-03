@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 
 from app.routing import (
+    is_noise_query,
     is_domain_query,
     resolve_source_order,
     should_prefer_lookup,
@@ -45,6 +46,9 @@ class RoutingSkuTests(unittest.TestCase):
     def test_single_token_alnum_sku_still_prefers_lookup(self) -> None:
         query = "OMUL1622"
         self.assertTrue(should_prefer_lookup(query))
+
+    def test_hz_phrase_is_treated_as_noise(self) -> None:
+        self.assertTrue(is_noise_query("хз что написать"))
 
 
 if __name__ == "__main__":

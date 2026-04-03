@@ -5,6 +5,7 @@ import os
 import sys
 
 from app.config import settings
+from app.history_store import init_db
 from app.rag.health import get_index_health
 
 logger = logging.getLogger(__name__)
@@ -54,6 +55,7 @@ def ensure_index_ready() -> None:
 
 def main() -> int:
     logging.basicConfig(level=logging.INFO)
+    init_db()
     ensure_index_ready()
     os.execv(sys.executable, [sys.executable, "-m", "app.bot.telegram_bot"])
     return 0

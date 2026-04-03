@@ -52,6 +52,13 @@ OFFTOPIC_OR_RUDE_MARKERS: tuple[str, ...] = (
     "расскажи анекдот",
 )
 
+NOISE_MARKERS: tuple[str, ...] = (
+    "хз",
+    "хз что написать",
+    "не знаю что написать",
+    "без понятия",
+)
+
 WEB_PRIORITY_MARKERS: tuple[str, ...] = (
     "сейчас",
     "сегодня",
@@ -235,6 +242,8 @@ def is_noise_query(query: str) -> bool:
         return True
     if is_domain_query(lowered_query):
         return False
+    if any(marker in lowered_query for marker in NOISE_MARKERS):
+        return True
 
     alnum = re.sub(r"[\W_]+", "", lowered_query, flags=re.UNICODE)
     if not alnum:
