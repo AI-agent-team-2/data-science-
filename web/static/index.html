@@ -283,15 +283,24 @@
         }
 
         function getApiKey() {
-            let key = localStorage.getItem(API_KEY_STORAGE_KEY);
-            if (!key) {
-                key = window.prompt('Введите WEB API ключ (X-API-Key):', '') || '';
-                key = key.trim();
-                if (key) {
-                    localStorage.setItem(API_KEY_STORAGE_KEY, key);
-                }
+            return (localStorage.getItem(API_KEY_STORAGE_KEY) || '').trim();
+        }
+
+        function promptApiKey() {
+            const value = (window.prompt('Введите WEB API ключ (X-API-Key):', '') || '').trim();
+            if (value) {
+                localStorage.setItem(API_KEY_STORAGE_KEY, value);
             }
-            return key;
+            return value;
+        }
+
+        function buildHeaders() {
+            const headers = { 'Content-Type': 'application/json' };
+            const apiKey = getApiKey();
+            if (apiKey) {
+                headers['X-API-Key'] = apiKey;
+            }
+            return headers;
         }
 
         // DOM элементы
@@ -358,17 +367,28 @@
             setEnabled(false);
             
             try {
-                const response = await fetch('/api/chat', {
+                let response = await fetch('/api/chat', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-API-Key': getApiKey()
-                    },
+                    headers: buildHeaders(),
                     body: JSON.stringify({
                         message: text,
                         session_id: getSessionId()
                     })
                 });
+
+                if (response.status === 401 && !getApiKey()) {
+                    const entered = promptApiKey();
+                    if (entered) {
+                        response = await fetch('/api/chat', {
+                            method: 'POST',
+                            headers: buildHeaders(),
+                            body: JSON.stringify({
+                                message: text,
+                                session_id: getSessionId()
+                            })
+                        });
+                    }
+                }
                 
                 hideTyping();
                 
@@ -390,14 +410,21 @@
         // Очистка истории
         async function clearHistory() {
             try {
-                await fetch('/api/clear', {
+                let response = await fetch('/api/clear', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-API-Key': getApiKey()
-                    },
+                    headers: buildHeaders(),
                     body: JSON.stringify({ session_id: getSessionId() })
                 });
+                if (response.status === 401 && !getApiKey()) {
+                    const entered = promptApiKey();
+                    if (entered) {
+                        response = await fetch('/api/clear', {
+                            method: 'POST',
+                            headers: buildHeaders(),
+                            body: JSON.stringify({ session_id: getSessionId() })
+                        });
+                    }
+                }
             } catch (e) {
                 // Не критично
             }
