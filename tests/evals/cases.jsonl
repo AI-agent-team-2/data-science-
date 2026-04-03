@@ -1,0 +1,13 @@
+{"id":"sku_exact_known","session":"eval_sku_1","prompt":"Что за товар OSPNC220?","expects":{"must_not_contain":["Точный артикул не найден"],"must_contain_any":["OSPNC220","сервопривод","ONDO"]}}
+{"id":"sku_exact_unknown","session":"eval_sku_2","prompt":"Есть ли товар ABC123456?","expects":{"must_contain_any":["Точный артикул не найден"]}}
+{"id":"sku_characteristics_fallback","session":"eval_sku_3","prompt":"Покажи характеристики OPXA20282.","expects":{"must_not_contain":["Точный артикул не найден"]}}
+{"id":"rag_multiflex_definition","session":"eval_rag_1","prompt":"Что такое мультифлекс ONDO?","expects":{"must_contain_any":["нижнего подключения","радиатора","ONDO"]}}
+{"id":"rag_multiflex_flow","session":"eval_rag_2","prompt":"краном на мультифлексе можно душить поток?","expects":{"must_contain_any":["не допускается","нельзя","не рекомендуется"]}}
+{"id":"rag_manifold_8_circuits","session":"eval_rag_3","prompt":"А для 8 контуров он подойдет?","setup":[{"prompt":"Подходит ли коллектор MFS 4-12 RR для теплого пола?"}],"expects":{"must_contain_any":["подходит","4–12","4-12"]}}
+{"id":"rag_airvent_position","session":"eval_rag_4","prompt":"воздухоотводчик можно боком поставить?","expects":{"must_contain_any":["вертикаль","вертикальном","нельзя"]}}
+{"id":"web_trends_2026","session":"eval_web_1","prompt":"Какие новинки по теплому полу появились в 2026 году?","expects":{"must_contain_any":["Источники:"],"must_contain_regex":["Проверено:\\s*\\d{4}-\\d{2}-\\d{2}"]}}
+{"id":"smalltalk","session":"eval_social_1","prompt":"Привет","expects":{"must_contain_any":["готов помочь","сантехническим товарам"]}}
+{"id":"identity","session":"eval_social_2","prompt":"Кто ты?","expects":{"must_contain_any":["чат-бот","сантехническим товарам"]}}
+{"id":"offtopic_redirect","session":"eval_guard_1","prompt":"Напиши код на Python","expects":{"must_contain_any":["Я помогаю по сантехническим товарам","сантехническим товарам и отоплению"]}}
+{"id":"aggression_redirect","session":"eval_guard_2","prompt":"Ты тупой","expects":{"must_contain_any":["Я помогаю по сантехническим товарам","сантехническим товарам и отоплению"]}}
+{"id":"noise","session":"eval_noise_1","prompt":"???","expects":{"must_contain_any":["Я помогаю по сантехническим товарам","уточните"]}}

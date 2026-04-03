@@ -41,6 +41,7 @@ from app.routing import (
     is_smalltalk,
     resolve_source_order,
 )
+from app.utils.sku import extract_sku_candidates
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +54,7 @@ INJECTION_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"(?i)раскрой\s+системн"),
 )
 TRUNCATED_MARKER_PATTERN = re.compile(r"[\[\(\{]?\s*\.{0,3}\s*truncated\s*[\]\)\}]?", re.IGNORECASE)
+MODEL_PATTERN = re.compile(r"\b[A-Z]{2,}\s*\d{1,2}\s*[-/]\s*\d{1,2}\s*[A-Z]{1,3}\b")
 
 
 @dataclass(frozen=True)
@@ -144,7 +146,16 @@ def _run_agent_pipeline(payload: dict[str, Any], config: RunnableConfig | None =
             raw_assistant_text=domain_redirect_response(),
         )
 
+    constraint_response = _known_domain_constraint_response(safe_query)
+    if constraint_response:
+        return _finalize_response(
+            session_id=session_id,
+            user_text=user_text,
+            raw_assistant_text=constraint_response,
+        )
+
     history_messages = _to_langchain_messages(load_messages(session_id=session_id))
+    dialogue_context = _build_dialogue_memory_summary(history_messages)
     context = build_context(safe_query, source_order, invoke_tool=_invoke_tool, config=config)
     if not context.context_text:
         if context.terminal_response:
@@ -159,7 +170,11 @@ def _run_agent_pipeline(payload: dict[str, Any], config: RunnableConfig | None =
             raw_assistant_text=clarifying_question(),
         )
 
-    final_prompt = build_final_prompt(user_text=safe_query, context_block=context.context_text)
+    final_prompt = build_final_prompt(
+        user_text=safe_query,
+        context_block=context.context_text,
+        dialogue_context=dialogue_context,
+    )
     model_input = [SystemMessage(content=SYSTEM_PROMPT), *history_messages, HumanMessage(content=final_prompt)]
 
     effective_model_config = _child_config(config, "model_invoke") or {}
@@ -214,6 +229,35 @@ def _to_langchain_messages(history: list[tuple[str, str]]) -> list[BaseMessage]:
         elif role == "ai":
             messages.append(AIMessage(content=content))
     return messages
+
+
+def _build_dialogue_memory_summary(messages: list[BaseMessage], max_messages: int = 8) -> str:
+    """Извлекает компактный контекст последних сущностей диалога (SKU/модели)."""
+    if not messages:
+        return ""
+
+    tail = messages[-max_messages:]
+    recent_text = "\n".join(str(message.content) for message in tail if getattr(message, "content", ""))
+    sku_candidates = sorted(extract_sku_candidates(recent_text, require_digit=True))
+    model_candidates = sorted(
+        {
+            re.sub(r"\s+", " ", match.group(0)).strip()
+            for match in MODEL_PATTERN.finditer(recent_text.upper())
+        }
+    )
+    if not sku_candidates and not model_candidates:
+        return ""
+
+    parts: list[str] = []
+    if sku_candidates:
+        parts.append(f"артикулы: {', '.join(sku_candidates[:6])}")
+    if model_candidates:
+        parts.append(f"модели: {', '.join(model_candidates[:4])}")
+    preview = "; ".join(parts)
+    return (
+        f"Последние упомянутые сущности: {preview}. "
+        "Используй их для корректной кореференции (например: 'он', 'этот', 'второй вариант')."
+    )
 
 
 def _save_and_return(session_id: str, user_text: str, assistant_text: str) -> str:
@@ -407,3 +451,15 @@ def _detect_intent(query: str) -> str:
     if is_noise_query(query) or is_offtopic_or_rude_query(query):
         return "offtopic"
     return "domain"
+
+
+def _known_domain_constraint_response(query: str) -> str:
+    """Возвращает детерминированный ответ для критичных доменных ограничений."""
+    lowered = str(query or "").lower()
+    if "мультифлекс" in lowered and any(marker in lowered for marker in ("душить поток", "регулировать поток", "регулиров", "придушить")):
+        return (
+            "Нет, шаровыми кранами мультифлекса нельзя регулировать (душить) поток. "
+            "Они предназначены для полного открытия/закрытия. "
+            "Для регулирования используйте штатные регулирующие элементы контура."
+        )
+    return ""

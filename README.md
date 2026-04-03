@@ -92,6 +92,7 @@ HISTORY_DB_PATH=./history.db
 MODEL_MAX_RETRIES=2
 WEB_API_KEY=
 WEB_ALLOWED_ORIGINS=http://localhost:8000,http://127.0.0.1:8000
+WEB_TRUSTED_DOMAINS=
 ```
 
 Опционально:
@@ -204,6 +205,14 @@ docker compose down
 ## Проверка и тестовые сценарии
 
 - Базовые вопросы для ручной проверки: `TEST.txt`.
+- Структурированные eval-кейсы: `tests/evals/cases.jsonl`.
+- Автоматизированный прогон eval-кейсов:
+
+```bash
+python tests/evals/run_eval.py
+```
+
+Отчет сохраняется в `artifacts/eval_report.json`.
 - Для локальной проверки импорта:
 
 ```bash
