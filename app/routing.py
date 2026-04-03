@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from typing import Literal
 
-from app.utils.sku import extract_sku_candidates
+from app.utils.sku import extract_sku_candidates, is_russian_identifier
 
 ToolName = Literal["lookup", "rag", "web"]
 
@@ -275,7 +275,13 @@ def is_domain_query(lowered_query: str) -> bool:
 
 
 def _has_sku_signal(query: str) -> bool:
-    """Определяет SKU-сигнал без ложных срабатываний на слова вроде EVOH."""
+    """
+    Определяет SKU-сигнал без ложных срабатываний на российские идентификаторы и слова вроде EVOH.
+    """
+    # Если это российский идентификатор (ИНН, паспорт, СНИЛС, телефон) — не SKU
+    if is_russian_identifier(query):
+        return False
+    
     if extract_sku_candidates(query, require_digit=True):
         return True
 
