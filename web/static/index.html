@@ -266,6 +266,7 @@
     <script>
         // Сессия
         const SESSION_KEY = 'san_bot_session_id';
+        const API_KEY_STORAGE_KEY = 'san_bot_web_api_key';
 
         function getSessionId() {
             let id = localStorage.getItem(SESSION_KEY);
@@ -279,6 +280,18 @@
                 localStorage.setItem(SESSION_KEY, id);
             }
             return id;
+        }
+
+        function getApiKey() {
+            let key = localStorage.getItem(API_KEY_STORAGE_KEY);
+            if (!key) {
+                key = window.prompt('Введите WEB API ключ (X-API-Key):', '') || '';
+                key = key.trim();
+                if (key) {
+                    localStorage.setItem(API_KEY_STORAGE_KEY, key);
+                }
+            }
+            return key;
         }
 
         // DOM элементы
@@ -347,7 +360,10 @@
             try {
                 const response = await fetch('/api/chat', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-API-Key': getApiKey()
+                    },
                     body: JSON.stringify({
                         message: text,
                         session_id: getSessionId()
@@ -376,7 +392,10 @@
             try {
                 await fetch('/api/clear', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-API-Key': getApiKey()
+                    },
                     body: JSON.stringify({ session_id: getSessionId() })
                 });
             } catch (e) {

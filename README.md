@@ -89,6 +89,9 @@ MODEL_NAME=
 OPENAI_BASE_URL=
 CHROMA_PATH=./chroma_db
 HISTORY_DB_PATH=./history.db
+MODEL_MAX_RETRIES=2
+WEB_API_KEY=
+WEB_ALLOWED_ORIGINS=http://localhost:8000,http://127.0.0.1:8000
 ```
 
 Опционально:
@@ -103,6 +106,14 @@ LANGFUSE_PUBLIC_KEY=
 LANGFUSE_SECRET_KEY=
 LANGFUSE_HOST=https://cloud.langfuse.com
 ```
+
+Для web API (`/api/chat`, `/api/history`, `/api/clear`) обязателен заголовок:
+
+```http
+X-API-Key: <WEB_API_KEY>
+```
+
+Встроенный web-интерфейс (`/`) при первом запросе попросит этот ключ и сохранит его локально в браузере.
 
 ## Подготовка RAG (ингест)
 

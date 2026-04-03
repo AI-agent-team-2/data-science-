@@ -23,6 +23,8 @@ def create_chat_model() -> ChatOpenAI:
         temperature=0,
         api_key=settings.resolved_openai_api_key,
         base_url=settings.resolved_openai_base_url,
+        timeout=max(1, settings.model_timeout_sec),
+        max_retries=max(0, settings.model_max_retries),
     )
 
 

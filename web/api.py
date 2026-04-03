@@ -14,13 +14,14 @@ from pathlib import Path
 # Добавляем корень проекта в sys.path, чтобы импорт `app.*` работал
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from app.run_agent import run_agent
 from app.history_store import clear_history, load_messages
+from app.config import settings
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -57,10 +58,22 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.web_allowed_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def require_api_key(x_api_key: str | None = Header(default=None, alias="X-API-Key")) -> None:
+    """Проверяет API-ключ для приватных веб-эндпоинтов."""
+    expected = settings.web_api_key.strip()
+    if not expected:
+        raise HTTPException(
+            status_code=503,
+            detail="WEB_API_KEY не настроен. Установите ключ в переменных окружения.",
+        )
+    if x_api_key != expected:
+        raise HTTPException(status_code=401, detail="Некорректный API-ключ.")
 
 # ---------------------------------------------------------------------------
 # Эндпоинты
@@ -73,7 +86,10 @@ def health():
 
 
 @app.get("/api/history")
-def get_history(session_id: str = Query(..., min_length=1, max_length=100)):
+def get_history(
+    session_id: str = Query(..., min_length=1, max_length=100),
+    _auth: None = Depends(require_api_key),
+):
     """
     Получить историю диалога для данной сессии.
     
@@ -100,7 +116,7 @@ def get_history(session_id: str = Query(..., min_length=1, max_length=100)):
 
 
 @app.post("/api/chat", response_model=ChatResponse)
-def chat(req: ChatRequest):
+def chat(req: ChatRequest, _auth: None = Depends(require_api_key)):
     """
     Отправить сообщение боту и получить ответ.
 
@@ -118,7 +134,7 @@ def chat(req: ChatRequest):
 
 
 @app.post("/api/clear")
-def clear(req: ClearRequest):
+def clear(req: ClearRequest, _auth: None = Depends(require_api_key)):
     """Очистить историю диалога для данной сессии."""
     logger.info("POST /api/clear  session=%s", req.session_id)
     clear_history(session_id=req.session_id)
