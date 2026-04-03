@@ -16,6 +16,13 @@
   - `python -m unittest` (ключевые integration/failure/routing/cleanup тесты) — green;
   - `python tests/evals/run_eval.py` — baseline кейсы пройдены.
 
+### Web UI / Deploy
+- Добавлен контейнер `san-bot-proxy` (nginx) в docker-compose:
+  - внешний трафик идет в proxy;
+  - заголовок `X-API-Key` для `/api/*` подставляется на proxy-уровне.
+- `san-bot-web` больше не публикует порт наружу напрямую (`expose` вместо `ports`).
+- Web UI изменен: ключ запрашивается только как fallback при `401`, а в обычном proxy-сценарии не требуется ручной ввод.
+
 ## [7] - 2026-04-01
 
 ### Крупные изменения

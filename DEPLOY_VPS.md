@@ -8,6 +8,7 @@
 - Контейнеры:
   - `san-bot`
   - `san-bot-web`
+  - `san-bot-proxy` (nginx)
 - State volumes:
   - `san_bot_chroma`
   - `san_bot_history`
@@ -79,8 +80,8 @@ LANGFUSE_HOST=https://cloud.langfuse.com
    - `ghcr.io/<repo>:<commit_sha>`
    - `ghcr.io/<repo>:latest`
 3. SSH deploy на VPS:
-   - `docker compose pull san-bot san-bot-web`
-   - `docker compose up -d san-bot san-bot-web`
+   - `docker compose pull san-bot san-bot-web san-bot-proxy`
+   - `docker compose up -d san-bot san-bot-web san-bot-proxy`
 4. Post-deploy health-check контейнера.
 5. Rollback на предыдущий image tag при неуспешном health-check.
 
@@ -96,6 +97,7 @@ cd /opt/san_bot
 docker compose ps
 docker compose logs --tail=100 san-bot
 docker compose logs --tail=100 san-bot-web
+docker compose logs --tail=100 san-bot-proxy
 docker inspect san-bot --format '{{json .State.Health}}'
 docker inspect san-bot-web --format '{{json .State.Health}}'
 ```
@@ -106,13 +108,13 @@ docker inspect san-bot-web --format '{{json .State.Health}}'
 cd /opt/san_bot
 export BOT_IMAGE="$(cat .previous_image_tag)"
 export BOT_ENV_FILE=/etc/san-bot/san-bot.env
-docker compose up -d san-bot san-bot-web
+docker compose up -d san-bot san-bot-web san-bot-proxy
 ```
 
 ## Post-deploy checklist
 
-1. `docker compose ps` показывает `san-bot` и `san-bot-web` в `healthy`/`running`.
+1. `docker compose ps` показывает `san-bot`, `san-bot-web` и `san-bot-proxy` в `healthy`/`running`.
 2. Бот отвечает на `/start` и 1-2 доменных запроса.
 3. История диалога сохраняется после перезапуска контейнера.
-4. Web API отвечает с валидным `X-API-Key` и возвращает `401` при неверном ключе.
+4. Web UI доступен через `http://<VPS_IP>:8000` без ручного ввода API-ключа (ключ инжектится proxy в `/api/*`).
 5. При `LANGFUSE_ENABLED=true` trace появляются, при `false` бот работает без деградации.
