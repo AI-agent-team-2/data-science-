@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 _langfuse_client: Any | None = None
 _client_init_attempted = False
 _callback_handler_class: Any | None = None
+_callback_init_failed = False
 
 
 def _is_enabled() -> bool:
@@ -72,6 +73,9 @@ def get_langchain_callback_handler() -> Any | None:
     global _callback_handler_class
     if not _is_enabled():
         return None
+    global _callback_init_failed
+    if _callback_init_failed:
+        return None
 
     _ = get_langfuse_client()
     try:
@@ -85,6 +89,7 @@ def get_langchain_callback_handler() -> Any | None:
         return callback_handler
     except Exception as exc:
         _callback_handler_class = None
+        _callback_init_failed = True
         logger.error(
             "Не удалось инициализировать Langfuse CallbackHandler: %s. "
             "Проверьте совместимость версий langfuse/langchain.",

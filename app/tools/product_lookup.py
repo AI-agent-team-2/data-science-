@@ -7,7 +7,7 @@ from langchain_core.tools import tool
 
 from app.observability import sanitize_text
 from app.rag.retriever import ProductRetriever
-from app.tools.response_utils import build_tool_payload, empty_results_payload
+from app.tools.response_utils import build_tool_payload, empty_results_payload, error_payload
 
 logger = logging.getLogger(__name__)
 
@@ -121,7 +121,10 @@ def product_lookup(query: str, limit: int = 5) -> dict[str, Any]:
     except Exception as exc:
         logger.exception("Ошибка product_lookup для запроса: %s", normalized_query)
         logger.debug("Детали ошибки product_lookup: %s", sanitize_text(str(exc)))
-        return _build_empty_response(
-            normalized_query,
-            "Внутренняя ошибка поиска. Попробуйте повторить запрос позже.",
+        return error_payload(
+            query=normalized_query,
+            note="Внутренняя ошибка поиска. Попробуйте повторить запрос позже.",
+            error=exc.__class__.__name__,
+            meta={"tool": "lookup", "mode": mode},
+            mode=mode,
         )
