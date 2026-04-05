@@ -39,10 +39,12 @@ def _load_collection(
 ) -> Any:
     """Загружает существующую коллекцию и не маскирует отсутствие индекса."""
     try:
-        collection = client.get_collection(name=collection_name)
+        collection = client.get_collection(
+            name=collection_name,
+            embedding_function=embedding_function,
+        )
     except Exception as exc:
         raise RuntimeError(f"Chroma collection '{collection_name}' is missing or unavailable") from exc
-    collection._embedding_function = embedding_function
     return collection
 
 
