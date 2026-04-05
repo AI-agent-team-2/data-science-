@@ -19,6 +19,7 @@ from app.observability import hash_user_id
 from app.observability.rate_limiter import rate_limiter
 from app.rag.health import get_index_health
 from app.run_agent import run_agent
+from app.vision import prepare_image_for_vision
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -184,7 +185,8 @@ def _recognize_photo(image_bytes: bytes) -> str:
     from app.graph import model
     from langchain_core.messages import HumanMessage, SystemMessage
 
-    image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+    prepared = prepare_image_for_vision(image_bytes)
+    image_base64 = base64.b64encode(prepared).decode("utf-8")
 
     response = model.invoke([
         SystemMessage(content=VISION_SYSTEM_PROMPT),

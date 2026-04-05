@@ -12,7 +12,7 @@ from langchain_core.tools import tool
 
 from app.config import settings
 from app.observability import sanitize_text
-from app.tools.response_utils import build_tool_payload, empty_results_payload
+from app.tools.response_utils import build_tool_payload, empty_results_payload, error_payload
 
 logger = logging.getLogger(__name__)
 
@@ -30,8 +30,10 @@ def _coerce_web_payload(payload: dict[str, Any], provider: str = "") -> dict[str
     meta = payload.get("meta")
     if not isinstance(meta, dict):
         meta = {"tool": "web", "provider": normalized_provider}
+    status = str(payload.get("status") or ("failed" if error else "ok"))
 
     return build_tool_payload(
+        status=status,
         query=str(payload.get("query") or ""),
         results=[item for item in normalized_results if isinstance(item, dict)],
         note=note,
@@ -128,11 +130,16 @@ def _normalize_results(query: str, items: list[dict[str, Any]], provider: str) -
 
 def _error_object(query: str, provider: str, message: str) -> dict[str, Any]:
     """Формирует JSON-ответ с ошибкой в едином формате."""
-    payload = empty_results_payload(query=query)
+    payload = error_payload(
+        query=query,
+        note="Внешний поиск временно недоступен.",
+        error=message,
+        meta={"tool": "web", "provider": provider},
+        provider=provider,
+    )
     payload.update(
         {
             "provider": provider,
-            "error": message,
             "meta": {"tool": "web", "provider": provider},
         }
     )

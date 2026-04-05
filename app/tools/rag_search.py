@@ -7,7 +7,7 @@ from langchain_core.tools import tool
 from app.config import settings
 from app.observability import sanitize_text
 from app.rag.retriever import ChromaRetriever
-from app.tools.response_utils import build_tool_payload, empty_results_payload
+from app.tools.response_utils import build_tool_payload, empty_results_payload, error_payload
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +46,12 @@ def rag_search(query: str) -> dict[str, object]:
     except Exception as exc:
         logger.exception("Ошибка RAG-поиска для запроса: %s", query)
         logger.debug("Детали ошибки rag_search: %s", sanitize_text(str(exc)))
-        return empty_results_payload(query=query, note="Внутренняя ошибка RAG-поиска.")
+        return error_payload(
+            query=query,
+            note="Внутренняя ошибка RAG-поиска.",
+            error=exc.__class__.__name__,
+            meta={"tool": "rag"},
+        )
 
     return build_tool_payload(
         query=query,

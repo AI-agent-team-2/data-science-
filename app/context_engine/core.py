@@ -250,6 +250,9 @@ def _context_from_lookup(
         logger.warning("LOOKUP failed: %s %s", execution.error_type, execution.error_message)
         return ContextBuildResult("", [], False, "lookup", failed_sources=["lookup"])
     payload = execution.payload
+    if str(payload.get("status") or "") == "failed" or str(payload.get("error") or "").strip():
+        logger.warning("LOOKUP returned failed payload: %s", payload.get("error") or payload.get("note") or "")
+        return ContextBuildResult("", [], False, "lookup", failed_sources=["lookup"])
     mode = str(payload.get("mode", "")).strip()
     items = _extract_results(payload)
     if mode == "sku_not_found":
@@ -304,6 +307,9 @@ def _context_from_rag(
         logger.warning("RAG failed: %s %s", execution.error_type, execution.error_message)
         return ContextBuildResult("", [], False, "rag", failed_sources=["rag"])
     payload = execution.payload
+    if str(payload.get("status") or "") == "failed" or str(payload.get("error") or "").strip():
+        logger.warning("RAG returned failed payload: %s", payload.get("error") or payload.get("note") or "")
+        return ContextBuildResult("", [], False, "rag", failed_sources=["rag"])
     items = _extract_results(payload)
     if not _is_rag_useful(items):
         return EMPTY_CONTEXT_RESULT
@@ -334,6 +340,9 @@ def _context_from_web(
         logger.warning("WEB failed: %s %s", execution.error_type, execution.error_message)
         return ContextBuildResult("", [], False, "web", failed_sources=["web"])
     payload = execution.payload
+    if str(payload.get("status") or "") == "failed" or str(payload.get("error") or "").strip():
+        logger.warning("WEB returned failed payload: %s", payload.get("error") or payload.get("note") or "")
+        return ContextBuildResult("", [], False, "web", failed_sources=["web"])
     items = _filter_safe_web_items(_extract_results(payload))
     items = _filter_trusted_web_items(items)
     if not (_is_web_useful(items) and _is_sanitary_relevant(items) and _has_minimum_web_evidence(items)):

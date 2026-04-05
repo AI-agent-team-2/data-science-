@@ -266,6 +266,7 @@
     <script>
         // Сессия
         const SESSION_KEY = 'san_bot_session_id';
+        // Не храним API key в localStorage (секрет). Сессии достаточно.
         const API_KEY_STORAGE_KEY = 'san_bot_web_api_key';
 
         function getSessionId() {
@@ -283,13 +284,13 @@
         }
 
         function getApiKey() {
-            return (localStorage.getItem(API_KEY_STORAGE_KEY) || '').trim();
+            return (sessionStorage.getItem(API_KEY_STORAGE_KEY) || '').trim();
         }
 
         function promptApiKey() {
             const value = (window.prompt('Введите WEB API ключ (X-API-Key):', '') || '').trim();
             if (value) {
-                localStorage.setItem(API_KEY_STORAGE_KEY, value);
+                sessionStorage.setItem(API_KEY_STORAGE_KEY, value);
             }
             return value;
         }
