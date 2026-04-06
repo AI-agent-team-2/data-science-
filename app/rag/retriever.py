@@ -102,6 +102,8 @@ class ProductRetriever:
             collection_name=self.collection_name,
             embedding_function=self.embedding_function,
         )
+        self._exact_sku_base_score = float(settings.product_exact_sku_base_score)
+        self._exact_sku_per_match_score = float(settings.product_exact_sku_per_match_score)
 
     def extract_query_skus(self, query: str) -> set[str]:
         """Извлекает candidate SKU из пользовательского запроса."""
@@ -135,7 +137,7 @@ class ProductRetriever:
             if not matched:
                 continue
 
-            score = 100.0 + 25.0 * len(matched)
+            score = self._exact_sku_base_score + self._exact_sku_per_match_score * len(matched)
             item = self._serialize_item(metadata=metadata, score=score)
             item["matched_skus"] = matched
             matches.append(item)
@@ -148,7 +150,10 @@ class ProductRetriever:
         matches: list[dict[str, Any]] = []
         for query_sku in sorted(query_skus):
             for metadata in self._sku_index.get(query_sku, []):
-                item = self._serialize_item(metadata=metadata, score=125.0)
+                item = self._serialize_item(
+                    metadata=metadata,
+                    score=self._exact_sku_base_score + self._exact_sku_per_match_score,
+                )
                 item["matched_skus"] = [query_sku]
                 matches.append(item)
 
@@ -162,7 +167,10 @@ class ProductRetriever:
             existing_skus = set(existing.get("matched_skus") or [])
             merged_skus = sorted(existing_skus.union(item.get("matched_skus") or []))
             existing["matched_skus"] = merged_skus
-            existing["score"] = round(100.0 + 25.0 * len(merged_skus), 4)
+            existing["score"] = round(
+                self._exact_sku_base_score + self._exact_sku_per_match_score * len(merged_skus),
+                4,
+            )
 
         return sorted(deduped.values(), key=lambda item: float(item.get("score", 0.0)), reverse=True)
 
