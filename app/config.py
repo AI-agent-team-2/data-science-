@@ -35,6 +35,11 @@ DEFAULT_TOOL_TIMEOUT_SEC: Final[int] = 20
 DEFAULT_MODEL_TIMEOUT_SEC: Final[int] = 45
 DEFAULT_MODEL_MAX_RETRIES: Final[int] = 2
 DEFAULT_MIN_RAG_SCORE: Final[float] = 0.2
+# Product exact SKU scoring:
+# Эти значения намеренно "большие", чтобы точное совпадение по SKU стабильно
+# побеждало semantic-поиск (у которого score в диапазоне ~0..1).
+DEFAULT_PRODUCT_EXACT_SKU_BASE_SCORE: Final[float] = 100.0
+DEFAULT_PRODUCT_EXACT_SKU_PER_MATCH_SCORE: Final[float] = 25.0
 DEFAULT_MAX_RAG_CONTEXT_ITEMS: Final[int] = 4
 DEFAULT_MAX_LOOKUP_CONTEXT_ITEMS: Final[int] = 5
 DEFAULT_MAX_WEB_CONTEXT_ITEMS: Final[int] = 5
@@ -66,6 +71,17 @@ def _get_env_int(name: str, default: int) -> int:
         return default
     try:
         return int(raw_value)
+    except ValueError:
+        return default
+
+
+def _get_env_float(name: str, default: float) -> float:
+    """Преобразует переменную окружения в float с fallback на default."""
+    raw_value = _get_env_str(name)
+    if not raw_value:
+        return default
+    try:
+        return float(raw_value.replace(",", "."))
     except ValueError:
         return default
 
@@ -125,7 +141,17 @@ class Settings:
     model_max_retries: int = _get_env_int("MODEL_MAX_RETRIES", DEFAULT_MODEL_MAX_RETRIES)
 
     # ========== RAG thresholds ==========
-    min_rag_score: float = DEFAULT_MIN_RAG_SCORE
+    # Минимальный порог "релевантности" чанка в RAG (0..1). Чем выше — тем меньше контекста
+    # проходит в промпт, но тем выше риск "потерять" ответ при шумном запросе/индексе.
+    min_rag_score: float = _get_env_float("MIN_RAG_SCORE", DEFAULT_MIN_RAG_SCORE)
+    product_exact_sku_base_score: float = _get_env_float(
+        "PRODUCT_EXACT_SKU_BASE_SCORE",
+        DEFAULT_PRODUCT_EXACT_SKU_BASE_SCORE,
+    )
+    product_exact_sku_per_match_score: float = _get_env_float(
+        "PRODUCT_EXACT_SKU_PER_MATCH_SCORE",
+        DEFAULT_PRODUCT_EXACT_SKU_PER_MATCH_SCORE,
+    )
     max_rag_context_items: int = DEFAULT_MAX_RAG_CONTEXT_ITEMS
     max_lookup_context_items: int = DEFAULT_MAX_LOOKUP_CONTEXT_ITEMS
     max_web_context_items: int = DEFAULT_MAX_WEB_CONTEXT_ITEMS
