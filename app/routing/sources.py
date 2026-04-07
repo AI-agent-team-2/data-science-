@@ -50,6 +50,17 @@ LOOKUP_PRIORITY_MARKERS: tuple[str, ...] = (
     "позици",
 )
 
+STRONG_WEB_MARKERS: tuple[str, ...] = (
+    "отзывы",
+    "где купить",
+    "в москве",
+    "в россии",
+    "цена",
+    "средняя цена",
+    "рейтинг",
+    "новости",
+    "что изменилось",
+)
 
 def resolve_source_order(query: str) -> list[ToolName]:
     """Возвращает порядок источников в зависимости от типа запроса."""
@@ -78,15 +89,18 @@ def should_prefer_web(query: str) -> bool:
     has_web_year_marker = WEB_YEAR_PATTERN.search(lowered_query) is not None
     has_lookup_marker = any(marker in lowered_query for marker in LOOKUP_PRIORITY_MARKERS)
     has_sku = has_sku_signal(query)
-
-    if (has_web_marker or has_web_year_marker) and not has_lookup_marker and not has_sku:
-        return True
-
-    if len(words) < 3:
-        return (has_web_marker or has_web_year_marker) and not has_sku
-
-    if is_domain_query(lowered_query):
+    is_domain = is_domain_query(lowered_query)
+    #lookup всегда сильнее
+    if has_lookup_marker or has_sku:
         return False
+    # если domain, то фильтруем слабые web-маркеры
+    if is_domain:
+        has_strong_web = any(marker in lowered_query for marker in STRONG_WEB_MARKERS)
+        # только сильные сигналы пускают в web
+        return has_strong_web or has_web_year_marker
+    # обычная логика
+    if len(words) < 3:
+        return has_web_marker or has_web_year_marker 
 
     return has_web_marker or has_web_year_marker
 
