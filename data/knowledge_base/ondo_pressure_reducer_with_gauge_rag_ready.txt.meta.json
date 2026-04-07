@@ -1,0 +1,6 @@
+{
+  "pipeline_version": "rag_v2_2026_03_23",
+  "model": "qwen3.5:4b",
+  "input_sha256": "884d19b2094da29740aa719502d440be43e226b415c83cab21e9fef7f7d38a8b",
+  "processed_unix_ts": 1774270786
+}

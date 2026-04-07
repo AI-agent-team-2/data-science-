@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SAN Bot — Консультант по сантехнике</title>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.6/purify.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .chat-container {
+            width: 100%;
+            max-width: 800px;
+            height: 90vh;
+            background: white;
+            border-radius: 24px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .chat-header {
+            background: linear-gradient(135deg, #ff6600, #e55b00);
+            color: white;
+            padding: 20px 24px;
+            text-align: center;
+        }
+
+        .chat-header h1 {
+            font-size: 1.5rem;
+            margin-bottom: 4px;
+        }
+
+        .chat-header p {
+            font-size: 0.85rem;
+            opacity: 0.9;
+        }
+
+        .clear-button {
+            background: rgba(255,255,255,0.2);
+            border: none;
+            color: white;
+            padding: 6px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            margin-top: 8px;
+            transition: background 0.2s;
+        }
+
+        .clear-button:hover {
+            background: rgba(255,255,255,0.3);
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            background: #f8f9fa;
+        }
+
+        .message {
+            max-width: 80%;
+            padding: 10px 16px;
+            border-radius: 18px;
+            line-height: 1.45;
+            font-size: 0.95rem;
+            word-wrap: break-word;
+        }
+
+        .message-user {
+            align-self: flex-end;
+            background: #ff6600;
+            color: white;
+            border-bottom-right-radius: 4px;
+        }
+
+        .message-bot {
+            align-self: flex-start;
+            background: white;
+            color: #333;
+            border: 1px solid #e0e0e0;
+            border-bottom-left-radius: 4px;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        }
+
+        .message-bot p {
+            margin: 0 0 8px 0;
+        }
+
+        .message-bot p:last-child {
+            margin-bottom: 0;
+        }
+
+        .message-bot ul, .message-bot ol {
+            margin: 8px 0;
+            padding-left: 20px;
+        }
+
+        .message-bot li {
+            margin: 4px 0;
+        }
+
+        .message-bot a {
+            color: #ff6600;
+            text-decoration: underline;
+        }
+
+        .message-bot strong {
+            font-weight: 700;
+        }
+
+        .message-bot em {
+            font-style: italic;
+        }
+
+        .message-loading {
+            align-self: flex-start;
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-bottom-left-radius: 4px;
+            padding: 12px 20px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .typing-dots {
+            display: inline-flex;
+            gap: 4px;
+        }
+
+        .typing-dots span {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #bbb;
+            animation: typingPulse 1.4s ease-in-out infinite;
+        }
+
+        .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+        .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes typingPulse {
+            0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+            40% { opacity: 1; transform: scale(1); }
+        }
+
+        .chat-input-area {
+            display: flex;
+            gap: 12px;
+            padding: 16px 20px;
+            border-top: 1px solid #e0e0e0;
+            background: white;
+        }
+
+        .chat-input-area input {
+            flex: 1;
+            padding: 12px 16px;
+            border: 1px solid #e0e0e0;
+            border-radius: 24px;
+            font-size: 0.95rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .chat-input-area input:focus {
+            border-color: #ff6600;
+        }
+
+        .chat-input-area button {
+            padding: 12px 24px;
+            background: #ff6600;
+            color: white;
+            border: none;
+            border-radius: 24px;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .chat-input-area button:hover {
+            background: #e55b00;
+        }
+
+        .chat-input-area button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .error-message {
+            align-self: center;
+            background: #fff5f5;
+            color: #d32f2f;
+            border: 1px solid #ffcdd2;
+            font-size: 0.85rem;
+            text-align: center;
+        }
+
+        @media (max-width: 600px) {
+            .chat-container {
+                height: 95vh;
+                border-radius: 16px;
+            }
+            
+            .message {
+                max-width: 90%;
+            }
+            
+            .chat-input-area {
+                padding: 12px;
+            }
+            
+            .chat-input-area button {
+                padding: 10px 18px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="chat-container">
+        <div class="chat-header">
+            <h1>🤖 SAN Bot</h1>
+            <p>Ассистент по сантехническим товарам</p>
+            <button class="clear-button" id="clear-history-btn">🗑 Очистить историю</button>
+        </div>
+
+        <div class="chat-messages" id="chat-messages">
+            <div class="message message-bot">
+                👋 Здравствуйте! Я — AI-консультант по сантехнике.<br><br>
+                Помогу подобрать товар, найти артикул или уточнить характеристики.<br><br>
+                <strong>Например:</strong><br>
+                • Какой унитаз выбрать?<br>
+                • Покажи смесители ONDO<br>
+                • O100-1/2 (поиск по артикулу)<br>
+                • Сколько стоит шаровый кран?
+            </div>
+        </div>
+
+        <div class="chat-input-area">
+            <input type="text" id="message-input" placeholder="Введите ваш вопрос..." maxlength="2000">
+            <button id="send-button">Отправить</button>
+        </div>
+    </div>
+
+    <script>
+        // Сессия
+        const SESSION_KEY = 'san_bot_session_id';
+        // Не храним API key в localStorage (секрет). Сессии достаточно.
+        const API_KEY_STORAGE_KEY = 'san_bot_web_api_key';
+
+        function getSessionId() {
+            let id = localStorage.getItem(SESSION_KEY);
+            if (!id) {
+                // Генератор UUID для всех браузеров
+                id = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                    const r = Math.random() * 16 | 0;
+                    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+                    return v.toString(16);
+                });
+                localStorage.setItem(SESSION_KEY, id);
+            }
+            return id;
+        }
+
+        function getApiKey() {
+            return (sessionStorage.getItem(API_KEY_STORAGE_KEY) || '').trim();
+        }
+
+        function promptApiKey() {
+            const value = (window.prompt('Введите WEB API ключ (X-API-Key):', '') || '').trim();
+            if (value) {
+                sessionStorage.setItem(API_KEY_STORAGE_KEY, value);
+            }
+            return value;
+        }
+
+        function buildHeaders() {
+            const headers = { 'Content-Type': 'application/json' };
+            const apiKey = getApiKey();
+            if (apiKey) {
+                headers['X-API-Key'] = apiKey;
+            }
+            return headers;
+        }
+
+        // DOM элементы
+        const messagesDiv = document.getElementById('chat-messages');
+        const input = document.getElementById('message-input');
+        const sendBtn = document.getElementById('send-button');
+        const clearBtn = document.getElementById('clear-history-btn');
+
+        // Добавить сообщение в чат
+        function addMessage(text, isUser, isError = false) {
+            const div = document.createElement('div');
+            div.className = `message ${isUser ? 'message-user' : (isError ? 'message error-message' : 'message-bot')}`;
+            
+            if (!isUser && !isError) {
+                try {
+                    const html = marked.parse(text);
+                    div.innerHTML = DOMPurify.sanitize(html, {
+                        ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'ul', 'ol', 'li', 'a', 'code', 'pre'],
+                        ALLOWED_ATTR: ['href', 'target']
+                    });
+                    const links = div.querySelectorAll('a');
+                    links.forEach(link => link.setAttribute('target', '_blank'));
+                } catch (e) {
+                    div.textContent = text;
+                }
+            } else {
+                div.textContent = text;
+            }
+            
+            messagesDiv.appendChild(div);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            return div;
+        }
+
+        // Показать индикатор печатания
+        function showTyping() {
+            const div = document.createElement('div');
+            div.className = 'message message-loading';
+            div.id = 'typing-indicator';
+            div.innerHTML = '<span>SAN Bot печатает</span><div class="typing-dots"><span></span><span></span><span></span></div>';
+            messagesDiv.appendChild(div);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function hideTyping() {
+            const el = document.getElementById('typing-indicator');
+            if (el) el.remove();
+        }
+
+        function setEnabled(enabled) {
+            input.disabled = !enabled;
+            sendBtn.disabled = !enabled;
+            if (enabled) input.focus();
+        }
+
+        // Отправка сообщения
+        async function sendMessage() {
+            const text = input.value.trim();
+            if (!text) return;
+            
+            input.value = '';
+            addMessage(text, true);
+            showTyping();
+            setEnabled(false);
+            
+            try {
+                let response = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: buildHeaders(),
+                    body: JSON.stringify({
+                        message: text,
+                        session_id: getSessionId()
+                    })
+                });
+
+                if (response.status === 401 && !getApiKey()) {
+                    const entered = promptApiKey();
+                    if (entered) {
+                        response = await fetch('/api/chat', {
+                            method: 'POST',
+                            headers: buildHeaders(),
+                            body: JSON.stringify({
+                                message: text,
+                                session_id: getSessionId()
+                            })
+                        });
+                    }
+                }
+                
+                hideTyping();
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || `Ошибка сервера: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                addMessage(data.reply, false);
+            } catch (error) {
+                hideTyping();
+                addMessage(`❌ ${error.message}`, false, true);
+            } finally {
+                setEnabled(true);
+            }
+        }
+
+        // Очистка истории
+        async function clearHistory() {
+            try {
+                let response = await fetch('/api/clear', {
+                    method: 'POST',
+                    headers: buildHeaders(),
+                    body: JSON.stringify({ session_id: getSessionId() })
+                });
+                if (response.status === 401 && !getApiKey()) {
+                    const entered = promptApiKey();
+                    if (entered) {
+                        response = await fetch('/api/clear', {
+                            method: 'POST',
+                            headers: buildHeaders(),
+                            body: JSON.stringify({ session_id: getSessionId() })
+                        });
+                    }
+                }
+            } catch (e) {
+                // Не критично
+            }
+            
+            while (messagesDiv.firstChild) {
+                messagesDiv.removeChild(messagesDiv.firstChild);
+            }
+            
+            // Добавить приветствие
+            const welcome = document.createElement('div');
+            welcome.className = 'message message-bot';
+            welcome.innerHTML = '👋 История очищена. Задайте новый вопрос!';
+            messagesDiv.appendChild(welcome);
+        }
+
+        // Обработчики
+        sendBtn.addEventListener('click', sendMessage);
+        input.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendMessage();
+        });
+        clearBtn.addEventListener('click', clearHistory);
+        
+        // Фокус на поле ввода
+        input.focus();
+    </script>
+</body>
+</html>

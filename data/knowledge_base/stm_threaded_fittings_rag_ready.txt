@@ -1,0 +1,370 @@
+DOCUMENT: stm_threaded_fittings_rag_ready
+DOC_ID: stm_threaded_fittings_rag_ready_cf836d14
+
+PRODUCT: Фитинги резьбовые СТМ
+CATEGORY: Фитинги и соединения
+BRAND: СТМ
+
+MODEL: Фитинги резьбовые СТМ
+
+MANUFACTURER: Sanitary Technic Machinery Co., Ltd.
+COUNTRY: 138 West Zhongshan Road, Haishu, Ningbo, China
+
+ALIASES: Фитинги резьбовые СТМ
+
+DESCRIPTION
+- Резьбовые фитинги для соединения металлопластиковых, многослойных пластиковых и стальных труб, а также сантехнической арматуры.
+- Используются в системах отопления, холодного и горячего водоснабжения, газоснабжения.
+
+PURPOSE
+- Соединение труб и арматуры в системах водоснабжения, отопления и газоснабжения.
+- Обеспечение герметичности соединений при давлении до 16 бар и температуре от -20°C до +120°C.
+
+IMPORTANT
+- Материал корпуса: латунь с никелированным покрытием (ГОСТ 15527-2004).
+- Тип резьбы: дюймовая трубная (ГОСТ 6357-81).
+- Рабочее давление: до 16 бар.
+- Рабочая температура: от -20°C до +120°C.
+- Монтаж выполняется с предельными моментами затяжки от 30 до 150 Н·м в зависимости от размера.
+- Гарантия: 24 месяца с даты продажи.
+
+VARIANTS (МОДЕЛИ)
+- Заглушка внутренняя резьба
+- Заглушка наружная резьба
+- Кольцо переходное
+- Контргайка
+- Контргайка с ребордой
+- Крестовина внутренняя резьба
+- Муфта прямая
+- Муфта переходная
+- Муфта разъемная с накидной гайкой
+- Ниппель
+- Уголок
+- Удлинитель
+- Футорка
+- Штуцер под шланг
+- CRHIP
+- CRCF
+- CRCM
+- CRC
+- CRBF
+- CRBFR
+
+VARIANTS (АРТИКУЛЫ)
+- CRHIP012, CRHIP034
+- CRCF0012, CRCF0034, CRCF0001, CRCF0114, CRCF0112, CRCF0002
+- CRCM0012, CRCM0034, CRCM0001, CRCM0114, CRCM0112, CRCM0002
+- CRC34M12
+- CRBF0012, CRBF0034, CRBF0001, CRBF0114, CRBF0112, CRBF0002
+- CRBFR012, CRBFR034, CRBFR001, CRBFR114
+- CRKF0012, CRKF0034
+- CRSF0012, CRSF0034, CRSF0001, CRSF0114, CRSF0112, CRSF0002
+- CRRS3412, CRRS0112, CRRS0134, CRRS1412, CRRS1434, CRRS1141, CRRS1134, CRRS1121, CRRS1214, CRRS0201, CRRS0214, CRRS0212
+- CRSAF012, CRSAF034, CRSAF001, CRSAF114
+- CRNM0012, CRNM0034, CRNM0001, CRNM0114, CRNM0112, CRNM0002
+- CRRN1238, CRRN3412, CRRN0112, CRRN0134, CRRN1412, CRRN1434, CRRN1141, CRRN1234, CRRN1121, CRRN1214, CRRN0234, CRRN0201, CRRN0214, CRRN0212
+- CR12F38K, CR34F12K, CR01F12K, CR01F34K, CR14F12K, CR14F34K, CR14F01K, CR12F34K, CR12F01K, CR12F14K, CR02F01K, CR02F14K, CR02F
+- CRLFM012, CRLFM034, CRLFM001, CRLFM114, CRLFM112, CRLFM002
+- CRLFW012
+- CRLWP012
+- CRLFFMS12, CRLFFMS34, CRLFFMS01
+- CRLMMS12, CRLMMS34, CRLMMS01
+- CREMF010, CREMF015, CREMF020, CREMF025, CREMF030, CREMF040, CREMF050, CREMF060, CREMF080, CREMF100, CREMF310, CREMF315, CREMF320, CREMF325, CREMF330, CREMF340, CREMF350, CREMF360, CREMF380, CREMF110, CREMF115, CREMF120, CREMF125, CREMF130, CREMF140, CREMF150
+- CREM0050, CREM0070, CREM0100, CREM0120, CREM0150, CREM0200
+- CRB12M38, CRB34M12, CRB01M12, CRB01M34, CRB14M12, CRB14M34, CRB114M1, CRB12M34, CRB112M1, CRB12M14, CRB02M34, CRB02M01, CRB02M14, CRB02M12
+- CRSF1210, CRSF1212, CRSF1214, CRSF1216, CRSF1218, CRSF1220, CRSF3420, CRSF3425, CRSF0120, CRSF0125, CRSF0130
+- CRSM1210, CRSM1212, CRSM1214, CRSM1216, CRSM1218, CRSM1220, CRSM3420, CRSM3425, CRSM0120, CRSM0125, CRSM0130
+- CRHIP012
+- CRHIP034
+- CRCF0012
+- CRCF0034
+- CRCF0001
+- CRCF0114
+- CRCF0112
+- CRCF0002
+- CRCM0012
+- CRCM0034
+- CRCM0001
+- CRCM0114
+- CRCM0112
+- CRCM0002
+- CRBF0012
+- CRBF0034
+- CRBF0001
+- CRBF0114
+- CRBF0112
+- CRBF0002
+- CRBFR012
+- CRBFR034
+- CRBFR001
+- CRBFR114
+- CRKF0012
+- CRKF0034
+- CRSF0012
+- CRSF0034
+- CRSF0001
+- CRSF0114
+- CRSF0112
+- CRSF0002
+- CRRS3412
+- CRRS0112
+- CRRS0134
+- CRRS1412
+- CRRS1434
+- CRRS1141
+- CRRS1134
+- CRRS1121
+- CRRS1214
+- CRRS0201
+- CRRS0214
+- CRRS0212
+- CRSAF012
+- CRSAF034
+- CRSAF001
+- CRSAF114
+- CRNM0012
+- CRNM0034
+- CRNM0001
+- CRNM0114
+- CRNM0112
+- CRNM0002
+- CRRN1238
+- CRRN3412
+- CRRN0112
+- CRRN0134
+- CRRN1412
+- CRRN1434
+- CRRN1141
+- CRRN1234
+- CRRN1121
+- CRRN1214
+- CRRN0234
+- CRRN0201
+- CRRN0214
+- CRRN0212
+- CR12F38K
+- CR34F12K
+- CR01F12K
+- CR01F34K
+- CR14F12K
+- CR14F34K
+- CR14F01K
+- CR12F34K
+- CR12F01K
+- CR12F14K
+- CR02F01K
+- CR02F14K
+- CR02F12K
+- CRNT0012
+- CRNT0034
+- CR12F38R
+- CR34F12R
+- CR01F12R
+- CR01F34R
+- CRSA3412
+- CRSA0134
+- CRSAM012
+- CRSAM034
+- CRSMM050
+- CRSMM075
+- CRSMM100
+- CRSMM125
+- CRSMM150
+- CRSMM200
+
+FAQ
+- Q: Каково рабочее давление фитингов?
+A: До 16 бар.
+- Q: Какова рабочая температура?
+A: От -20°C до +120°C.
+- Q: Из какого материала выполнены корпуса?
+A: Из латуни с никелированным покрытием (ГОСТ 15527-2004).
+- Q: Какой тип резьбы используется?
+A: Дюймовая трубная (ГОСТ 6357-81).
+- Q: Какие предельные моменты затяжки для разных размеров?
+A: 1/2" — 30 Н·м, 3/4" — 40 Н·м, 1" — 60 Н·м, 1-1/4" — 80 Н·м, 1-1/2" — 120 Н·м, 2" — 150 Н·м.
+- Q: Каков гарантийный срок?
+A: 24 месяца с даты продажи конечному потребителю.
+- Q: В каких системах применяются эти фитинги?
+A: В системах отопления, холодного и горячего водоснабжения, а также газоснабжения.
+
+TECHNICAL SPECIFICATIONS
+[НЕТ ДАННЫХ В ИСХОДНОМ ДОКУМЕНТЕ]
+
+PERFORMANCE
+[НЕТ ДАННЫХ В ИСХОДНОМ ДОКУМЕНТЕ]
+
+MATERIALS
+[НЕТ ДАННЫХ В ИСХОДНОМ ДОКУМЕНТЕ]
+
+COMPONENTS
+[НЕТ ДАННЫХ В ИСХОДНОМ ДОКУМЕНТЕ]
+
+CONNECTIONS
+[НЕТ ДАННЫХ В ИСХОДНОМ ДОКУМЕНТЕ]
+
+WORKING FLUID
+[НЕТ ДАННЫХ В ИСХОДНОМ ДОКУМЕНТЕ]
+
+INSTALLATION
+[НЕТ ДАННЫХ В ИСХОДНОМ ДОКУМЕНТЕ]
+
+STARTUP
+[НЕТ ДАННЫХ В ИСХОДНОМ ДОКУМЕНТЕ]
+
+OPERATION
+[НЕТ ДАННЫХ В ИСХОДНОМ ДОКУМЕНТЕ]
+
+ADJUSTMENT
+[НЕТ ДАННЫХ В ИСХОДНОМ ДОКУМЕНТЕ]
+
+LIMITATIONS
+- Материал корпуса: латунь с никелированным покрытием (ГОСТ 15527-2004).
+- Тип резьбы: дюймовая трубная (ГОСТ 6357-81).
+- Рабочее давление: до 16 бар.
+
+MAINTENANCE
+[НЕТ ДАННЫХ В ИСХОДНОМ ДОКУМЕНТЕ]
+
+TROUBLESHOOTING
+[НЕТ ДАННЫХ В ИСХОДНОМ ДОКУМЕНТЕ]
+
+STORAGE AND TRANSPORT
+[НЕТ ДАННЫХ В ИСХОДНОМ ДОКУМЕНТЕ]
+
+WARRANTY
+[НЕТ ДАННЫХ В ИСХОДНОМ ДОКУМЕНТЕ]
+
+ARTICLES
+- CRHIP012, CRHIP034
+- CRCF0012, CRCF0034, CRCF0001, CRCF0114, CRCF0112, CRCF0002
+- CRCM0012, CRCM0034, CRCM0001, CRCM0114, CRCM0112, CRCM0002
+- CRC34M12
+- CRBF0012, CRBF0034, CRBF0001, CRBF0114, CRBF0112, CRBF0002
+- CRBFR012, CRBFR034, CRBFR001, CRBFR114
+- CRKF0012, CRKF0034
+- CRSF0012, CRSF0034, CRSF0001, CRSF0114, CRSF0112, CRSF0002
+- CRRS3412, CRRS0112, CRRS0134, CRRS1412, CRRS1434, CRRS1141, CRRS1134, CRRS1121, CRRS1214, CRRS0201, CRRS0214, CRRS0212
+- CRSAF012, CRSAF034, CRSAF001, CRSAF114
+- CRNM0012, CRNM0034, CRNM0001, CRNM0114, CRNM0112, CRNM0002
+- CRRN1238, CRRN3412, CRRN0112, CRRN0134, CRRN1412, CRRN1434, CRRN1141, CRRN1234, CRRN1121, CRRN1214, CRRN0234, CRRN0201, CRRN0214, CRRN0212
+- CR12F38K, CR34F12K, CR01F12K, CR01F34K, CR14F12K, CR14F34K, CR14F01K, CR12F34K, CR12F01K, CR12F14K, CR02F01K, CR02F14K, CR02F
+- CRLFM012, CRLFM034, CRLFM001, CRLFM114, CRLFM112, CRLFM002
+- CRLFW012
+- CRLWP012
+- CRLFFMS12, CRLFFMS34, CRLFFMS01
+- CRLMMS12, CRLMMS34, CRLMMS01
+- CREMF010, CREMF015, CREMF020, CREMF025, CREMF030, CREMF040, CREMF050, CREMF060, CREMF080, CREMF100, CREMF310, CREMF315, CREMF320, CREMF325, CREMF330, CREMF340, CREMF350, CREMF360, CREMF380, CREMF110, CREMF115, CREMF120, CREMF125, CREMF130, CREMF140, CREMF150
+- CREM0050, CREM0070, CREM0100, CREM0120, CREM0150, CREM0200
+- CRB12M38, CRB34M12, CRB01M12, CRB01M34, CRB14M12, CRB14M34, CRB114M1, CRB12M34, CRB112M1, CRB12M14, CRB02M34, CRB02M01, CRB02M14, CRB02M12
+- CRSF1210, CRSF1212, CRSF1214, CRSF1216, CRSF1218, CRSF1220, CRSF3420, CRSF3425, CRSF0120, CRSF0125, CRSF0130
+- CRSM1210, CRSM1212, CRSM1214, CRSM1216, CRSM1218, CRSM1220, CRSM3420, CRSM3425, CRSM0120, CRSM0125, CRSM0130
+- CRHIP012
+- CRHIP034
+- CRCF0012
+- CRCF0034
+- CRCF0001
+- CRCF0114
+- CRCF0112
+- CRCF0002
+- CRCM0012
+- CRCM0034
+- CRCM0001
+- CRCM0114
+- CRCM0112
+- CRCM0002
+- CRBF0012
+- CRBF0034
+- CRBF0001
+- CRBF0114
+- CRBF0112
+- CRBF0002
+- CRBFR012
+- CRBFR034
+- CRBFR001
+- CRBFR114
+- CRKF0012
+- CRKF0034
+- CRSF0012
+- CRSF0034
+- CRSF0001
+- CRSF0114
+- CRSF0112
+- CRSF0002
+- CRRS3412
+- CRRS0112
+- CRRS0134
+- CRRS1412
+- CRRS1434
+- CRRS1141
+- CRRS1134
+- CRRS1121
+- CRRS1214
+- CRRS0201
+- CRRS0214
+- CRRS0212
+- CRSAF012
+- CRSAF034
+- CRSAF001
+- CRSAF114
+- CRNM0012
+- CRNM0034
+- CRNM0001
+- CRNM0114
+- CRNM0112
+- CRNM0002
+- CRRN1238
+- CRRN3412
+- CRRN0112
+- CRRN0134
+- CRRN1412
+- CRRN1434
+- CRRN1141
+- CRRN1234
+- CRRN1121
+- CRRN1214
+- CRRN0234
+- CRRN0201
+- CRRN0214
+- CRRN0212
+- CR12F38K
+- CR34F12K
+- CR01F12K
+- CR01F34K
+- CR14F12K
+- CR14F34K
+- CR14F01K
+- CR12F34K
+- CR12F01K
+- CR12F14K
+- CR02F01K
+- CR02F14K
+- CR02F12K
+- CRNT0012
+- CRNT0034
+- CR12F38R
+- CR34F12R
+- CR01F12R
+- CR01F34R
+- CRSA3412
+- CRSA0134
+- CRSAM012
+- CRSAM034
+- CRSMM050
+- CRSMM075
+- CRSMM100
+- CRSMM125
+- CRSMM150
+- CRSMM200
+
+KEY FACTS
+- Резьбовые фитинги для соединения металлопластиковых, многослойных пластиковых и стальных труб, а также сантехнической арматуры.
+- Используются в системах отопления, холодного и горячего водоснабжения, газоснабжения.
+- Соединение труб и арматуры в системах водоснабжения, отопления и газоснабжения.
+- Обеспечение герметичности соединений при давлении до 16 бар и температуре от -20°C до +120°C.
+- Материал корпуса: латунь с никелированным покрытием (ГОСТ 15527-2004).
+- Тип резьбы: дюймовая трубная (ГОСТ 6357-81).
+- Рабочее давление: до 16 бар.
+- Рабочая температура: от -20°C до +120°C.
+- Монтаж выполняется с предельными моментами затяжки от 30 до 150 Н·м в зависимости от размера.
+- Гарантия: 24 месяца с даты продажи.
