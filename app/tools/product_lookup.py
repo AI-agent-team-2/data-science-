@@ -120,7 +120,8 @@ def product_lookup(query: str, limit: int = 5) -> dict[str, Any]:
         )
     except Exception as exc:
         logger.exception("Ошибка product_lookup для запроса: %s", normalized_query)
-        logger.debug("Детали ошибки product_lookup: %s", sanitize_text(str(exc)))
+        exc_str = sanitize_text(str(exc))
+        logger.debug("Детали ошибки product_lookup: %s", exc_str)
         return error_payload(
             query=normalized_query,
             note="Внутренняя ошибка поиска. Попробуйте повторить запрос позже.",

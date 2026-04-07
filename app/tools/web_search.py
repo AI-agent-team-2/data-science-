@@ -264,6 +264,7 @@ def web_search(query: str, max_results: int = 5) -> dict[str, Any]:
             _save_to_cache(cache_key, result)
     except Exception as exc:
         logger.exception("Не удалось разобрать ответ web_search для кэширования")
-        logger.debug("Детали ошибки web_search: %s", sanitize_text(str(exc)))
+        exc_str = sanitize_text(str(exc))
+        logger.debug("Детали ошибки web_search: %s", exc_str)
 
     return _coerce_web_payload(result)
