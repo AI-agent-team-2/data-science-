@@ -45,7 +45,9 @@ def rag_search(query: str) -> dict[str, object]:
         results = retriever.search(query=query)
     except Exception as exc:
         logger.exception("Ошибка RAG-поиска для запроса: %s", query)
-        logger.debug("Детали ошибки rag_search: %s", sanitize_text(str(exc)))
+
+        exc_text = sanitize_text(str(exc))
+        logger.debug("Детали ошибки rag_search: %s", exc_text)
         return error_payload(
             query=query,
             note="Внутренняя ошибка RAG-поиска.",
