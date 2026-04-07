@@ -7,7 +7,7 @@ from app.routing.intents import has_sku_signal, is_domain_query, is_noise_query
 
 ToolName = Literal["lookup", "rag", "web"]
 
-WEB_YEAR_PATTERN = re.compile(r"\bв\s+20\d{2}\b")
+WEB_YEAR_PATTERN = re.compile(r"\b202\d\b")
 
 WEB_PRIORITY_MARKERS: tuple[str, ...] = (
     "сейчас",
