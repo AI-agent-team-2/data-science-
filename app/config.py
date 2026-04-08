@@ -35,6 +35,7 @@ DEFAULT_TOOL_TIMEOUT_SEC: Final[int] = 20
 DEFAULT_MODEL_TIMEOUT_SEC: Final[int] = 45
 DEFAULT_MODEL_MAX_RETRIES: Final[int] = 2
 DEFAULT_MIN_RAG_SCORE: Final[float] = 0.2
+DEFAULT_RAG_OVERLAP_BONUS_WEIGHT: Final[float] = 0.03
 # ========== Circuit breaker (LLM API) ==========
 DEFAULT_MODEL_CIRCUIT_BREAKER_ENABLED: Final[bool] = True
 DEFAULT_MODEL_CIRCUIT_BREAKER_FAILURE_THRESHOLD: Final[int] = 5
@@ -53,6 +54,10 @@ DEFAULT_WEB_MIN_SOURCES: Final[int] = 2
 # ========== Rate limiting ==========
 DEFAULT_RATE_LIMIT_REQUESTS: Final[int] = 10
 DEFAULT_RATE_LIMIT_WINDOW_SEC: Final[int] = 60
+
+# ========== Token Budget ==========
+DEFAULT_MAX_TOTAL_TOKEN_BUDGET: Final[int] = 100000
+DEFAULT_TOKEN_BUDGET_WARNING_THRESHOLD: Final[float] = 0.8
 
 SUPPORTED_PROVIDERS: Final[set[str]] = {"openrouter", "openai"}
 SUPPORTED_STARTUP_INDEX_MODES: Final[set[str]] = {"never", "if_empty", "always"}
@@ -167,6 +172,9 @@ class Settings:
     # Минимальный порог "релевантности" чанка в RAG (0..1). Чем выше — тем меньше контекста
     # проходит в промпт, но тем выше риск "потерять" ответ при шумном запросе/индексе.
     min_rag_score: float = _get_env_float("MIN_RAG_SCORE", DEFAULT_MIN_RAG_SCORE)
+    rag_overlap_bonus_weight: float = _get_env_float(
+        "RAG_OVERLAP_BONUS_WEIGHT", DEFAULT_RAG_OVERLAP_BONUS_WEIGHT
+    )
     product_exact_sku_base_score: float = _get_env_float(
         "PRODUCT_EXACT_SKU_BASE_SCORE",
         DEFAULT_PRODUCT_EXACT_SKU_BASE_SCORE,
@@ -183,6 +191,12 @@ class Settings:
     # ========== Rate limiting ==========
     rate_limit_requests: int = DEFAULT_RATE_LIMIT_REQUESTS
     rate_limit_window_sec: int = DEFAULT_RATE_LIMIT_WINDOW_SEC
+
+    # ========== Token Budget ==========
+    max_total_token_budget: int = _get_env_int("MAX_TOTAL_TOKEN_BUDGET", DEFAULT_MAX_TOTAL_TOKEN_BUDGET)
+    token_budget_warning_threshold: float = _get_env_float(
+        "TOKEN_BUDGET_WARNING_THRESHOLD", DEFAULT_TOKEN_BUDGET_WARNING_THRESHOLD
+    )
 
     # ========== Web API security ==========
     web_api_key: str = _get_env_str("WEB_API_KEY")
