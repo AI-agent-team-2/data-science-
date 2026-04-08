@@ -35,6 +35,11 @@ DEFAULT_TOOL_TIMEOUT_SEC: Final[int] = 20
 DEFAULT_MODEL_TIMEOUT_SEC: Final[int] = 45
 DEFAULT_MODEL_MAX_RETRIES: Final[int] = 2
 DEFAULT_MIN_RAG_SCORE: Final[float] = 0.2
+# ========== Circuit breaker (LLM API) ==========
+DEFAULT_MODEL_CIRCUIT_BREAKER_ENABLED: Final[bool] = True
+DEFAULT_MODEL_CIRCUIT_BREAKER_FAILURE_THRESHOLD: Final[int] = 5
+DEFAULT_MODEL_CIRCUIT_BREAKER_COOLDOWN_SEC: Final[int] = 30
+DEFAULT_MODEL_CIRCUIT_BREAKER_HALF_OPEN_SUCCESS_THRESHOLD: Final[int] = 1
 # Product exact SKU scoring:
 # Эти значения намеренно "большие", чтобы точное совпадение по SKU стабильно
 # побеждало semantic-поиск (у которого score в диапазоне ~0..1).
@@ -139,6 +144,24 @@ class Settings:
     tool_timeout_sec: int = DEFAULT_TOOL_TIMEOUT_SEC
     model_timeout_sec: int = DEFAULT_MODEL_TIMEOUT_SEC
     model_max_retries: int = _get_env_int("MODEL_MAX_RETRIES", DEFAULT_MODEL_MAX_RETRIES)
+
+    # ========== Circuit breaker (LLM API) ==========
+    model_circuit_breaker_enabled: bool = _get_env_bool(
+        "MODEL_CIRCUIT_BREAKER_ENABLED",
+        DEFAULT_MODEL_CIRCUIT_BREAKER_ENABLED,
+    )
+    model_circuit_breaker_failure_threshold: int = _get_env_int(
+        "MODEL_CIRCUIT_BREAKER_FAILURE_THRESHOLD",
+        DEFAULT_MODEL_CIRCUIT_BREAKER_FAILURE_THRESHOLD,
+    )
+    model_circuit_breaker_cooldown_sec: int = _get_env_int(
+        "MODEL_CIRCUIT_BREAKER_COOLDOWN_SEC",
+        DEFAULT_MODEL_CIRCUIT_BREAKER_COOLDOWN_SEC,
+    )
+    model_circuit_breaker_half_open_success_threshold: int = _get_env_int(
+        "MODEL_CIRCUIT_BREAKER_HALF_OPEN_SUCCESS_THRESHOLD",
+        DEFAULT_MODEL_CIRCUIT_BREAKER_HALF_OPEN_SUCCESS_THRESHOLD,
+    )
 
     # ========== RAG thresholds ==========
     # Минимальный порог "релевантности" чанка в RAG (0..1). Чем выше — тем меньше контекста

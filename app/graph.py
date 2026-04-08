@@ -5,6 +5,7 @@ import logging
 from langchain_openai import ChatOpenAI
 
 from app.config import settings
+from app.resilience.circuit_breaker import CircuitBreaker
 
 logger = logging.getLogger(__name__)
 
@@ -29,3 +30,16 @@ def create_chat_model() -> ChatOpenAI:
 
 
 model = create_chat_model()
+
+
+def create_model_circuit_breaker() -> CircuitBreaker:
+    return CircuitBreaker(
+        name="llm_api",
+        failure_threshold=settings.model_circuit_breaker_failure_threshold,
+        cooldown_sec=settings.model_circuit_breaker_cooldown_sec,
+        half_open_success_threshold=settings.model_circuit_breaker_half_open_success_threshold,
+        half_open_max_calls=1,
+    )
+
+
+model_circuit_breaker = create_model_circuit_breaker() if settings.model_circuit_breaker_enabled else None
