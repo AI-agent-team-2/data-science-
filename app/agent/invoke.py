@@ -10,6 +10,7 @@ from langchain_core.runnables import RunnableConfig
 
 from app.config import settings
 from app.context_engine import ToolExecutionResult, parse_tool_payload
+from app.resilience.circuit_breaker import CircuitBreaker, CircuitBreakerOpenError
 
 logger = logging.getLogger(__name__)
 
@@ -47,22 +48,43 @@ def invoke_with_timeout(
     func: Callable[[Any], Any],
     arg: Any,
     timeout_sec: int,
+    *,
+    breaker: CircuitBreaker | None = None,
 ) -> InvocationResult:
     """Вызывает функцию в отдельном потоке с ограничением времени."""
 
     def _runner() -> Any:
         return func(arg)
 
+    token = None
+    if breaker is not None:
+        try:
+            token = breaker.begin_call()
+        except CircuitBreakerOpenError as exc:
+            logger.warning("Circuit breaker rejected call (%s): %s", breaker.name, exc)
+            return InvocationResult(
+                status="failed",
+                error_type="circuit_open",
+                error_message=str(exc),
+            )
+
     with ThreadPoolExecutor(max_workers=1) as executor:
         ctx = copy_context()
         future = executor.submit(ctx.run, _runner)
         try:
-            return InvocationResult(status="ok", value=future.result(timeout=max(1, timeout_sec)))
+            value = future.result(timeout=max(1, timeout_sec))
+            if breaker is not None and token is not None:
+                breaker.record_success(token)
+            return InvocationResult(status="ok", value=value)
         except FuturesTimeoutError:
             logger.warning("Операция превысила таймаут %s сек", timeout_sec)
+            if breaker is not None and token is not None:
+                breaker.record_failure(token)
             return InvocationResult(status="failed", error_type="timeout", error_message=f"timeout>{timeout_sec}s")
         except Exception as exc:
             logger.exception("Операция завершилась с ошибкой")
+            if breaker is not None and token is not None:
+                breaker.record_failure(token)
             return InvocationResult(
                 status="failed",
                 error_type="exception",

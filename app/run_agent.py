@@ -27,7 +27,7 @@ from app.context_engine import (
     smalltalk_response,
     tool_failure_response,
 )
-from app.graph import model
+from app.graph import model, model_circuit_breaker
 from app.history_store import load_messages, save_turn
 from app.observability import (
     get_langchain_callback_handler,
@@ -181,6 +181,7 @@ def _run_agent_pipeline(payload: dict[str, Any], config: RunnableConfig | None =
         lambda payload_input: model.invoke(payload_input, config=effective_model_config),
         model_input,
         timeout_sec=settings.model_timeout_sec,
+        breaker=model_circuit_breaker,
     )
     if response.status != "ok":
         logger.warning("model_invoke failed: %s %s", response.error_type, response.error_message)

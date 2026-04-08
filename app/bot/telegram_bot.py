@@ -182,21 +182,33 @@ def _send_search_hint(call: CallbackQuery, mode: str) -> None:
 
 def _recognize_photo(image_bytes: bytes) -> str:
     """Отправляет фото в Vision LLM и возвращает распознанное описание."""
-    from app.graph import model
+    from app.agent.invoke import invoke_with_timeout
+    from app.config import settings
+    from app.graph import model, model_circuit_breaker
     from langchain_core.messages import HumanMessage, SystemMessage
 
     prepared = prepare_image_for_vision(image_bytes)
     image_base64 = base64.b64encode(prepared).decode("utf-8")
 
-    response = model.invoke([
-        SystemMessage(content=VISION_SYSTEM_PROMPT),
-        HumanMessage(content=[
-            {"type": "text", "text": VISION_USER_PROMPT},
-            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}}
-        ])
-    ])
+    result = invoke_with_timeout(
+        lambda payload_input: model.invoke(payload_input),
+        [
+            SystemMessage(content=VISION_SYSTEM_PROMPT),
+            HumanMessage(
+                content=[
+                    {"type": "text", "text": VISION_USER_PROMPT},
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}},
+                ]
+            ),
+        ],
+        timeout_sec=settings.model_timeout_sec,
+        breaker=model_circuit_breaker,
+    )
+    if result.status != "ok":
+        raise RuntimeError(f"vision_invoke_failed:{result.error_type}:{result.error_message}")
 
-    return response.content.strip()
+    response = result.value
+    return str(getattr(response, "content", "")).strip()
 
 
 def _find_similar_products(description: str, limit: int = 3) -> list[dict]:
