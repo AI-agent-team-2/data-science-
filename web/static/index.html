@@ -143,6 +143,7 @@
             padding: 12px 20px 16px;
             gap: 8px;
             position: relative;
+            min-height: 0;
         }
 
         .chat-messages {
@@ -154,6 +155,8 @@
             gap: 10px;
             scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
             scrollbar-width: thin;
+            min-height: 0;
+            overscroll-behavior: contain;
         }
 
         .message-row {
