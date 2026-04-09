@@ -43,7 +43,7 @@
             display: flex;
             flex-direction: column;
             border-radius: 24px;
-            border: 1px solid var(--border-subtle);
+            border: 1px solid rgba(255, 255, 255, 0.08);
             background: radial-gradient(circle at top, #11131c 0, #050608 45%, #050608 100%);
             box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6);
             overflow: hidden;
@@ -56,6 +56,9 @@
             align-items: center;
             gap: 16px;
             border-bottom: 1px solid var(--border-subtle);
+            background: rgba(5, 6, 8, 0.55);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
         }
 
         .page-header-left {
@@ -139,20 +142,24 @@
             flex-direction: column;
             padding: 12px 20px 16px;
             gap: 8px;
+            position: relative;
         }
 
         .chat-messages {
             flex: 1;
             overflow-y: auto;
-            padding: 8px 4px 8px 0;
+            padding: 10px 10px 10px 0;
             display: flex;
             flex-direction: column;
             gap: 10px;
+            scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+            scrollbar-width: thin;
         }
 
         .message-row {
             display: flex;
             width: 100%;
+            padding: 0 6px;
         }
 
         .message-row.user {
@@ -170,19 +177,99 @@
             font-size: 0.9rem;
             line-height: 1.5;
             word-wrap: break-word;
+            animation: messageIn 120ms ease-out both;
+            position: relative;
         }
 
         .message-user {
             background: #ffffff;
             color: #111317;
             border-bottom-right-radius: 4px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
         }
 
         .message-bot {
             background: var(--bg-elevated);
-            border: 1px solid rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.07);
             color: var(--text-main);
             border-bottom-left-radius: 4px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+        }
+
+        .message-actions {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            display: inline-flex;
+            gap: 6px;
+            opacity: 0;
+            transform: translateY(-2px);
+            pointer-events: none;
+            transition: opacity 0.12s ease-out, transform 0.12s ease-out;
+        }
+
+        .message-bot:hover .message-actions {
+            opacity: 1;
+            transform: translateY(0);
+            pointer-events: auto;
+        }
+
+        .icon-btn {
+            width: 28px;
+            height: 28px;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.10);
+            background: rgba(255, 255, 255, 0.04);
+            color: rgba(255, 255, 255, 0.86);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: background 0.12s ease-out, border-color 0.12s ease-out, transform 0.1s ease-out;
+            user-select: none;
+        }
+
+        .icon-btn:hover {
+            background: rgba(255, 255, 255, 0.07);
+            border-color: rgba(255, 255, 255, 0.14);
+            transform: translateY(-0.5px);
+        }
+
+        .icon-btn:active {
+            transform: translateY(0.5px);
+        }
+
+        .scroll-down-btn {
+            position: absolute;
+            right: 16px;
+            bottom: 86px;
+            width: 40px;
+            height: 40px;
+            border-radius: 14px;
+            border: 1px solid rgba(255, 255, 255, 0.10);
+            background: rgba(5, 6, 8, 0.65);
+            color: rgba(255, 255, 255, 0.92);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            opacity: 0;
+            transform: translateY(8px);
+            pointer-events: none;
+            transition: opacity 0.15s ease-out, transform 0.15s ease-out, background 0.15s ease-out;
+        }
+
+        .scroll-down-btn.visible {
+            opacity: 1;
+            transform: translateY(0);
+            pointer-events: auto;
+        }
+
+        .scroll-down-btn:hover {
+            background: rgba(255, 255, 255, 0.06);
         }
 
         .message-bot p {
@@ -262,6 +349,13 @@
             border-radius: 999px;
             border: 1px solid var(--border-subtle);
             padding: 6px 8px 6px 14px;
+            transition: border-color 0.15s ease-out, box-shadow 0.15s ease-out, background 0.15s ease-out;
+        }
+
+        .chat-input-shell:focus-within {
+            border-color: rgba(255, 51, 102, 0.55);
+            box-shadow: 0 0 0 4px rgba(255, 51, 102, 0.14);
+            background: rgba(10, 13, 20, 0.98);
         }
 
         .chat-input-area input {
@@ -292,6 +386,19 @@
             gap: 6px;
             box-shadow: 0 0 24px rgba(255, 51, 102, 0.4);
             transition: background 0.15s ease-out, transform 0.1s ease-out, box-shadow 0.15s ease-out, opacity 0.1s ease-out;
+        }
+
+        .chat-input-area button.secondary {
+            background: rgba(255, 255, 255, 0.06);
+            color: rgba(255, 255, 255, 0.92);
+            box-shadow: none;
+            border: 1px solid rgba(255, 255, 255, 0.10);
+        }
+
+        .chat-input-area button.secondary:hover:not(:disabled) {
+            background: rgba(255, 255, 255, 0.08);
+            transform: translateY(-0.5px);
+            box-shadow: none;
         }
 
         .chat-input-area button:hover:not(:disabled) {
@@ -329,6 +436,31 @@
             color: var(--text-muted);
         }
 
+        .chat-messages::-webkit-scrollbar {
+            width: 10px;
+        }
+
+        .chat-messages::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .chat-messages::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.14);
+            border-radius: 999px;
+            border: 3px solid transparent;
+            background-clip: content-box;
+        }
+
+        .chat-messages::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.22);
+            background-clip: content-box;
+        }
+
+        @keyframes messageIn {
+            from { opacity: 0; transform: translateY(2px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
         @media (max-width: 700px) {
             body {
                 padding: 8px;
@@ -358,6 +490,15 @@
 
             .page-title h1 {
                 font-size: 0.9rem;
+            }
+
+            .pill {
+                display: none;
+            }
+
+            .scroll-down-btn {
+                right: 12px;
+                bottom: 92px;
             }
         }
     </style>
@@ -396,6 +537,8 @@
             </div>
         </div>
 
+        <button class="scroll-down-btn" id="scroll-down-btn" title="Вниз">↓</button>
+
         <section class="chat-input-area">
             <div class="chat-input-shell">
                 <input
@@ -405,6 +548,9 @@
                     maxlength="2000"
                     autocomplete="off"
                 >
+                <button id="stop-button" class="secondary" style="display:none" title="Остановить генерацию">
+                    <span>Стоп</span>
+                </button>
                 <button id="send-button">
                     <span>Отправить</span>
                     <span class="send-icon">➤</span>
@@ -459,13 +605,29 @@
     const input = document.getElementById('message-input');
     const sendBtn = document.getElementById('send-button');
     const clearBtn = document.getElementById('clear-history-btn');
+    const stopBtn = document.getElementById('stop-button');
+    const scrollDownBtn = document.getElementById('scroll-down-btn');
+
+    let currentAbortController = null;
+    let shouldAutoScroll = true;
 
     function scrollToBottom() {
+        if (!shouldAutoScroll) return;
         messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    }
+
+    function scrollToBottomForced() {
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    }
+
+    function isNearBottom() {
+        const threshold = 24;
+        return messagesDiv.scrollTop + messagesDiv.clientHeight >= messagesDiv.scrollHeight - threshold;
     }
 
     function renderBotMarkdown(el, text) {
         try {
+            el.dataset.raw = text;
             const html = marked.parse(text);
             el.innerHTML = DOMPurify.sanitize(html, {
                 ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'ul', 'ol', 'li', 'a', 'code', 'pre'],
@@ -475,6 +637,36 @@
         } catch (e) {
             el.textContent = text;
         }
+    }
+
+    function attachBotActions(botMessageEl) {
+        const actions = document.createElement('div');
+        actions.className = 'message-actions';
+
+        const copyBtn = document.createElement('button');
+        copyBtn.className = 'icon-btn';
+        copyBtn.type = 'button';
+        copyBtn.title = 'Копировать';
+        copyBtn.textContent = '⧉';
+
+        copyBtn.addEventListener('click', async () => {
+            const raw = botMessageEl.dataset.raw || botMessageEl.textContent || '';
+            try {
+                await navigator.clipboard.writeText(raw.trim());
+                copyBtn.textContent = '✓';
+                setTimeout(() => { copyBtn.textContent = '⧉'; }, 850);
+            } catch (e) {
+                // fallback: select text
+                const range = document.createRange();
+                range.selectNodeContents(botMessageEl);
+                const sel = window.getSelection();
+                sel.removeAllRanges();
+                sel.addRange(range);
+            }
+        });
+
+        actions.appendChild(copyBtn);
+        botMessageEl.appendChild(actions);
     }
 
     function addMessage(text, isUser, isError = false) {
@@ -491,6 +683,7 @@
         } else {
             div.className = 'message message-bot';
             renderBotMarkdown(div, text);
+            attachBotActions(div);
         }
 
         row.appendChild(div);
@@ -505,6 +698,7 @@
 
         const div = document.createElement('div');
         div.className = 'message message-bot';
+        attachBotActions(div);
 
         row.appendChild(div);
         messagesDiv.appendChild(row);
@@ -535,7 +729,9 @@
 
     function setEnabled(enabled) {
         input.disabled = !enabled;
-        sendBtn.disabled = !enabled;
+        sendBtn.disabled = !enabled || !input.value.trim();
+        stopBtn.disabled = enabled;
+        stopBtn.style.display = enabled ? 'none' : '';
         if (enabled) input.focus();
     }
 
@@ -549,13 +745,15 @@
         setEnabled(false);
 
         try {
+            currentAbortController = new AbortController();
             let response = await fetch('/api/chat-stream', {
                 method: 'POST',
                 headers: buildHeaders(),
                 body: JSON.stringify({
                     message: text,
                     session_id: getSessionId()
-                })
+                }),
+                signal: currentAbortController.signal
             });
 
             if (response.status === 401 && !getApiKey()) {
@@ -567,7 +765,8 @@
                         body: JSON.stringify({
                             message: text,
                             session_id: getSessionId()
-                        })
+                        }),
+                        signal: currentAbortController.signal
                     });
                 }
             }
@@ -581,7 +780,8 @@
                     body: JSON.stringify({
                         message: text,
                         session_id: getSessionId()
-                    })
+                    }),
+                    signal: currentAbortController.signal
                 });
 
                 if (fallback.status === 401 && !getApiKey()) {
@@ -593,7 +793,8 @@
                             body: JSON.stringify({
                                 message: text,
                                 session_id: getSessionId()
-                            })
+                            }),
+                            signal: currentAbortController.signal
                         });
                     }
                 }
@@ -633,8 +834,13 @@
             }
         } catch (error) {
             hideTyping();
-            addMessage(`❌ ${error.message}`, false, true);
+            if (error && (error.name === 'AbortError' || String(error.message || '').toLowerCase().includes('aborted'))) {
+                addMessage('⏹ Генерация остановлена.', false, true);
+            } else {
+                addMessage(`❌ ${error.message}`, false, true);
+            }
         } finally {
+            currentAbortController = null;
             setEnabled(true);
         }
     }
@@ -683,8 +889,29 @@
         }
     });
     clearBtn.addEventListener('click', clearHistory);
+    stopBtn.addEventListener('click', () => {
+        if (currentAbortController) {
+            currentAbortController.abort();
+        }
+    });
+
+    input.addEventListener('input', () => {
+        sendBtn.disabled = input.disabled || !input.value.trim();
+    });
+
+    messagesDiv.addEventListener('scroll', () => {
+        shouldAutoScroll = isNearBottom();
+        scrollDownBtn.classList.toggle('visible', !shouldAutoScroll);
+    });
+
+    scrollDownBtn.addEventListener('click', () => {
+        shouldAutoScroll = true;
+        scrollDownBtn.classList.remove('visible');
+        scrollToBottomForced();
+    });
 
     input.focus();
+    sendBtn.disabled = !input.value.trim();
 </script>
 </body>
 </html>
