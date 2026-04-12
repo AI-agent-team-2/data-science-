@@ -19,6 +19,9 @@ class TokenTrackingCallbackHandler(BaseCallbackHandler):
 
     def on_llm_end(self, response: LLMResult, **kwargs: Any) -> None:
         """Вызывается при завершении работы LLM."""
+        run_metadata = kwargs.get("metadata", {})
+        user_id = run_metadata.get("user_id", "unknown")
+
         for generation in response.generations:
             for chunk in generation:
                 info = chunk.generation_info
@@ -26,11 +29,11 @@ class TokenTrackingCallbackHandler(BaseCallbackHandler):
                     usage = info["token_usage"]
                     prompt = usage.get("prompt_tokens", 0)
                     completion = usage.get("completion_tokens", 0)
-                    token_manager.update_usage(prompt, completion)
-                    logger.debug(f"Tokens updated: +{prompt} prompt, +{completion} completion")
+                    token_manager.update_usage(user_id, prompt, completion)
+                    logger.debug(f"Tokens updated for {user_id}: +{prompt} prompt, +{completion} completion")
 
 
-def create_chat_model() -> ChatOpenAI:
+def create_chat_model(user_id: str = "unknown") -> ChatOpenAI:
     """
     Создает основной LLM-клиент приложения.
 
@@ -39,8 +42,8 @@ def create_chat_model() -> ChatOpenAI:
     ChatOpenAI
         Инициализированный клиент чата.
     """
-    if not token_manager.has_budget():
-        logger.error("Token budget exceeded before LLM call")
+    if not token_manager.has_budget(user_id):
+        logger.error(f"Token budget exceeded for {user_id} before LLM call")
         raise RuntimeError("Token budget exceeded. Please contact support.")
 
     return ChatOpenAI(

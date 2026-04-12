@@ -57,6 +57,7 @@ DEFAULT_RATE_LIMIT_WINDOW_SEC: Final[int] = 60
 
 # ========== Token Budget ==========
 DEFAULT_MAX_TOTAL_TOKEN_BUDGET: Final[int] = 100000
+DEFAULT_MAX_USER_TOKEN_BUDGET: Final[int] = 20000
 DEFAULT_TOKEN_BUDGET_WARNING_THRESHOLD: Final[float] = 0.8
 
 SUPPORTED_PROVIDERS: Final[set[str]] = {"openrouter", "openai"}
@@ -189,11 +190,12 @@ class Settings:
     web_min_sources: int = DEFAULT_WEB_MIN_SOURCES
 
     # ========== Rate limiting ==========
-    rate_limit_requests: int = DEFAULT_RATE_LIMIT_REQUESTS
-    rate_limit_window_sec: int = DEFAULT_RATE_LIMIT_WINDOW_SEC
+    rate_limit_requests: int = _get_env_int("RATE_LIMIT_REQUESTS", DEFAULT_RATE_LIMIT_REQUESTS)
+    rate_limit_window_sec: int = _get_env_int("RATE_LIMIT_WINDOW_SEC", DEFAULT_RATE_LIMIT_WINDOW_SEC)
 
     # ========== Token Budget ==========
     max_total_token_budget: int = _get_env_int("MAX_TOTAL_TOKEN_BUDGET", DEFAULT_MAX_TOTAL_TOKEN_BUDGET)
+    max_user_token_budget: int = _get_env_int("MAX_USER_TOKEN_BUDGET", DEFAULT_MAX_USER_TOKEN_BUDGET)
     token_budget_warning_threshold: float = _get_env_float(
         "TOKEN_BUDGET_WARNING_THRESHOLD", DEFAULT_TOKEN_BUDGET_WARNING_THRESHOLD
     )
