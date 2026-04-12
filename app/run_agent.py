@@ -29,6 +29,8 @@ from app.context_engine import (
 )
 from app.graph import model, model_circuit_breaker
 from app.history_store import load_messages, save_turn
+from app.observability.rate_limiter import rate_limiter
+from app.observability.token_usage import token_manager
 from app.observability import (
     get_langchain_callback_handler,
     hash_user_id,
@@ -92,6 +94,23 @@ def _run_agent_pipeline(payload: dict[str, Any], config: RunnableConfig | None =
 
     query = user_text.strip()
     safe_query, guard_action, risk_flags = apply_guard(query)
+
+    # 1. Rate Limit Check
+    allowed, wait_time = rate_limiter.is_allowed(session_id)
+    if not allowed:
+        return _finalize_response(
+            session_id=session_id,
+            user_text=user_text,
+            raw_assistant_text=f"Слишком много запросов. Пожалуйста, подождите {wait_time} сек.",
+        )
+
+    # 2. Token Budget Check
+    if not token_manager.has_budget(session_id):
+        return _finalize_response(
+            session_id=session_id,
+            user_text=user_text,
+            raw_assistant_text="Исчерпан лимит токенов для вашей сессии. Пожалуйста, обратитесь в поддержку.",
+        )
 
     if guard_action == "block":
         return _finalize_response(
@@ -157,6 +176,7 @@ def _run_agent_pipeline(payload: dict[str, Any], config: RunnableConfig | None =
 
     effective_model_config = child_config(config, "model_invoke") or {}
     model_metadata = {
+        "user_id": session_id,
         "provider": settings.resolved_model_provider,
         "model": settings.resolved_model_name,
         "source_order": source_order,

@@ -24,27 +24,52 @@ class TokenBudgetManager:
     """Менеджер бюджета токенов."""
     
     def __init__(self, settings: Settings):
-        self.limit: Final[int] = settings.max_total_token_budget
+        self.global_limit: Final[int] = settings.max_total_token_budget
+        self.user_limit: Final[int] = settings.max_user_token_budget
         self.warning_threshold: Final[float] = settings.token_budget_warning_threshold
-        self.usage = TokenUsage()
+        self.global_usage = TokenUsage()
+        self.user_usage: dict[str, TokenUsage] = {}
 
-    def update_usage(self, prompt: int, completion: int) -> None:
-        """Обновляет текущее использование и логирует превышение порогов."""
-        self.usage.add(prompt, completion)
+    def update_usage(self, user_id: str, prompt: int, completion: int) -> None:
+        """Обновляет использование для пользователя и глобально."""
+        # Глобальный учет
+        self.global_usage.add(prompt, completion)
+        if self.global_usage.total_tokens >= self.global_limit:
+            logger.error(f"GLOBAL TOKEN BUDGET EXCEEDED: {self.global_usage.total_tokens}/{self.global_limit}")
+        elif self.global_usage.total_tokens >= self.global_limit * self.warning_threshold:
+            logger.warning(f"GLOBAL TOKEN BUDGET WARNING: {self.global_usage.total_tokens}/{self.global_limit}")
+
+        # Пользовательский учет
+        if user_id not in self.user_usage:
+            self.user_usage[user_id] = TokenUsage()
         
-        if self.usage.total_tokens >= self.limit:
-            logger.error(f"TOKEN BUDGET EXCEEDED: {self.usage.total_tokens}/{self.limit}")
-        elif self.usage.total_tokens >= self.limit * self.warning_threshold:
-            logger.warning(f"TOKEN BUDGET WARNING: {self.usage.total_tokens}/{self.limit}")
+        u_usage = self.user_usage[user_id]
+        u_usage.add(prompt, completion)
+        
+        if u_usage.total_tokens >= self.user_limit:
+            logger.error(f"USER TOKEN BUDGET EXCEEDED for {user_id}: {u_usage.total_tokens}/{self.user_limit}")
+        elif u_usage.total_tokens >= self.user_limit * self.warning_threshold:
+            logger.warning(f"USER TOKEN BUDGET WARNING for {user_id}: {u_usage.total_tokens}/{self.user_limit}")
 
-    def has_budget(self, estimated_needed: int = 500) -> bool:
-        """Проверяет, достаточно ли бюджета для следующего запроса."""
-        return (self.usage.total_tokens + estimated_needed) < self.limit
+    def has_budget(self, user_id: str, estimated_needed: int = 500) -> bool:
+        """Проверяет, достаточно ли бюджета (глобального и пользовательского)."""
+        global_ok = (self.global_usage.total_tokens + estimated_needed) < self.global_limit
+        
+        u_usage = self.user_usage.get(user_id)
+        user_ok = True
+        if u_usage:
+            user_ok = (u_usage.total_tokens + estimated_needed) < self.user_limit
+        else:
+            user_ok = estimated_needed < self.user_limit
 
-    @property
-    def remaining(self) -> int:
-        """Возвращает остаток бюджета."""
-        return max(0, self.limit - self.usage.total_tokens)
+        return global_ok and user_ok
+
+    def get_user_remaining(self, user_id: str) -> int:
+        """Возвращает остаток бюджета пользователя."""
+        u_usage = self.user_usage.get(user_id)
+        if not u_usage:
+            return self.user_limit
+        return max(0, self.user_limit - u_usage.total_tokens)
 
 # Инициализируем глобальный менеджер (в реальном приложении может быть привязан к сессии)
 from app.config import settings
