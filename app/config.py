@@ -54,11 +54,17 @@ DEFAULT_WEB_MIN_SOURCES: Final[int] = 2
 # ========== Rate limiting ==========
 DEFAULT_RATE_LIMIT_REQUESTS: Final[int] = 10
 DEFAULT_RATE_LIMIT_WINDOW_SEC: Final[int] = 60
+DEFAULT_RATE_LIMIT_MAX_USERS: Final[int] = 50000
+DEFAULT_RATE_LIMIT_USER_TTL_SEC: Final[int] = 24 * 60 * 60
+DEFAULT_RATE_LIMIT_PRUNE_EVERY: Final[int] = 200
 
 # ========== Token Budget ==========
 DEFAULT_MAX_TOTAL_TOKEN_BUDGET: Final[int] = 100000
 DEFAULT_MAX_USER_TOKEN_BUDGET: Final[int] = 20000
 DEFAULT_TOKEN_BUDGET_WARNING_THRESHOLD: Final[float] = 0.8
+DEFAULT_TOKEN_BUDGET_MAX_USERS: Final[int] = 50000
+DEFAULT_TOKEN_BUDGET_USER_TTL_SEC: Final[int] = 24 * 60 * 60
+DEFAULT_TOKEN_BUDGET_PRUNE_EVERY: Final[int] = 200
 
 SUPPORTED_PROVIDERS: Final[set[str]] = {"openrouter", "openai"}
 SUPPORTED_STARTUP_INDEX_MODES: Final[set[str]] = {"never", "if_empty", "always"}
@@ -192,6 +198,9 @@ class Settings:
     # ========== Rate limiting ==========
     rate_limit_requests: int = _get_env_int("RATE_LIMIT_REQUESTS", DEFAULT_RATE_LIMIT_REQUESTS)
     rate_limit_window_sec: int = _get_env_int("RATE_LIMIT_WINDOW_SEC", DEFAULT_RATE_LIMIT_WINDOW_SEC)
+    rate_limit_max_users: int = _get_env_int("RATE_LIMIT_MAX_USERS", DEFAULT_RATE_LIMIT_MAX_USERS)
+    rate_limit_user_ttl_sec: int = _get_env_int("RATE_LIMIT_USER_TTL_SEC", DEFAULT_RATE_LIMIT_USER_TTL_SEC)
+    rate_limit_prune_every: int = _get_env_int("RATE_LIMIT_PRUNE_EVERY", DEFAULT_RATE_LIMIT_PRUNE_EVERY)
 
     # ========== Token Budget ==========
     max_total_token_budget: int = _get_env_int("MAX_TOTAL_TOKEN_BUDGET", DEFAULT_MAX_TOTAL_TOKEN_BUDGET)
@@ -199,6 +208,9 @@ class Settings:
     token_budget_warning_threshold: float = _get_env_float(
         "TOKEN_BUDGET_WARNING_THRESHOLD", DEFAULT_TOKEN_BUDGET_WARNING_THRESHOLD
     )
+    token_budget_max_users: int = _get_env_int("TOKEN_BUDGET_MAX_USERS", DEFAULT_TOKEN_BUDGET_MAX_USERS)
+    token_budget_user_ttl_sec: int = _get_env_int("TOKEN_BUDGET_USER_TTL_SEC", DEFAULT_TOKEN_BUDGET_USER_TTL_SEC)
+    token_budget_prune_every: int = _get_env_int("TOKEN_BUDGET_PRUNE_EVERY", DEFAULT_TOKEN_BUDGET_PRUNE_EVERY)
 
     # ========== Web API security ==========
     web_api_key: str = _get_env_str("WEB_API_KEY")
