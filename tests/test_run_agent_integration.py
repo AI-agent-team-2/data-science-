@@ -81,6 +81,41 @@ class RunAgentIntegrationTests(unittest.TestCase):
     @patch("app.run_agent.invoke_with_timeout")
     @patch("app.run_agent.build_context")
     @patch("app.run_agent.load_messages", return_value=[])
+    def test_run_agent_respects_source_order_override(
+        self,
+        _mock_history: MagicMock,
+        mock_build_context: MagicMock,
+        mock_invoke: MagicMock,
+        mock_save_turn: MagicMock,
+    ) -> None:
+        mock_build_context.return_value = type(
+            "Ctx",
+            (),
+            {
+                "context_text": "[RAG] text=ok",
+                "web_urls": [],
+                "used_web": False,
+                "used_source": "rag",
+                "terminal_response": "",
+                "failed_sources": [],
+                "attempted_sources": ["rag"],
+                "source_status_map": {"rag": "used"},
+                "fallback_reason": "primary_source_succeeded",
+            },
+        )()
+        mock_invoke.return_value = InvocationResult(status="ok", value=AIMessage(content="Короткий ответ."))
+
+        override = ["web", "rag", "lookup"]
+        run_agent("Какие новинки сантехники 2026?", user_id="u1", source_order_override=override)
+
+        args, _kwargs = mock_build_context.call_args
+        self.assertGreaterEqual(len(args), 2)
+        self.assertEqual(args[1], override)
+
+    @patch("app.run_agent.save_turn")
+    @patch("app.run_agent.invoke_with_timeout")
+    @patch("app.run_agent.build_context")
+    @patch("app.run_agent.load_messages", return_value=[])
     def test_run_agent_blocks_prompt_injection_before_context_build(
         self,
         _mock_history: MagicMock,

@@ -47,12 +47,15 @@ from app.routing import (
 logger = logging.getLogger(__name__)
 
 
-def run_agent(user_text: str, user_id: str = "unknown") -> str:
+def run_agent(user_text: str, user_id: str = "unknown", *, source_order_override: list[str] | None = None) -> str:
     """Выполняет полный цикл ответа пользователю."""
     session_id = user_id or "unknown"
     query = user_text.strip()
     hashed_user = hash_user_id(session_id)
-    source_order = resolve_source_order(query)
+    if source_order_override is not None:
+        source_order = [str(value) for value in source_order_override if str(value)]
+    else:
+        source_order = resolve_source_order(query)
     intent = detect_intent(query)
     _, guard_action, risk_flags = apply_guard(query)
 
