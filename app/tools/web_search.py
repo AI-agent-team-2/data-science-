@@ -11,7 +11,6 @@ from typing import Any, Final
 from langchain_core.tools import tool
 
 from app.config import settings
-from app.observability import sanitize_text
 from app.tools.response_utils import build_tool_payload, empty_results_payload, error_payload
 
 logger = logging.getLogger(__name__)
