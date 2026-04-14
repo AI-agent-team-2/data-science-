@@ -5,7 +5,6 @@ import logging
 from langchain_core.tools import tool
 
 from app.config import settings
-from app.observability import sanitize_text
 from app.rag.retriever import ChromaRetriever
 from app.tools.response_utils import build_tool_payload, empty_results_payload, error_payload
 

@@ -5,7 +5,6 @@ from typing import Any, Final, TypedDict
 
 from langchain_core.tools import tool
 
-from app.observability import sanitize_text
 from app.rag.retriever import ProductRetriever
 from app.tools.response_utils import build_tool_payload, empty_results_payload, error_payload
 

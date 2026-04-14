@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 from threading import Lock
 from typing import Final
+from collections import OrderedDict
 
 from app.config import Settings, settings
 
 logger = logging.getLogger(__name__)
+
 
 @dataclass
 class TokenUsage:
@@ -21,6 +24,13 @@ class TokenUsage:
         self.completion_tokens += completion
         self.total_tokens += (prompt + completion)
 
+
+@dataclass
+class _UserUsageRecord:
+    usage: TokenUsage
+    last_seen: float
+
+
 class TokenBudgetManager:
     """Менеджер бюджета токенов."""
     
@@ -28,6 +38,9 @@ class TokenBudgetManager:
         self.global_limit: Final[int] = settings.max_total_token_budget
         self.user_limit: Final[int] = settings.max_user_token_budget
         self.warning_threshold: Final[float] = settings.token_budget_warning_threshold
+        self.max_users: Final[int] = max(1, int(settings.token_budget_max_users))
+        self.user_ttl_sec: Final[int] = max(1, int(settings.token_budget_user_ttl_sec))
+        self.prune_every: Final[int] = max(1, int(settings.token_budget_prune_every))
         self.global_usage = TokenUsage()
         self.user_usage: dict[str, TokenUsage] = {}
         self._lock = Lock()
