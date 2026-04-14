@@ -27,7 +27,7 @@ from app.context_engine import (
     smalltalk_response,
     tool_failure_response,
 )
-from app.graph import model, model_circuit_breaker
+from app.graph import get_model, model_circuit_breaker
 from app.history_store import load_messages, save_turn
 from app.observability.rate_limiter import rate_limiter
 from app.observability.token_usage import token_manager
@@ -198,7 +198,7 @@ def _run_agent_pipeline(payload: dict[str, Any], config: RunnableConfig | None =
         effective_model_config["metadata"] = model_metadata
 
     response = invoke_with_timeout(
-        lambda payload_input: model.invoke(payload_input, config=effective_model_config),
+        lambda payload_input: get_model(session_id).invoke(payload_input, config=effective_model_config),
         model_input,
         timeout_sec=settings.model_timeout_sec,
         breaker=model_circuit_breaker,

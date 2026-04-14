@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any
+from threading import Lock
 
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.outputs import LLMResult
@@ -56,10 +57,6 @@ def create_chat_model(user_id: str = "unknown") -> ChatOpenAI:
     ChatOpenAI
         Инициализированный клиент чата.
     """
-    if not token_manager.has_budget(user_id):
-        logger.error(f"Token budget exceeded for {user_id} before LLM call")
-        raise RuntimeError("Token budget exceeded. Please contact support.")
-
     return ChatOpenAI(
         model=settings.resolved_model_name,
         temperature=0,
@@ -71,7 +68,24 @@ def create_chat_model(user_id: str = "unknown") -> ChatOpenAI:
     )
 
 
-model = create_chat_model()
+_model: ChatOpenAI | None = None
+_model_lock: Lock = Lock()
+
+
+def get_model(user_id: str = "unknown") -> ChatOpenAI:
+    """Возвращает singleton LLM-клиент без сайд-эффектов на импорт."""
+    if not token_manager.has_budget(user_id):
+        logger.error("Token budget exceeded for %s before LLM call", user_id)
+        raise RuntimeError("Token budget exceeded. Please contact support.")
+
+    global _model
+    if _model is not None:
+        return _model
+
+    with _model_lock:
+        if _model is None:
+            _model = create_chat_model(user_id=user_id)
+        return _model
 
 
 def create_model_circuit_breaker() -> CircuitBreaker:

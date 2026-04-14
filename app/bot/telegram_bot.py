@@ -184,14 +184,14 @@ def _recognize_photo(image_bytes: bytes) -> str:
     """Отправляет фото в Vision LLM и возвращает распознанное описание."""
     from app.agent.invoke import invoke_with_timeout
     from app.config import settings
-    from app.graph import model, model_circuit_breaker
+    from app.graph import get_model, model_circuit_breaker
     from langchain_core.messages import HumanMessage, SystemMessage
 
     prepared = prepare_image_for_vision(image_bytes)
     image_base64 = base64.b64encode(prepared).decode("utf-8")
 
     result = invoke_with_timeout(
-        lambda payload_input: model.invoke(payload_input),
+        lambda payload_input: get_model("vision").invoke(payload_input),
         [
             SystemMessage(content=VISION_SYSTEM_PROMPT),
             HumanMessage(
