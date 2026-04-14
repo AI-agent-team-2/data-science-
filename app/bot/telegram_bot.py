@@ -2,16 +2,13 @@ from __future__ import annotations
 
 import base64
 import logging
-import sys
-from pathlib import Path
+import time
+from dataclasses import dataclass
+from threading import Lock
 from typing import Final
 
 import telebot
 from telebot.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
-
-# Позволяет запускать файл напрямую: `python app\bot\telegram_bot.py`.
-if __package__ is None or __package__ == "":
-    sys.path.append(str(Path(__file__).resolve().parents[2]))
 
 from app.config import settings
 from app.history_store import clear_history
@@ -21,7 +18,6 @@ from app.rag.health import get_index_health
 from app.run_agent import run_agent
 from app.vision import prepare_image_for_vision
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 BOT_VERSION: Final[str] = "2.0.0"
@@ -87,6 +83,38 @@ VISION_USER_PROMPT: Final[str] = "Что это за сантехническо�
 KNOWN_COMMANDS: Final[list[str]] = ["start", "help", "clear", "status", "id"]
 
 bot = telebot.TeleBot(settings.telegram_token, threaded=True)
+
+MODE_OVERRIDE_TTL_SEC: Final[int] = 120
+
+
+@dataclass(frozen=True)
+class _ModeOverride:
+    mode: str
+    expires_at: float
+
+
+_mode_override_lock: Lock = Lock()
+_mode_override_by_user: dict[str, _ModeOverride] = {}
+
+
+def _set_mode_override(user_id: str, mode: str) -> None:
+    expires_at = time.time() + MODE_OVERRIDE_TTL_SEC
+    with _mode_override_lock:
+        _mode_override_by_user[str(user_id)] = _ModeOverride(mode=str(mode), expires_at=expires_at)
+
+
+def _pop_mode_override(user_id: str) -> str | None:
+    now = time.time()
+    key = str(user_id)
+    with _mode_override_lock:
+        record = _mode_override_by_user.get(key)
+        if record is None:
+            return None
+        if record.expires_at <= now:
+            del _mode_override_by_user[key]
+            return None
+        del _mode_override_by_user[key]
+        return record.mode
 
 
 def _build_help_keyboard() -> InlineKeyboardMarkup:
@@ -170,9 +198,11 @@ def _handle_unknown_command(message: Message) -> None:
 def _send_search_hint(call: CallbackQuery, mode: str) -> None:
     """Отправляет подсказку для веб-поиска или поиска по базе знаний."""
     if mode == "web":
+        _set_mode_override(str(call.from_user.id), "web")
         answer_text = "🔍 Напиши свой запрос для поиска в интернете"
         message_text = "Введи запрос, и я найду информацию в интернете:"
     else:
+        _set_mode_override(str(call.from_user.id), "rag")
         answer_text = "📚 Напиши свой запрос для поиска в базе знаний"
         message_text = "Введи запрос, и я найду информацию в базе:"
 
@@ -180,18 +210,35 @@ def _send_search_hint(call: CallbackQuery, mode: str) -> None:
     bot.send_message(call.message.chat.id, message_text)
 
 
-def _recognize_photo(image_bytes: bytes) -> str:
+def _recognize_photo(image_bytes: bytes, *, user_id: str) -> str:
     """Отправляет фото в Vision LLM и возвращает распознанное описание."""
     from app.agent.invoke import invoke_with_timeout
+    from app.agent.invoke import child_config
     from app.config import settings
-    from app.graph import model, model_circuit_breaker
+    from app.graph import get_model, model_circuit_breaker
+    from app.observability import get_langchain_callback_handler
     from langchain_core.messages import HumanMessage, SystemMessage
+    from langchain_core.runnables import RunnableConfig
 
     prepared = prepare_image_for_vision(image_bytes)
     image_base64 = base64.b64encode(prepared).decode("utf-8")
 
+    callback_handler = get_langchain_callback_handler()
+    hashed_user = hash_user_id(user_id)
+    root_config: RunnableConfig = {
+        "callbacks": [callback_handler] if callback_handler is not None else [],
+        "run_name": "vision_request",
+        "metadata": {
+            "user_id": user_id,
+            "trace_session_id": hashed_user,
+            "trace_user_id": hashed_user,
+            "trace_tags": ["telegram", "san-bot", "vision"],
+        },
+    }
+    effective_model_config = child_config(root_config, "vision_model_invoke") or {}
+
     result = invoke_with_timeout(
-        lambda payload_input: model.invoke(payload_input),
+        lambda payload_input: get_model("vision").invoke(payload_input, config=effective_model_config),
         [
             SystemMessage(content=VISION_SYSTEM_PROMPT),
             HumanMessage(
@@ -269,7 +316,13 @@ def _handle_text_message(message: Message) -> None:
 
     session_user_id = str(message.from_user.id)
     logger.debug("Обработка сообщения Telegram для сессии=%s", hash_user_id(session_user_id))
-    answer = run_agent(text, user_id=session_user_id)
+    mode_override = _pop_mode_override(session_user_id)
+    if mode_override == "web":
+        answer = run_agent(text, user_id=session_user_id, source_order_override=["web", "rag", "lookup"])
+    elif mode_override == "rag":
+        answer = run_agent(text, user_id=session_user_id, source_order_override=["rag", "lookup"])
+    else:
+        answer = run_agent(text, user_id=session_user_id)
     bot.reply_to(message, answer)
 
 
@@ -336,7 +389,7 @@ def photo_handler(message: Message) -> None:
         downloaded = bot.download_file(file_info.file_path)
 
         # Распознать через Vision LLM
-        description = _recognize_photo(downloaded)
+        description = _recognize_photo(downloaded, user_id=user_id)
 
         # Найти похожие товары
         products = _find_similar_products(description)
@@ -389,6 +442,7 @@ def text_handler(message: Message) -> None:
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     logger.info("Запуск SAN Bot v%s", BOT_VERSION)
     logger.info("Доступные команды: %s", KNOWN_COMMANDS)
     logger.info("Распознавание фото: включено (Vision LLM)")

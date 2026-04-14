@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import atexit
 import logging
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from contextvars import copy_context
 from dataclasses import dataclass
 from typing import Any, Callable
+from functools import lru_cache
 
 from langchain_core.runnables import RunnableConfig
 
@@ -13,6 +15,24 @@ from app.context_engine import ToolExecutionResult, parse_tool_payload
 from app.resilience.circuit_breaker import CircuitBreaker, CircuitBreakerOpenError
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_INVOKE_MAX_WORKERS = 8
+
+
+@lru_cache(maxsize=1)
+def _get_executor() -> ThreadPoolExecutor:
+    max_workers = int(getattr(settings, "invoke_max_workers", DEFAULT_INVOKE_MAX_WORKERS) or DEFAULT_INVOKE_MAX_WORKERS)
+    max_workers = max(1, min(64, max_workers))
+    executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="sanbot-invoke")
+
+    def _shutdown() -> None:
+        try:
+            executor.shutdown(wait=False, cancel_futures=True)
+        except Exception:
+            return
+
+    atexit.register(_shutdown)
+    return executor
 
 
 @dataclass(frozen=True)
@@ -68,28 +88,31 @@ def invoke_with_timeout(
                 error_message=str(exc),
             )
 
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        ctx = copy_context()
-        future = executor.submit(ctx.run, _runner)
-        try:
-            value = future.result(timeout=max(1, timeout_sec))
-            if breaker is not None and token is not None:
-                breaker.record_success(token)
-            return InvocationResult(status="ok", value=value)
-        except FuturesTimeoutError:
-            logger.warning("Операция превысила таймаут %s сек", timeout_sec)
-            if breaker is not None and token is not None:
-                breaker.record_failure(token)
-            return InvocationResult(status="failed", error_type="timeout", error_message=f"timeout>{timeout_sec}s")
-        except Exception as exc:
-            logger.exception("Операция завершилась с ошибкой")
-            if breaker is not None and token is not None:
-                breaker.record_failure(token)
-            return InvocationResult(
-                status="failed",
-                error_type="exception",
-                error_message=exc.__class__.__name__,
-            )
+    executor = _get_executor()
+    ctx = copy_context()
+    future = executor.submit(ctx.run, _runner)
+    try:
+        value = future.result(timeout=max(1, timeout_sec))
+        if breaker is not None and token is not None:
+            breaker.record_success(token)
+        return InvocationResult(status="ok", value=value)
+    except FuturesTimeoutError:
+        # NB: ThreadPoolExecutor cannot forcibly terminate a running thread.
+        # We avoid blocking the caller by not waiting for executor shutdown here.
+        future.cancel()
+        logger.warning("Операция превысила таймаут %s сек", timeout_sec)
+        if breaker is not None and token is not None:
+            breaker.record_failure(token)
+        return InvocationResult(status="failed", error_type="timeout", error_message=f"timeout>{timeout_sec}s")
+    except Exception as exc:
+        logger.exception("Операция завершилась с ошибкой")
+        if breaker is not None and token is not None:
+            breaker.record_failure(token)
+        return InvocationResult(
+            status="failed",
+            error_type="exception",
+            error_message=exc.__class__.__name__,
+        )
 
 
 def invoke_tool(

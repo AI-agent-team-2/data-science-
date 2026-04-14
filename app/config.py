@@ -50,6 +50,7 @@ DEFAULT_MAX_RAG_CONTEXT_ITEMS: Final[int] = 4
 DEFAULT_MAX_LOOKUP_CONTEXT_ITEMS: Final[int] = 5
 DEFAULT_MAX_WEB_CONTEXT_ITEMS: Final[int] = 5
 DEFAULT_WEB_MIN_SOURCES: Final[int] = 2
+DEFAULT_INVOKE_MAX_WORKERS: Final[int] = 8
 
 # ========== Rate limiting ==========
 DEFAULT_RATE_LIMIT_REQUESTS: Final[int] = 10
@@ -156,6 +157,7 @@ class Settings:
     tool_timeout_sec: int = DEFAULT_TOOL_TIMEOUT_SEC
     model_timeout_sec: int = DEFAULT_MODEL_TIMEOUT_SEC
     model_max_retries: int = _get_env_int("MODEL_MAX_RETRIES", DEFAULT_MODEL_MAX_RETRIES)
+    invoke_max_workers: int = _get_env_int("INVOKE_MAX_WORKERS", DEFAULT_INVOKE_MAX_WORKERS)
 
     # ========== Circuit breaker (LLM API) ==========
     model_circuit_breaker_enabled: bool = _get_env_bool(
