@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import sqlite3
 from pathlib import Path
+from threading import Lock
 from typing import TypeAlias
 
 from app.config import settings
@@ -23,6 +24,9 @@ CREATE TABLE IF NOT EXISTS history (
 
 CREATE_SESSION_INDEX_SQL = "CREATE INDEX IF NOT EXISTS idx_session_id ON history(session_id)"
 
+_db_init_lock: Lock = Lock()
+_db_initialized = False
+
 
 def get_connection() -> sqlite3.Connection:
     """Создает соединение с SQLite и включает словарный доступ к строкам."""
@@ -35,7 +39,7 @@ def get_connection() -> sqlite3.Connection:
     return connection
 
 
-def init_db() -> None:
+def init_db() -> bool:
     """Инициализирует таблицы и индексы для хранения истории диалогов."""
     try:
         connection = get_connection()
@@ -44,14 +48,29 @@ def init_db() -> None:
             cursor.execute(CREATE_HISTORY_TABLE_SQL)
             cursor.execute(CREATE_SESSION_INDEX_SQL)
             connection.commit()
+            return True
         finally:
             connection.close()
     except Exception:
         logger.exception("Не удалось инициализировать базу истории")
+        return False
+
+
+def ensure_db_initialized() -> None:
+    """Гарантирует инициализацию схемы SQLite без сайд-эффектов на import."""
+    global _db_initialized
+    if _db_initialized:
+        return
+
+    with _db_init_lock:
+        if _db_initialized:
+            return
+        _db_initialized = init_db()
 
 
 def save_turn(session_id: str, user_text: str, assistant_text: str) -> None:
     """Сохраняет один шаг диалога и запускает очистку устаревших записей."""
+    ensure_db_initialized()
     try:
         connection = get_connection()
         try:
@@ -76,6 +95,7 @@ def load_messages(session_id: str, limit: int | None = None) -> list[HistoryMess
 
     Возвращает список вида: [("human", text), ("ai", text), ...].
     """
+    ensure_db_initialized()
     effective_limit = max(1, int(limit or settings.history_max_messages))
     ttl_days = max(1, settings.history_ttl_days)
 
@@ -116,6 +136,7 @@ def load_turns(session_id: str, limit: int | None = None) -> list[dict[str, str]
     Returns:
         list[dict[str, str]]: [{"user": "...", "assistant": "...", "timestamp": "..."}]
     """
+    ensure_db_initialized()
     effective_limit = max(1, int(limit or settings.history_max_messages))
     ttl_days = max(1, settings.history_ttl_days)
 
@@ -155,6 +176,7 @@ def load_turns(session_id: str, limit: int | None = None) -> list[dict[str, str]
 
 def clear_history(session_id: str) -> None:
     """Очищает историю диалога конкретной сессии."""
+    ensure_db_initialized()
     try:
         connection = get_connection()
         try:
@@ -169,6 +191,7 @@ def clear_history(session_id: str) -> None:
 
 def _cleanup_old(session_id: str) -> None:
     """Удаляет сообщения старше `history_ttl_days` для указанной сессии."""
+    ensure_db_initialized()
     ttl_days = max(1, settings.history_ttl_days)
 
     try:
@@ -185,5 +208,3 @@ def _cleanup_old(session_id: str) -> None:
     except Exception:
         logger.exception("Не удалось удалить устаревшую историю для session_id=%s", session_id)
 
-
-init_db()
