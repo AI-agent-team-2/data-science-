@@ -75,5 +75,5 @@ docker compose up -d san-bot san-bot-web san-bot-proxy
    - проверить `STARTUP_INDEX_MODE`, если контейнер стартует на новой пустой базе.
 4. Web UI/API возвращает `401` или `503`:
    - проверить, что в env задан `WEB_API_KEY`;
-   - проверить, что контейнер `san-bot-proxy` запущен и проксирует `/api/*`, а клиент действительно передает `X-API-Key`;
+   - проверить, что контейнер `san-bot-proxy` запущен и проксирует `/api/*` с заголовком `X-API-Key`;
    - проверить `WEB_ALLOWED_ORIGINS` для используемого домена/IP и порта.
