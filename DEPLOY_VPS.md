@@ -120,5 +120,5 @@ docker compose up -d san-bot san-bot-web san-bot-proxy
 1. `docker compose ps` показывает `san-bot`, `san-bot-web` и `san-bot-proxy` в `healthy`/`running`.
 2. Бот отвечает на `/start` и 1-2 доменных запроса.
 3. История диалога сохраняется после перезапуска контейнера.
-4. Web UI доступен через `http://<VPS_IP>:8000` без ручного ввода API-ключа (ключ инжектится proxy в `/api/*`).
+4. Web UI доступен через `http://<VPS_IP>:8000` и может запросить `WEB_API_KEY` для вызовов `/api/*` (передается как `X-API-Key`).
 5. При `LANGFUSE_ENABLED=true` trace появляются, при `false` бот работает без деградации.
