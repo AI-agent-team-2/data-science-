@@ -39,6 +39,9 @@ Thumbs.db
 rag_notebook.ipynb
 langfuse_notebook.ipynb
 
+# Local redteam lab workspace (not part of app runtime)
+llm-redteam/
+
 # Legacy archived code
 app/legacy/
 github_actions_deploy
