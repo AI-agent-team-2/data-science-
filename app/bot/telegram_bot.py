@@ -2,16 +2,10 @@ from __future__ import annotations
 
 import base64
 import logging
-import sys
-from pathlib import Path
 from typing import Final
 
 import telebot
 from telebot.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
-
-# Позволяет запускать файл напрямую: `python app\bot\telegram_bot.py`.
-if __package__ is None or __package__ == "":
-    sys.path.append(str(Path(__file__).resolve().parents[2]))
 
 from app.config import settings
 from app.history_store import clear_history

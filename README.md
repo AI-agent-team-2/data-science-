@@ -160,12 +160,6 @@ python -m app.rag.ingest
 python -m app.bot.telegram_bot
 ```
 
-Альтернативный запуск:
-
-```bash
-python app/bot/telegram_bot.py
-```
-
 ## Команды бота
 
 - `/start` — приветствие
