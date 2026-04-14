@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 from threading import Lock
+from uuid import UUID
 
 from langchain_core.callbacks import BaseCallbackHandler
 from langchain_core.outputs import LLMResult
@@ -18,6 +19,46 @@ logger = logging.getLogger(__name__)
 class TokenTrackingCallbackHandler(BaseCallbackHandler):
     """Обработчик для отслеживания использования токенов."""
 
+    def __init__(self) -> None:
+        super().__init__()
+        self._prompt_token_estimates: dict[str, int] = {}
+        self._lock: Lock = Lock()
+        self._max_tracked_runs: int = 2000
+
+    def _estimate_tokens(self, text: str) -> int:
+        cleaned = str(text or "")
+        if not cleaned:
+            return 0
+        return max(1, len(cleaned) // 4)
+
+    def on_chat_model_start(
+        self,
+        serialized: dict[str, Any],
+        messages: list[list[Any]],
+        run_id: UUID,
+        **kwargs: Any,
+    ) -> None:
+        try:
+            parts: list[str] = []
+            for turn in messages or []:
+                for msg in turn or []:
+                    content = getattr(msg, "content", "")
+                    if isinstance(content, str):
+                        parts.append(content)
+                    elif isinstance(content, list):
+                        for item in content:
+                            if isinstance(item, dict) and isinstance(item.get("text"), str):
+                                parts.append(item["text"])
+            estimate = self._estimate_tokens("\n".join(parts))
+        except Exception:
+            return
+
+        key = str(run_id)
+        with self._lock:
+            self._prompt_token_estimates[key] = estimate
+            if len(self._prompt_token_estimates) > self._max_tracked_runs:
+                self._prompt_token_estimates.pop(next(iter(self._prompt_token_estimates)), None)
+
     def on_llm_end(self, response: LLMResult, **kwargs: Any) -> None:
         """Вызывается при завершении работы LLM."""
         run_metadata = kwargs.get("metadata", {})
@@ -28,10 +69,17 @@ class TokenTrackingCallbackHandler(BaseCallbackHandler):
         if response.llm_output and isinstance(response.llm_output, dict):
             usage = response.llm_output.get("token_usage") or response.llm_output.get("usage")
 
-        # 2. Если в корне нет, ищем в чанках (для некоторых провайдеров/стриминга)
+        # 2. Если в корне нет, ищем в чанках/сообщениях (для разных провайдеров/версий)
         if not usage:
             for generation in response.generations:
                 for chunk in generation:
+                    message = getattr(chunk, "message", None)
+                    if message is not None:
+                        meta = getattr(message, "response_metadata", None)
+                        if isinstance(meta, dict):
+                            usage = meta.get("token_usage") or meta.get("usage")
+                            if usage:
+                                break
                     info = chunk.generation_info
                     if info and ("token_usage" in info or "usage" in info):
                         usage = info.get("token_usage") or info.get("usage")
@@ -45,7 +93,38 @@ class TokenTrackingCallbackHandler(BaseCallbackHandler):
             token_manager.update_usage(user_id, prompt, completion)
             logger.debug(f"Tokens updated for {user_id}: +{prompt} prompt, +{completion} completion")
         else:
-            logger.warning(f"Could not find token usage in LLM response for {user_id}")
+            run_id = kwargs.get("run_id")
+            run_id_key = str(run_id) if run_id is not None else ""
+            prompt_estimate = 0
+            if run_id_key:
+                with self._lock:
+                    prompt_estimate = int(self._prompt_token_estimates.pop(run_id_key, 0) or 0)
+
+            completion_text = ""
+            try:
+                for generation in response.generations:
+                    for chunk in generation:
+                        message = getattr(chunk, "message", None)
+                        content = getattr(message, "content", "") if message is not None else ""
+                        if isinstance(content, str) and content.strip():
+                            completion_text = content
+                            break
+                    if completion_text:
+                        break
+            except Exception:
+                completion_text = ""
+
+            completion_estimate = self._estimate_tokens(completion_text)
+            if prompt_estimate or completion_estimate:
+                token_manager.update_usage(user_id, prompt_estimate, completion_estimate)
+                logger.warning(
+                    "Token usage missing for %s; used estimates prompt=%s completion=%s",
+                    user_id,
+                    prompt_estimate,
+                    completion_estimate,
+                )
+            else:
+                logger.warning("Could not find token usage in LLM response for %s", user_id)
 
 
 def create_chat_model(user_id: str = "unknown") -> ChatOpenAI:
