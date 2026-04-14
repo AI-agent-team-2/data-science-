@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 import unittest
+import sys
+import importlib
 from unittest.mock import MagicMock, patch
 
 
@@ -12,9 +14,12 @@ class VisionInvokeConfigTests(unittest.TestCase):
         except ModuleNotFoundError:
             self.skipTest("telebot is not installed")
 
-        os.environ.setdefault("TELEGRAM_TOKEN", "123:ABC")
+        os.environ["TELEGRAM_TOKEN"] = "123:ABC"
 
-        import app.bot.telegram_bot as telegram_bot
+        with patch("telebot.TeleBot") as _mock_bot_cls:
+            if "app.bot.telegram_bot" in sys.modules:
+                del sys.modules["app.bot.telegram_bot"]
+            telegram_bot = importlib.import_module("app.bot.telegram_bot")
 
         fake_model = MagicMock()
         fake_model.invoke.return_value = MagicMock(content="ok")
