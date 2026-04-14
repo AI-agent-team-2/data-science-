@@ -11,7 +11,7 @@ from typing import Any, Final
 from langchain_core.tools import tool
 
 from app.config import settings
-from app.tools.response_utils import build_tool_payload, empty_results_payload, error_payload
+from app.tools.response_utils import build_tool_payload, error_payload
 
 logger = logging.getLogger(__name__)
 
@@ -261,6 +261,6 @@ def web_search(query: str, max_results: int = 5) -> dict[str, Any]:
     try:
         if isinstance(result, dict) and result.get("results"):
             _save_to_cache(cache_key, result)
-    except Exception as exc:
+    except Exception:
         logger.exception("Не удалось разобрать ответ web_search для кэширования")
     return _coerce_web_payload(result)
