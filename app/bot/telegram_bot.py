@@ -15,7 +15,6 @@ from app.rag.health import get_index_health
 from app.run_agent import run_agent
 from app.vision import prepare_image_for_vision
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 BOT_VERSION: Final[str] = "2.0.0"
@@ -383,6 +382,7 @@ def text_handler(message: Message) -> None:
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     logger.info("Запуск SAN Bot v%s", BOT_VERSION)
     logger.info("Доступные команды: %s", KNOWN_COMMANDS)
     logger.info("Распознавание фото: включено (Vision LLM)")
