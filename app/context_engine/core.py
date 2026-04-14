@@ -18,18 +18,10 @@ from app.context_engine.helpers import (
     needs_technical_context as _needs_technical_context,
 )
 from app.context_engine.response import (
-    assistant_scope_response,
-    build_final_prompt,
-    clarifying_question,
-    domain_redirect_response,
-    ensure_sources_block,
-    extract_ai_text,
-    smalltalk_response,
     tool_failure_response,
 )
 from app.context_engine.web import (
     clean_web_text as _clean_web_text,
-    contains_instruction_like_text as _contains_instruction_like_text,
     enhance_search_query,
     extract_web_urls as _extract_web_urls,
     filter_safe_web_items as _filter_safe_web_items,
