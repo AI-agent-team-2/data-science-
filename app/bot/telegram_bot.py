@@ -12,7 +12,7 @@ from telebot.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMar
 
 from app.config import settings
 from app.history_store import clear_history
-from app.observability import hash_user_id
+from app.observability import get_langchain_callback_handler, hash_user_id
 from app.observability.rate_limiter import rate_limiter
 from app.graph import get_model, model_circuit_breaker
 from app.rag.health import get_index_health
@@ -216,7 +216,6 @@ def _recognize_photo(image_bytes: bytes, *, user_id: str) -> str:
     from app.agent.invoke import invoke_with_timeout
     from app.agent.invoke import child_config
     from app.config import settings
-    from app.observability import get_langchain_callback_handler
     from langchain_core.messages import HumanMessage, SystemMessage
     from langchain_core.runnables import RunnableConfig
 
