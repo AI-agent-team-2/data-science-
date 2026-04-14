@@ -173,18 +173,35 @@ def _send_search_hint(call: CallbackQuery, mode: str) -> None:
     bot.send_message(call.message.chat.id, message_text)
 
 
-def _recognize_photo(image_bytes: bytes) -> str:
+def _recognize_photo(image_bytes: bytes, *, user_id: str) -> str:
     """Отправляет фото в Vision LLM и возвращает распознанное описание."""
     from app.agent.invoke import invoke_with_timeout
+    from app.agent.invoke import child_config
     from app.config import settings
     from app.graph import get_model, model_circuit_breaker
+    from app.observability import get_langchain_callback_handler
     from langchain_core.messages import HumanMessage, SystemMessage
+    from langchain_core.runnables import RunnableConfig
 
     prepared = prepare_image_for_vision(image_bytes)
     image_base64 = base64.b64encode(prepared).decode("utf-8")
 
+    callback_handler = get_langchain_callback_handler()
+    hashed_user = hash_user_id(user_id)
+    root_config: RunnableConfig = {
+        "callbacks": [callback_handler] if callback_handler is not None else [],
+        "run_name": "vision_request",
+        "metadata": {
+            "user_id": user_id,
+            "trace_session_id": hashed_user,
+            "trace_user_id": hashed_user,
+            "trace_tags": ["telegram", "san-bot", "vision"],
+        },
+    }
+    effective_model_config = child_config(root_config, "vision_model_invoke") or {}
+
     result = invoke_with_timeout(
-        lambda payload_input: get_model("vision").invoke(payload_input),
+        lambda payload_input: get_model("vision").invoke(payload_input, config=effective_model_config),
         [
             SystemMessage(content=VISION_SYSTEM_PROMPT),
             HumanMessage(
@@ -329,7 +346,7 @@ def photo_handler(message: Message) -> None:
         downloaded = bot.download_file(file_info.file_path)
 
         # Распознать через Vision LLM
-        description = _recognize_photo(downloaded)
+        description = _recognize_photo(downloaded, user_id=user_id)
 
         # Найти похожие товары
         products = _find_similar_products(description)
