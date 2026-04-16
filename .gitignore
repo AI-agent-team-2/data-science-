@@ -7,7 +7,7 @@
 myenv/
 .venv/
 venv/
-
+myenv_new/
 # Python caches and artifacts
 __pycache__/
 *.py[cod]

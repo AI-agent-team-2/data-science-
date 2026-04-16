@@ -1,0 +1,42 @@
+name: Dynamic Security Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:  # ручной запуск
+
+jobs:
+  deepteam:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install deepeval deepteam
+      
+      - name: Run DeepTeam test
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          cd phase2_deepteam/labs/lab1_owasp_top10
+          python run.py --attacks-per-type 3 --max-concurrent 1
+      
+      - name: Check metrics against thresholds
+        run: |
+          python phase2_deepteam/check_metrics.py
+      
+      - name: Upload reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: deepteam-reports
+          path: phase2_deepteam/reports/
