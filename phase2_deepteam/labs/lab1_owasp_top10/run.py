@@ -1,7 +1,7 @@
 """
 Lab 1 (Phase 2): OWASP LLM Top-10 Dynamic Red Teaming
 
-Упрощённая версия для тестирования SAN Bot через run_agent.
+Адаптирован для тестирования SAN Bot через run_agent.
 """
 import argparse
 import json
@@ -16,13 +16,22 @@ from deepteam.frameworks import OWASPTop10
 from deepeval.models import DeepEvalBaseLLM
 from openai import OpenAI
 
-# Добавляем корень проекта в путь (абсолютный путь — работает гарантированно)
-PROJECT_ROOT = Path("C:/study/data-science-")
+# Определяем корень проекта динамически (поднимаемся на 3 уровня вверх)
+# run.py → lab1_owasp_top10 → labs → phase2_deepteam → data-science-
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.run_agent import run_agent
 
 load_dotenv(PROJECT_ROOT / ".env")
+
+
+# =========================================================
+# НАСТРОЙКА: выберите режим работы model_callback
+# =========================================================
+# USE_MOCK_CALLBACK = True      # Заглушка (для проверки DeepTeam)
+USE_MOCK_CALLBACK = False        # Реальный бот (run_agent)
+# =========================================================
 
 
 # ─── Обёртка для OpenRouter (Attacker и Judge) ────────────────────────────────
@@ -71,7 +80,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--judge-model",
-        default=os.getenv("JUDGE_MODEL", "openai/gpt-4o-mini"),
+        default=os.getenv("JUDGE_MODEL", "openai/gpt-4o"),
         help="Judge модель (оценивает ответы)"
     )
     parser.add_argument(
@@ -89,6 +98,45 @@ def build_arg_parser() -> argparse.ArgumentParser:
     return parser
 
 
+# ─── model_callback (с переключением между заглушкой и реальным ботом) ────────
+
+def model_callback_mock(input: str) -> str:
+    """Заглушка: всегда возвращает один и тот же ответ."""
+    return "I cannot answer this question as it does not relate to sanitary products."
+
+
+def model_callback_real(input: str) -> str:
+    """Реальный вызов run_agent."""
+    try:
+        print(f"\n[→] Атака: {input[:150]}...")
+        response = run_agent(input, user_id="redteam_test")
+        
+        if response is None:
+            print("[!] Ответ: None")
+            return "[ERROR] Empty response"
+        
+        print(f"[←] Ответ: {response[:200]}...")
+        
+        # Если бот отказался отвечать, Judge должен это оценить
+        if "Не могу обработать" in response or "не могу" in response.lower():
+            print("[ℹ] Бот отказался отвечать на атаку")
+        
+        return response
+        
+    except Exception as e:
+        print(f"[!] Ошибка в model_callback: {e}")
+        return f"[ERROR] {e}"
+
+
+# Выбираем нужную версию model_callback в зависимости от настройки
+if USE_MOCK_CALLBACK:
+    model_callback = model_callback_mock
+    print("🔧 Режим: ЗАГЛУШКА (mock callback)")
+else:
+    model_callback = model_callback_real
+    print("🔧 Режим: РЕАЛЬНЫЙ БОТ (run_agent)")
+
+
 # ─── Точка входа ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
@@ -101,28 +149,13 @@ if __name__ == "__main__":
     print("=" * 60)
     print("DeepTeam: OWASP LLM Top-10 Red Teaming")
     print("=" * 60)
+    print(f"Project root: {PROJECT_ROOT}")
     print(f"Target model:   {args.target_model}")
     print(f"Attacker model: {args.attacker_model}")
     print(f"Judge model:    {args.judge_model}")
     print(f"Attacks per type: {args.attacks_per_type}")
     print(f"Max concurrent: {args.max_concurrent}")
     print("=" * 60)
-
-    # ─── model_callback: вызывает вашего бота ─────────────────────────────────
-    def model_callback(input: str) -> str:
-        """Отправляет атакующий промпт в SAN Bot и возвращает ответ."""
-        try:
-            print(f"\n[→] Получен промпт (первые 100 символов): {input[:100]}...")
-            response = run_agent(input, user_id="redteam_test")
-            if response is None:
-                return "[ERROR] run_agent вернул None"
-            if not isinstance(response, str):
-                return f"[ERROR] run_agent вернул {type(response).__name__}, ожидалась str"
-            print(f"[←] Ответ (первые 100 символов): {response[:100]}...")
-            return response
-        except Exception as e:
-            print(f"[!] Ошибка в model_callback: {e}")
-            return f"[ERROR] {e}"
 
     # ─── Attacker и Judge через OpenRouter ────────────────────────────────────
     attacker_llm = OpenRouterLLM(model=args.attacker_model, api_key=api_key)
@@ -160,9 +193,9 @@ if __name__ == "__main__":
         elif hasattr(tc, 'error') and tc.error:
             errored += 1
     
-    print(f"Успешно:  {passed}")
-    print(f"Провалено: {failed}")
-    print(f"Ошибок:   {errored}")
+    print(f"Успешно (защита сработала):  {passed}")
+    print(f"Провалено (атака прошла):    {failed}")
+    print(f"Ошибок:                       {errored}")
     
     if hasattr(risk_assessment, 'pass_rate'):
         print(f"Pass rate: {risk_assessment.pass_rate:.1%}")
