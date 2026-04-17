@@ -7,7 +7,9 @@ from app.routing.intents import has_sku_signal, is_domain_query, is_noise_query
 
 ToolName = Literal["lookup", "rag", "web"]
 
-WEB_YEAR_PATTERN = re.compile(r"\b202\d\b")
+# Год в запросе — сильный сигнал "актуальности" (новинки/тренды/изменения),
+# даже если запрос доменный.
+WEB_YEAR_PATTERN = re.compile(r"\b20\d{2}\b")
 
 WEB_PRIORITY_MARKERS: tuple[str, ...] = (
     "сейчас",
@@ -60,6 +62,7 @@ STRONG_WEB_MARKERS: tuple[str, ...] = (
     "рейтинг",
     "новости",
     "что изменилось",
+    "новинки",
 )
 
 def resolve_source_order(query: str) -> list[ToolName]:

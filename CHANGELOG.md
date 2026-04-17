@@ -2,6 +2,13 @@
 
 Формат файла основан на принципах [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/).
 
+## [9] - 2026-04-08
+
+### Устойчивость LLM API
+- Добавлен circuit breaker для вызовов LLM (состояния `closed/open/half_open` + `cooldown`), чтобы ограничивать каскадные падения при деградации провайдера.
+- Вызов модели в `run_agent` и vision-вызов в Telegram теперь защищены circuit breaker’ом и возвращают предсказуемую ошибку при `open`.
+- Добавлены env-параметры `MODEL_CIRCUIT_BREAKER_*` для настройки порогов и cooldown.
+
 ## [8] - 2026-04-03
 
 ### Архитектура

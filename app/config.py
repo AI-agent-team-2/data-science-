@@ -35,6 +35,12 @@ DEFAULT_TOOL_TIMEOUT_SEC: Final[int] = 20
 DEFAULT_MODEL_TIMEOUT_SEC: Final[int] = 45
 DEFAULT_MODEL_MAX_RETRIES: Final[int] = 2
 DEFAULT_MIN_RAG_SCORE: Final[float] = 0.2
+DEFAULT_RAG_OVERLAP_BONUS_WEIGHT: Final[float] = 0.03
+# ========== Circuit breaker (LLM API) ==========
+DEFAULT_MODEL_CIRCUIT_BREAKER_ENABLED: Final[bool] = True
+DEFAULT_MODEL_CIRCUIT_BREAKER_FAILURE_THRESHOLD: Final[int] = 5
+DEFAULT_MODEL_CIRCUIT_BREAKER_COOLDOWN_SEC: Final[int] = 30
+DEFAULT_MODEL_CIRCUIT_BREAKER_HALF_OPEN_SUCCESS_THRESHOLD: Final[int] = 1
 # Product exact SKU scoring:
 # Эти значения намеренно "большие", чтобы точное совпадение по SKU стабильно
 # побеждало semantic-поиск (у которого score в диапазоне ~0..1).
@@ -44,10 +50,22 @@ DEFAULT_MAX_RAG_CONTEXT_ITEMS: Final[int] = 4
 DEFAULT_MAX_LOOKUP_CONTEXT_ITEMS: Final[int] = 5
 DEFAULT_MAX_WEB_CONTEXT_ITEMS: Final[int] = 5
 DEFAULT_WEB_MIN_SOURCES: Final[int] = 2
+DEFAULT_INVOKE_MAX_WORKERS: Final[int] = 8
 
 # ========== Rate limiting ==========
 DEFAULT_RATE_LIMIT_REQUESTS: Final[int] = 10
 DEFAULT_RATE_LIMIT_WINDOW_SEC: Final[int] = 60
+DEFAULT_RATE_LIMIT_MAX_USERS: Final[int] = 50000
+DEFAULT_RATE_LIMIT_USER_TTL_SEC: Final[int] = 24 * 60 * 60
+DEFAULT_RATE_LIMIT_PRUNE_EVERY: Final[int] = 200
+
+# ========== Token Budget ==========
+DEFAULT_MAX_TOTAL_TOKEN_BUDGET: Final[int] = 100000000
+DEFAULT_MAX_USER_TOKEN_BUDGET: Final[int] = 500000
+DEFAULT_TOKEN_BUDGET_WARNING_THRESHOLD: Final[float] = 0.8
+DEFAULT_TOKEN_BUDGET_MAX_USERS: Final[int] = 50000
+DEFAULT_TOKEN_BUDGET_USER_TTL_SEC: Final[int] = 24 * 60 * 60
+DEFAULT_TOKEN_BUDGET_PRUNE_EVERY: Final[int] = 200
 
 SUPPORTED_PROVIDERS: Final[set[str]] = {"openrouter", "openai"}
 SUPPORTED_STARTUP_INDEX_MODES: Final[set[str]] = {"never", "if_empty", "always"}
@@ -139,11 +157,33 @@ class Settings:
     tool_timeout_sec: int = DEFAULT_TOOL_TIMEOUT_SEC
     model_timeout_sec: int = DEFAULT_MODEL_TIMEOUT_SEC
     model_max_retries: int = _get_env_int("MODEL_MAX_RETRIES", DEFAULT_MODEL_MAX_RETRIES)
+    invoke_max_workers: int = _get_env_int("INVOKE_MAX_WORKERS", DEFAULT_INVOKE_MAX_WORKERS)
+
+    # ========== Circuit breaker (LLM API) ==========
+    model_circuit_breaker_enabled: bool = _get_env_bool(
+        "MODEL_CIRCUIT_BREAKER_ENABLED",
+        DEFAULT_MODEL_CIRCUIT_BREAKER_ENABLED,
+    )
+    model_circuit_breaker_failure_threshold: int = _get_env_int(
+        "MODEL_CIRCUIT_BREAKER_FAILURE_THRESHOLD",
+        DEFAULT_MODEL_CIRCUIT_BREAKER_FAILURE_THRESHOLD,
+    )
+    model_circuit_breaker_cooldown_sec: int = _get_env_int(
+        "MODEL_CIRCUIT_BREAKER_COOLDOWN_SEC",
+        DEFAULT_MODEL_CIRCUIT_BREAKER_COOLDOWN_SEC,
+    )
+    model_circuit_breaker_half_open_success_threshold: int = _get_env_int(
+        "MODEL_CIRCUIT_BREAKER_HALF_OPEN_SUCCESS_THRESHOLD",
+        DEFAULT_MODEL_CIRCUIT_BREAKER_HALF_OPEN_SUCCESS_THRESHOLD,
+    )
 
     # ========== RAG thresholds ==========
     # Минимальный порог "релевантности" чанка в RAG (0..1). Чем выше — тем меньше контекста
     # проходит в промпт, но тем выше риск "потерять" ответ при шумном запросе/индексе.
     min_rag_score: float = _get_env_float("MIN_RAG_SCORE", DEFAULT_MIN_RAG_SCORE)
+    rag_overlap_bonus_weight: float = _get_env_float(
+        "RAG_OVERLAP_BONUS_WEIGHT", DEFAULT_RAG_OVERLAP_BONUS_WEIGHT
+    )
     product_exact_sku_base_score: float = _get_env_float(
         "PRODUCT_EXACT_SKU_BASE_SCORE",
         DEFAULT_PRODUCT_EXACT_SKU_BASE_SCORE,
@@ -158,8 +198,21 @@ class Settings:
     web_min_sources: int = DEFAULT_WEB_MIN_SOURCES
 
     # ========== Rate limiting ==========
-    rate_limit_requests: int = DEFAULT_RATE_LIMIT_REQUESTS
-    rate_limit_window_sec: int = DEFAULT_RATE_LIMIT_WINDOW_SEC
+    rate_limit_requests: int = _get_env_int("RATE_LIMIT_REQUESTS", DEFAULT_RATE_LIMIT_REQUESTS)
+    rate_limit_window_sec: int = _get_env_int("RATE_LIMIT_WINDOW_SEC", DEFAULT_RATE_LIMIT_WINDOW_SEC)
+    rate_limit_max_users: int = _get_env_int("RATE_LIMIT_MAX_USERS", DEFAULT_RATE_LIMIT_MAX_USERS)
+    rate_limit_user_ttl_sec: int = _get_env_int("RATE_LIMIT_USER_TTL_SEC", DEFAULT_RATE_LIMIT_USER_TTL_SEC)
+    rate_limit_prune_every: int = _get_env_int("RATE_LIMIT_PRUNE_EVERY", DEFAULT_RATE_LIMIT_PRUNE_EVERY)
+
+    # ========== Token Budget ==========
+    max_total_token_budget: int = _get_env_int("MAX_TOTAL_TOKEN_BUDGET", DEFAULT_MAX_TOTAL_TOKEN_BUDGET)
+    max_user_token_budget: int = _get_env_int("MAX_USER_TOKEN_BUDGET", DEFAULT_MAX_USER_TOKEN_BUDGET)
+    token_budget_warning_threshold: float = _get_env_float(
+        "TOKEN_BUDGET_WARNING_THRESHOLD", DEFAULT_TOKEN_BUDGET_WARNING_THRESHOLD
+    )
+    token_budget_max_users: int = _get_env_int("TOKEN_BUDGET_MAX_USERS", DEFAULT_TOKEN_BUDGET_MAX_USERS)
+    token_budget_user_ttl_sec: int = _get_env_int("TOKEN_BUDGET_USER_TTL_SEC", DEFAULT_TOKEN_BUDGET_USER_TTL_SEC)
+    token_budget_prune_every: int = _get_env_int("TOKEN_BUDGET_PRUNE_EVERY", DEFAULT_TOKEN_BUDGET_PRUNE_EVERY)
 
     # ========== Web API security ==========
     web_api_key: str = _get_env_str("WEB_API_KEY")

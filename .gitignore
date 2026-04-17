@@ -7,7 +7,7 @@
 myenv/
 .venv/
 venv/
-
+myenv_new/
 # Python caches and artifacts
 __pycache__/
 *.py[cod]
@@ -38,6 +38,9 @@ Thumbs.db
 # Local notebooks
 rag_notebook.ipynb
 langfuse_notebook.ipynb
+
+# Local redteam lab workspace (not part of app runtime)
+llm-redteam/
 
 # Legacy archived code
 app/legacy/

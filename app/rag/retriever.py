@@ -197,8 +197,9 @@ class ProductRetriever:
             base_score = float(1 / (1 + distance)) if distance is not None else 0.0
             lookup_text = str(document or "")
             overlap = len(query_tokens.intersection(_tokenize(lookup_text)))
-            rerank_bonus = 0.03 * overlap
+            rerank_bonus = settings.rag_overlap_bonus_weight * overlap
             score = min(1.0, base_score + rerank_bonus)
+
 
             candidates.append(self._serialize_item(metadata=metadata, score=score))
 
@@ -257,4 +258,3 @@ class ProductRetriever:
             "doc_id": doc_id,
             "score": round(float(score), 4),
         }
-
