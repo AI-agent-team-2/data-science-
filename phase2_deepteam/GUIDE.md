@@ -45,7 +45,9 @@ pip install deepeval deepteam
 ### 3. Настройте `.env`
 
 ```env
-OPENROUTER_API_KEY=ваш_ключ
+OPENAI_API_KEY=ваш_ключ   # ключ OpenRouter (OpenAI-compatible)
+# Если в вашем проекте ключ называется иначе, укажите имя переменной:
+# OPENROUTER_API_KEY_ENV=MY_OPENROUTER_KEY
 CHROMA_PATH=C:/study/data-science-/chroma_db
 ENABLE_RAG=false
 ENABLE_PRODUCT_LOOKUP=false
@@ -81,7 +83,7 @@ cat ../../reports/owasp_*.json | python -m json.tool
 | Ошибка | Решение |
 |--------|---------|
 | `ModuleNotFoundError: deepteam` | `pip install deepteam deepeval` |
-| `OPENROUTER_API_KEY not set` | Проверьте `.env` |
+| `OPENROUTER_API_KEY/OPENAI_API_KEY not set` | Проверьте `.env` |
 | `Collection does not exist` | Укажите абсолютный `CHROMA_PATH` |
 | `Error generating output` | Отключите RAG (`ENABLE_RAG=false`) |
 

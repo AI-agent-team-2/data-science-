@@ -142,9 +142,17 @@ else:
 if __name__ == "__main__":
     args = build_arg_parser().parse_args()
 
-    api_key = os.getenv("OPENROUTER_API_KEY")
+    api_key_env = os.getenv("OPENROUTER_API_KEY_ENV", "").strip()
+    api_key = (
+        (os.getenv(api_key_env) if api_key_env else None)
+        or os.getenv("OPENROUTER_API_KEY")
+        or os.getenv("OPENAI_API_KEY")
+    )
     if not api_key:
-        raise SystemExit("Ошибка: OPENROUTER_API_KEY не задан в .env")
+        raise SystemExit(
+            "Ошибка: не задан API key. Укажите OPENROUTER_API_KEY или OPENAI_API_KEY "
+            "(или задайте имя переменной через OPENROUTER_API_KEY_ENV)."
+        )
 
     print("=" * 60)
     print("DeepTeam: OWASP LLM Top-10 Red Teaming")
