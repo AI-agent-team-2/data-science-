@@ -43,7 +43,7 @@ def _load_collection(
             name=collection_name,
             embedding_function=embedding_function,
         )
-    except Exception as exc:
+    except Exception:
         logger.warning(
             "Chroma collection '%s' is missing; creating empty collection at %s",
             collection_name,
