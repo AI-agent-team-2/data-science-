@@ -85,7 +85,8 @@ def download_toxicchat():
 
 
 def download_wildjailbreak():
-    download_hf("allenai/wildjailbreak", "wildjailbreak")
+    # WildJailbreak uses named configs (e.g. "train", "eval"); choose "train" by default.
+    download_hf("allenai/wildjailbreak", "wildjailbreak", config="train")
 
 
 def download_do_not_answer():
