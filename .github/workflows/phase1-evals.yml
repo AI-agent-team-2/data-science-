@@ -52,6 +52,9 @@ jobs:
           python -m app.rag.ingest
 
       - name: Download selected dataset
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HUGGINGFACE_HUB_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           python evals/phase1/datasets/download_datasets.py "${{ inputs.dataset }}"
 
