@@ -17,14 +17,12 @@
 
 ## С чего начать
 
-Если `Inspect AI` для тебя новый, сначала открой [INSPECT_AI_GUIDE.md](INSPECT_AI_GUIDE.md).
+Если `Inspect AI` для тебя новый — ориентируйся на `run.py` в `labs/` и `inspect_ai` help:
 
-В гайде разобрано:
-- как читать `run.py` в лабах;
-- что делают `Task`, `Sample`, `generate()` и `model_graded_qa()`;
-- как именно считается "правильность" ответа;
-- когда модель судит сама себя, а когда лучше задавать отдельный `grader`;
-- какие команды запускать и как читать отчёт.
+```powershell
+python -m inspect_ai --help
+python -m inspect_ai eval --help
+```
 
 ## Рабочая директория
 
@@ -85,3 +83,8 @@ python -m inspect_ai view  # открыть HTML-отчёт
 ```powershell
 python -m inspect_ai eval run.py --model openrouter/meta-llama/llama-3.1-8b-instruct --model-role grader=openrouter/openai/gpt-4o-mini --limit 50
 ```
+
+## GitHub Actions (ручной запуск)
+
+Workflow `Phase 1 Dataset Evals` (`.github/workflows/phase1-evals.yml`) позволяет прогонять выбранный датасет
+по `app.run_agent` и сохраняет отчёт в артефакты `phase1-reports`.

@@ -37,6 +37,7 @@ evals/phase1/reports/*
 !evals/phase1/reports/.gitkeep
 evals/phase2/reports/
 **/.deepteam/
+evals/**/__pycache__/
 
 # OS / IDE
 .DS_Store
