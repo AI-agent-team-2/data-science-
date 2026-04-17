@@ -118,7 +118,7 @@ class Settings:
     """Конфигурация приложения, загружаемая из `.env` и переменных окружения."""
 
     model_provider: str = _get_env_str("MODEL_PROVIDER", DEFAULT_PROVIDER).lower()
-    openai_api_key: str = _get_env_str("OPENAI_API_KEY")
+    openai_api_key: str = _get_env_str("OPENAI_API_KEY") or _get_env_str("OPENROUTER_API_KEY")
     model_name: str = _get_env_str("MODEL_NAME")
     openai_base_url: str = _get_env_str("OPENAI_BASE_URL")
 
