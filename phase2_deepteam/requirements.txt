@@ -1,5 +1,5 @@
 deepteam
-openai          # used as OpenRouter client — set OPENROUTER_API_KEY, not OPENAI_API_KEY
+openai          # used as OpenRouter client — set OPENAI_API_KEY (or OPENROUTER_API_KEY)
 python-dotenv
 deepeval>=1.5.0
 deepteam>=0.2.0

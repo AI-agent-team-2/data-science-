@@ -1,11 +1,7 @@
 name: Dynamic Security Tests
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-  workflow_dispatch:  # ручной запуск
+  workflow_dispatch:  # запуск только вручную
 
 jobs:
   deepteam:
@@ -26,7 +22,10 @@ jobs:
       
       - name: Run DeepTeam test
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY}}
+          # Поддерживаем оба имени переменной, чтобы совпадало с `.env.example`
+          # и чтобы workflow работал, даже если в репозитории задан только один secret.
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY || secrets.OPENAI_API_KEY }}
         run: |
           cd phase2_deepteam/labs/lab1_owasp_top10
           python run.py --attacks-per-type 3 --max-concurrent 1
