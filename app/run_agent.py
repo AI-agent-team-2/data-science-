@@ -38,6 +38,7 @@ from app.observability import (
 from app.prompts import SYSTEM_PROMPT
 from app.routing import (
     is_identity_or_capability_query,
+    is_domain_query,
     is_noise_query,
     is_offtopic_or_rude_query,
     is_smalltalk,
@@ -163,6 +164,12 @@ def _run_agent_pipeline(payload: dict[str, Any], config: RunnableConfig | None =
                 session_id=session_id,
                 user_text=user_text,
                 raw_assistant_text=context.terminal_response,
+            )
+        if not is_domain_query(safe_query.lower()):
+            return _finalize_response(
+                session_id=session_id,
+                user_text=user_text,
+                raw_assistant_text=domain_redirect_response(),
             )
         return _finalize_response(
             session_id=session_id,

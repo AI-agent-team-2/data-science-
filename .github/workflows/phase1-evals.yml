@@ -40,6 +40,15 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements.txt
           pip install -r evals/phase1/requirements.txt
+      
+      - name: Build Chroma index (RAG + Lookup)
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          EMBEDDING_MODEL_NAME: "openai/text-embedding-3-small"
+          CHROMA_PATH: "./chroma_db"
+        run: |
+          python -m app.rag.ingest
 
       - name: Download selected dataset
         run: |

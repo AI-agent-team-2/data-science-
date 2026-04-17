@@ -83,10 +83,10 @@ def product_lookup(query: str, limit: int = 5) -> dict[str, Any]:
 
     top_n = _clamp_limit(limit)
     mode = "semantic"
-    retriever = _get_retriever()
-    query_skus = retriever.extract_query_skus(normalized_query)
 
     try:
+        retriever = _get_retriever()
+        query_skus = retriever.extract_query_skus(normalized_query)
         if query_skus:
             exact_matches = retriever.find_exact_sku_matches(query=normalized_query, limit=top_n)
             if exact_matches:

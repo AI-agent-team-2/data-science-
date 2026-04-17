@@ -37,14 +37,25 @@ def _load_collection(
     collection_name: str,
     embedding_function: Any,
 ) -> Any:
-    """Загружает существующую коллекцию и не маскирует отсутствие индекса."""
+    """Загружает коллекцию; при отсутствии создает пустую (без падения в runtime)."""
     try:
         collection = client.get_collection(
             name=collection_name,
             embedding_function=embedding_function,
         )
     except Exception as exc:
-        raise RuntimeError(f"Chroma collection '{collection_name}' is missing or unavailable") from exc
+        logger.warning(
+            "Chroma collection '%s' is missing; creating empty collection at %s",
+            collection_name,
+            settings.chroma_path,
+        )
+        try:
+            collection = client.get_or_create_collection(
+                name=collection_name,
+                embedding_function=embedding_function,
+            )
+        except Exception as exc2:
+            raise RuntimeError(f"Chroma collection '{collection_name}' is missing or unavailable") from exc2
     return collection
 
 
