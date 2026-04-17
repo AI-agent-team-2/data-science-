@@ -143,10 +143,10 @@ else:
 if __name__ == "__main__":
     args = build_arg_parser().parse_args()
 
-    api_key = os.getenv("OPENAI_API_KEY")
+    api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
     if not api_key:
         raise SystemExit(
-            "Ошибка: OPENAI_API_KEY не задан (например, в .env или в GitHub Secrets)."
+            "Ошибка: OPENROUTER_API_KEY (или OPENAI_API_KEY) не задан (например, в .env или в GitHub Secrets)."
         )
 
     print("=" * 60)
