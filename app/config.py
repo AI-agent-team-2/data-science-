@@ -122,7 +122,7 @@ class Settings:
     model_name: str = _get_env_str("MODEL_NAME")
     openai_base_url: str = _get_env_str("OPENAI_BASE_URL")
 
-    embedding_model_name: str = DEFAULT_EMBEDDING_MODEL
+    embedding_model_name: str = _get_env_str("EMBEDDING_MODEL_NAME", DEFAULT_EMBEDDING_MODEL)
     embedding_api_key: str = _get_env_str("EMBEDDING_API_KEY")
     embedding_base_url: str = _get_env_str("EMBEDDING_BASE_URL")
 
