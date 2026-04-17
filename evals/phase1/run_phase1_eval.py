@@ -56,9 +56,9 @@ def parse_args(argv=None) -> argparse.Namespace:
 
 
 def openrouter_client() -> OpenAI:
-    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    api_key = (os.getenv("OPENROUTER_API_KEY", "") or os.getenv("OPENAI_API_KEY", "")).strip()
     if not api_key:
-        raise SystemExit("OPENAI_API_KEY is required for Phase 1 evals.")
+        raise SystemExit("OPENROUTER_API_KEY (or OPENAI_API_KEY) is required for Phase 1 evals.")
     return OpenAI(base_url="https://openrouter.ai/api/v1", api_key=api_key)
 
 

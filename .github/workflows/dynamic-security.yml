@@ -1,4 +1,4 @@
-name: Dynamic Security Tests
+name: "Phase 2: Dynamic Security Evaluation (Runtime)"
 
 on:
   workflow_dispatch:  # запуск только вручную
@@ -31,7 +31,8 @@ jobs:
       
       - name: Run DeepTeam test
         env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
         run: |
           cd evals/phase2/labs/lab1_owasp_top10
           python run.py --attacks-per-type "${{ inputs.attacks_per_type }}" --max-concurrent "${{ inputs.max_concurrent }}"
