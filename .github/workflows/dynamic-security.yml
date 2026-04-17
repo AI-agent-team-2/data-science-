@@ -43,6 +43,8 @@ jobs:
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          RATE_LIMIT_REQUESTS: "1000000"
+          RATE_LIMIT_WINDOW_SEC: "1"
         run: |
           cd evals/phase2/labs/lab1_owasp_top10
           python run.py --attacks-per-type "${{ inputs.attacks_per_type }}" --max-concurrent "${{ inputs.max_concurrent }}"
