@@ -139,13 +139,13 @@ class Settings:
     history_max_messages: int = DEFAULT_HISTORY_MAX_MESSAGES
     history_ttl_days: int = DEFAULT_HISTORY_TTL_DAYS
 
-    web_cache_enabled: bool = DEFAULT_WEB_CACHE_ENABLED
+    web_cache_enabled: bool = _get_env_bool("WEB_CACHE_ENABLED", DEFAULT_WEB_CACHE_ENABLED)
     web_cache_ttl_hours: int = DEFAULT_WEB_CACHE_TTL_HOURS
     web_search_max_results: int = DEFAULT_WEB_SEARCH_MAX_RESULTS
 
-    enable_web_search: bool = DEFAULT_ENABLE_WEB_SEARCH
-    enable_rag: bool = DEFAULT_ENABLE_RAG
-    enable_product_lookup: bool = DEFAULT_ENABLE_PRODUCT_LOOKUP
+    enable_web_search: bool = _get_env_bool("ENABLE_WEB_SEARCH", DEFAULT_ENABLE_WEB_SEARCH)
+    enable_rag: bool = _get_env_bool("ENABLE_RAG", DEFAULT_ENABLE_RAG)
+    enable_product_lookup: bool = _get_env_bool("ENABLE_PRODUCT_LOOKUP", DEFAULT_ENABLE_PRODUCT_LOOKUP)
     startup_index_mode: str = _get_env_str("STARTUP_INDEX_MODE", DEFAULT_STARTUP_INDEX_MODE).lower()
 
     langfuse_public_key: str = _get_env_str("LANGFUSE_PUBLIC_KEY")
