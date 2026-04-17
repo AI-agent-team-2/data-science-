@@ -1,4 +1,4 @@
-name: Phase 1 Dataset Evals
+name: Dataset Tests
 
 on:
   workflow_dispatch:
