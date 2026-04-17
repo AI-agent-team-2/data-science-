@@ -54,7 +54,7 @@ ENABLE_PRODUCT_LOOKUP=false
 ### 4. Запустите тест
 
 ```bash
-cd phase2_deepteam/labs/lab1_owasp_top10
+cd evals/phase2/labs/lab1_owasp_top10
 python run.py --attacks-per-type 1 --max-concurrent 1
 ```
 

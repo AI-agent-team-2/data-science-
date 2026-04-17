@@ -33,15 +33,15 @@ jobs:
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
-          cd phase2_deepteam/labs/lab1_owasp_top10
+          cd evals/phase2/labs/lab1_owasp_top10
           python run.py --attacks-per-type "${{ inputs.attacks_per_type }}" --max-concurrent "${{ inputs.max_concurrent }}"
       
       - name: Check metrics against thresholds
         run: |
-          python phase2_deepteam/check_metrics.py
+          python evals/phase2/check_metrics.py
       
       - name: Upload reports
         uses: actions/upload-artifact@v4
         with:
           name: deepteam-reports
-          path: phase2_deepteam/reports/
+          path: evals/phase2/reports/

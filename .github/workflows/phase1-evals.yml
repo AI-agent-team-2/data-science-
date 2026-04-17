@@ -39,11 +39,11 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt
-          pip install -r phase1_inspect/requirements.txt
+          pip install -r evals/phase1/requirements.txt
 
       - name: Download selected dataset
         run: |
-          python phase1_inspect/datasets/download_datasets.py "${{ inputs.dataset }}"
+          python evals/phase1/datasets/download_datasets.py "${{ inputs.dataset }}"
 
       - name: Run Phase 1 eval
         env:
@@ -51,14 +51,14 @@ jobs:
           ENABLE_RAG: "false"
           ENABLE_PRODUCT_LOOKUP: "false"
         run: |
-          python phase1_inspect/run_phase1_eval.py --dataset "${{ inputs.dataset }}" --limit "${{ inputs.limit }}" --judge-model "${{ inputs.judge_model }}"
+          python evals/phase1/run_phase1_eval.py --dataset "${{ inputs.dataset }}" --limit "${{ inputs.limit }}" --judge-model "${{ inputs.judge_model }}"
 
       - name: Check metrics against thresholds
         run: |
-          python phase1_inspect/check_metrics.py --dataset "${{ inputs.dataset }}"
+          python evals/phase1/check_metrics.py --dataset "${{ inputs.dataset }}"
 
       - name: Upload reports
         uses: actions/upload-artifact@v4
         with:
           name: phase1-reports
-          path: phase1_inspect/reports/
+          path: evals/phase1/reports/

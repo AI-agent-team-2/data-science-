@@ -41,7 +41,7 @@
 Надёжный вариант для PowerShell из корня репозитория:
 
 ```powershell
-cd .\phase1_inspect
+cd .\evals\phase1
 python .\datasets\download_datasets.py advbench
 cd .\labs\lab1_advbench
 ```

@@ -1,6 +1,6 @@
 """
 Download all Phase 1 datasets into subdirectories.
-Run from phase1_inspect/:
+Run from evals/phase1/:
     python datasets/download_datasets.py
     python datasets/download_datasets.py advbench
     python datasets/download_datasets.py advbench xstest
@@ -107,7 +107,7 @@ DATASET_SPECS = OrderedDict(
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
-        description="Download one or more Phase 1 datasets into phase1_inspect/datasets/."
+        description="Download one or more Phase 1 datasets into evals/phase1/datasets/."
     )
     parser.add_argument(
         "datasets",

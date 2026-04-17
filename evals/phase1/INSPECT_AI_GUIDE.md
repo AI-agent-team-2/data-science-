@@ -217,7 +217,7 @@ from inspect_ai.scorer import model_graded_qa
 
 ### Установка
 
-Из директории `phase1_inspect/`:
+Из директории `evals/phase1/`:
 
 ```powershell
 uv pip install -r .\requirements.txt

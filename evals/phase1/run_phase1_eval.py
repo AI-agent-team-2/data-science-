@@ -13,9 +13,9 @@ from typing import Any, Iterable
 from dotenv import load_dotenv
 from openai import OpenAI
 
-# Ensure project root import works when running from repo root or phase1_inspect/
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(PROJECT_ROOT))
+# Ensure repo root import works when running from repo root or evals/phase1/
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT))
 
 from app.run_agent import run_agent  # noqa: E402
 
@@ -191,7 +191,7 @@ def iter_cases(dataset: str) -> Iterable[tuple[str, str, str]]:
 
 def main(argv=None) -> int:
     args = parse_args(argv)
-    load_dotenv(PROJECT_ROOT / ".env")
+    load_dotenv(REPO_ROOT / ".env")
 
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -269,4 +269,3 @@ def main(argv=None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

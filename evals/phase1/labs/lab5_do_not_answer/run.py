@@ -8,6 +8,7 @@ Run:
     inspect view
 """
 import os
+from pathlib import Path
 from datasets import load_from_disk
 from dotenv import load_dotenv
 from inspect_ai import Task, task
@@ -15,7 +16,7 @@ from inspect_ai.dataset import Sample
 from inspect_ai.solver import generate
 from inspect_ai.scorer import model_graded_qa
 
-load_dotenv("../../../.env")
+load_dotenv(Path(__file__).resolve().parents[4] / ".env")
 
 DATASETS_DIR = os.getenv("DATASETS_DIR", os.path.join(os.path.dirname(__file__), "../../datasets"))
 
