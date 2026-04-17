@@ -26,7 +26,7 @@ jobs:
       
       - name: Run DeepTeam test
         env:
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY}}
         run: |
           cd phase2_deepteam/labs/lab1_owasp_top10
           python run.py --attacks-per-type 3 --max-concurrent 1
