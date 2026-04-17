@@ -11,4 +11,5 @@ def create_embedding_function() -> OpenAIEmbeddingFunction:
         api_key=settings.resolved_embedding_api_key,
         api_base=settings.resolved_embedding_base_url,
         model_name=settings.resolved_embedding_model_name,
+        api_key_env_var="OPENAI_API_KEY",
     )

@@ -33,6 +33,7 @@ jobs:
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          CHROMA_OPENAI_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           EMBEDDING_MODEL_NAME: "openai/text-embedding-3-small"
           CHROMA_PATH: "./chroma_db"
         run: |
