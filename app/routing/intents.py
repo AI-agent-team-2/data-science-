@@ -78,6 +78,19 @@ SANITARY_KEYWORDS: tuple[str, ...] = (
     "давлен",
 )
 
+TECHNICAL_MARKERS: tuple[str, ...] = (
+    "диаметр",
+    "мм",
+    "дюйм",
+    "резьб",
+    "подключ",
+    "давление",
+    "бар",
+    "bar",
+    "pn",
+    "mpa",
+)
+
 DOMAIN_MARKERS: tuple[str, ...] = SANITARY_KEYWORDS + (
     "ondo",
     "stm",
@@ -92,6 +105,7 @@ DOMAIN_MARKERS: tuple[str, ...] = SANITARY_KEYWORDS + (
     "сервопривод",
     "воздухоотвод",
     "тепл",
+    *TECHNICAL_MARKERS,
 )
 
 SINGLE_TOKEN_PATTERN = re.compile(r"^[A-Z0-9\-_]{6,}$")
