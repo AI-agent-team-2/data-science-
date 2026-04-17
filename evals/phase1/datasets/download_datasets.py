@@ -61,7 +61,16 @@ def download_hf(hf_id: str, name: str, config: str = None):
     if config:
         kwargs["name"] = config
     try:
-        ds = load_dataset(**kwargs)
+        token = os.getenv("HF_TOKEN") or os.getenv("HUGGINGFACE_HUB_TOKEN") or ""
+        if token:
+            # datasets>=3 uses `token=...`, older versions use `use_auth_token=...`
+            kwargs["token"] = token
+        try:
+            ds = load_dataset(**kwargs)
+        except TypeError:
+            if "token" in kwargs:
+                kwargs["use_auth_token"] = kwargs.pop("token")
+            ds = load_dataset(**kwargs)
     except ValueError as e:
         # Config name may have changed on HuggingFace — check the dataset page if this fails
         raise ValueError(f"Failed to load {hf_id} (config={config}). "
@@ -125,6 +134,7 @@ def is_gated_dataset_error(exc: Exception) -> bool:
 
 def run_downloads(selected=None):
     requested = list(selected) if selected else list(DATASET_SPECS.keys())
+    explicit_request = bool(selected)
     summary = {"downloaded": [], "skipped": []}
 
     print("Downloading Phase 1 datasets...")
@@ -133,10 +143,15 @@ def run_downloads(selected=None):
         print(f"  [{index}/{len(requested)}] {spec['label']}")
         try:
             spec["handler"]()
-        except DatasetNotFoundError as exc:
+        except Exception as exc:
             if dataset_key == "wildjailbreak" and is_gated_dataset_error(exc):
-                print("  WildJailbreak: skipped because the dataset is gated and requires authentication.")
-                print("  Set HF_TOKEN or run `huggingface-cli login`, then retry this dataset explicitly.")
+                msg = (
+                    "WildJailbreak: skipped because the dataset is gated and requires authentication. "
+                    "Set HF_TOKEN (or HUGGINGFACE_HUB_TOKEN) and retry."
+                )
+                if explicit_request:
+                    raise SystemExit(msg) from exc
+                print(f"  {msg}")
                 summary["skipped"].append(dataset_key)
                 continue
             raise
