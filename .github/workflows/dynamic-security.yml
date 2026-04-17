@@ -2,6 +2,15 @@ name: Dynamic Security Tests
 
 on:
   workflow_dispatch:  # запуск только вручную
+    inputs:
+      attacks_per_type:
+        description: "Атак на уязвимость (attacks_per_type)"
+        required: false
+        default: "3"
+      max_concurrent:
+        description: "Параллельных запросов (max_concurrent)"
+        required: false
+        default: "1"
 
 jobs:
   deepteam:
@@ -25,7 +34,7 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
           cd phase2_deepteam/labs/lab1_owasp_top10
-          python run.py --attacks-per-type 3 --max-concurrent 1
+          python run.py --attacks-per-type "${{ inputs.attacks_per_type }}" --max-concurrent "${{ inputs.max_concurrent }}"
       
       - name: Check metrics against thresholds
         run: |

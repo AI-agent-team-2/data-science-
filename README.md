@@ -228,6 +228,11 @@ python tests/evals/run_eval.py
 ```
 
 Отчет сохраняется в `artifacts/eval_report.json`.
+- Phase 1 (dataset evals / Inspect AI): `phase1_inspect/README.md` (статические датасеты, скачивание и локальный прогон).
+- Phase 2 (dynamic security / DeepTeam): `phase2_deepteam/GUIDE.md` (OWASP LLM Top-10 red teaming по `run_agent()`).
+- GitHub Actions (ручной запуск):
+  - `Phase 1 Dataset Evals` (`.github/workflows/phase1-evals.yml`) — требует `OPENAI_API_KEY`, сохраняет артефакт `phase1-reports`.
+  - `Dynamic Security Tests` (`.github/workflows/dynamic-security.yml`) — требует `OPENAI_API_KEY`, сохраняет артефакт `deepteam-reports`.
 - Для локальной проверки импорта:
 
 ```bash
