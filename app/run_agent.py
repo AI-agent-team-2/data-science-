@@ -213,6 +213,7 @@ def _run_agent_pipeline(payload: dict[str, Any], config: RunnableConfig | None =
         model_input,
         timeout_sec=settings.model_timeout_sec,
         breaker=model_circuit_breaker,
+        pool="model",
     )
     if response.status != "ok":
         logger.warning("model_invoke failed: %s %s", response.error_type, response.error_message)
