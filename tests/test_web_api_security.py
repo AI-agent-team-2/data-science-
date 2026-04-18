@@ -38,23 +38,11 @@ class WebApiSecurityTests(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json().get("status"), "ok")
 
-    def test_chat_requires_api_key(self) -> None:
-        resp = self.client.post("/api/chat", json={"message": "hi", "session_id": "s1"})
-        self.assertEqual(resp.status_code, 401)
-
-        resp = self.client.post(
-            "/api/chat",
-            json={"message": "hi", "session_id": "s1"},
-            headers={"X-API-Key": "wrong"},
-        )
-        self.assertEqual(resp.status_code, 401)
-
-    def test_chat_accepts_valid_api_key(self) -> None:
+    def test_chat_is_public(self) -> None:
         with patch("web.api.run_agent", return_value="OK"):
             resp = self.client.post(
                 "/api/chat",
                 json={"message": "hi", "session_id": "s1"},
-                headers={"X-API-Key": "test-key"},
             )
         self.assertEqual(resp.status_code, 200)
         payload = resp.json()
@@ -64,6 +52,18 @@ class WebApiSecurityTests(unittest.TestCase):
     def test_history_requires_api_key(self) -> None:
         resp = self.client.get("/api/history", params={"session_id": "s1"})
         self.assertEqual(resp.status_code, 401)
+
+    def test_history_accepts_valid_api_key(self) -> None:
+        with patch("web.api.load_turns", return_value=[]):
+            resp = self.client.get(
+                "/api/history",
+                params={"session_id": "s1"},
+                headers={"X-API-Key": "test-key"},
+            )
+        self.assertEqual(resp.status_code, 200)
+        payload = resp.json()
+        self.assertEqual(payload.get("history"), [])
+        self.assertEqual(payload.get("count"), 0)
 
     def test_cors_allows_only_configured_origins(self) -> None:
         # Allowed origin
