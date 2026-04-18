@@ -112,7 +112,7 @@ def get_history(
 
 
 @app.post("/api/chat", response_model=ChatResponse)
-def chat(req: ChatRequest, _auth: None = Depends(_require_api_key)):
+def chat(req: ChatRequest):
     """
     Отправить сообщение боту и получить ответ.
 
@@ -130,7 +130,7 @@ def chat(req: ChatRequest, _auth: None = Depends(_require_api_key)):
 
 
 @app.post("/api/chat-stream")
-async def chat_stream(req: ChatRequest, _auth: None = Depends(_require_api_key)):
+async def chat_stream(req: ChatRequest):
     """
     Отправить сообщение боту и получить ответ в режиме стриминга (по частям).
     
