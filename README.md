@@ -74,6 +74,8 @@ python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
+`chromadb` намеренно зафиксирован по версии в `requirements.txt`. При апгрейде ChromaDB ориентируйтесь на changelog/миграции, прогоняйте ingestion и smoke-тест retrieval; в коде не используются приватные поля коллекции (например, `collection._embedding_function`).
+
 ## Настройка окружения
 
 ```bash
@@ -109,6 +111,8 @@ WEB_TRUSTED_DOMAINS=
 EMBEDDING_API_KEY=
 EMBEDDING_BASE_URL=
 TAVILY_API_KEY=
+WEB_CACHE_ENABLED=true
+WEB_CACHE_TTL_HOURS=24
 STARTUP_INDEX_MODE=if_empty
 MODEL_CIRCUIT_BREAKER_ENABLED=true
 MODEL_CIRCUIT_BREAKER_FAILURE_THRESHOLD=5
@@ -119,6 +123,9 @@ LANGFUSE_PUBLIC_KEY=
 LANGFUSE_SECRET_KEY=
 LANGFUSE_HOST=https://cloud.langfuse.com
 ```
+
+Файловый кэш web-поиска хранится в `.web_cache/` (локально) и в `/app/.web_cache` внутри контейнера.
+TTL по умолчанию — 24 часа (`WEB_CACHE_TTL_HOURS`). Очистка: удалить директорию `.web_cache/` или удалить Docker volume `san_bot_web_cache`.
 
 Админские web API эндпоинты (`/api/history`, `/api/clear`) требуют заголовок:
 

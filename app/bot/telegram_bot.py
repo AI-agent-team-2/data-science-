@@ -249,6 +249,7 @@ def _recognize_photo(image_bytes: bytes, *, user_id: str) -> str:
         ],
         timeout_sec=settings.model_timeout_sec,
         breaker=model_circuit_breaker,
+        pool="model",
     )
     if result.status != "ok":
         raise RuntimeError(f"vision_invoke_failed:{result.error_type}:{result.error_message}")

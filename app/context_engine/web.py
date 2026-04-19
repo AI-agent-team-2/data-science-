@@ -13,13 +13,30 @@ logger = logging.getLogger(__name__)
 
 YEAR_PATTERN = re.compile(r"\b(20\d{2})\b")
 CLEAN_TRUNCATED_MARKER_PATTERN = re.compile(r"[\[\(\{]?\s*\.{0,3}\s*truncated\s*[\]\)\}]?", re.IGNORECASE)
+ZERO_WIDTH_PATTERN = re.compile(r"[\u200B-\u200D\u2060\uFEFF\u00AD]")
+WHITESPACE_PATTERN = re.compile(r"\s+")
 WEB_INJECTION_PATTERNS: tuple[re.Pattern[str], ...] = (
+    # English (direct / meta)
     re.compile(r"(?i)\b(system prompt|developer message|assistant instructions?)\b"),
-    re.compile(r"(?i)\b(ignore|disregard|override|forget)\b.{0,40}\b(instruction|previous|system|prompt|developer|assistant)\b"),
-    re.compile(r"(?i)\b(follow|repeat|reveal|print)\b.{0,40}\b(instruction|prompt|system|developer|secret)\b"),
+    re.compile(r"(?i)\b(ignore|disregard|override|forget)\b.{0,60}\b(instructions?|previous|system|prompt|developer|assistant)\b"),
+    re.compile(r"(?i)\b(follow|repeat|reveal|print|show|leak)\b.{0,60}\b(instructions?|prompt|system|developer|secret|policy)\b"),
+    re.compile(r"(?i)\b(do anything now|jailbreak|developer mode)\b"),
+    re.compile(r"(?i)\brole\s*[:=]\s*(system|developer)\b"),
+    re.compile(r"(?i)\b(begin|end)\b.{0,10}\b(system prompt|developer message)\b"),
     re.compile(r"(?i)\byou are (chatgpt|an ai|assistant)\b"),
-    re.compile(r"(?i)игнориру(?:й|йте).{0,40}(инструкц|предыдущ|систем|промпт|разработчик)"),
-    re.compile(r"(?i)(системн\w*\s+промпт|сообщени\w*\s+разработчик\w*)"),
+    re.compile(r"(?i)\bi\s*g\s*n\s*o\s*r\s*e\b.{0,60}\b(instructions?|system|developer|assistant|prompt)\b"),
+    # Russian
+    re.compile(
+        r"(?i)\bигнориру(?:й|йте)\b.{0,60}\b(?:инструкц\w*|предыдущ\w*|систем\w*|промпт\w*|разработчик\w*|ассистент\w*)\b"
+    ),
+    re.compile(r"(?i)\b(не\s+следуй|не\s+учитывай|не\s+обращай\s+внимания)\b.{0,60}\b(?:инструкц\w*|предыдущ\w*|систем\w*)\b"),
+    re.compile(r"(?i)\b(забудь|забудьте)\b.{0,60}\b(?:инструкц\w*|предыдущ\w*|систем\w*)\b"),
+    re.compile(r"(?i)\b(системн\w*\s+промпт|сообщени\w*\s+разработчик\w*)\b"),
+    re.compile(r"(?i)\b(раскрой|покажи|выведи)\b.{0,60}\b(системн|промпт|сообщени\w*\s+разработчик\w*|секрет|политик)\b"),
+    re.compile(r"(?i)\b(джейлбрейк|jailbreak|режим\s+разработчика|developer\s+mode)\b"),
+    re.compile(
+        r"(?i)\bи\s*г\s*н\s*о\s*р\s*и\s*р\s*у\s*(?:й|йте)\b.{0,60}\b(?:инструкц\w*|предыдущ\w*|систем\w*|промпт\w*|разработчик\w*)\b"
+    ),
 )
 
 
@@ -109,7 +126,8 @@ def filter_trusted_web_items(items: list[dict[str, Any]]) -> list[dict[str, Any]
 
 def contains_instruction_like_text(value: str) -> bool:
     """Определяет instruction-like текст, который не должен попадать в LLM-контекст из WEB."""
-    normalized = str(value or "").strip()
+    normalized = ZERO_WIDTH_PATTERN.sub("", str(value or ""))
+    normalized = WHITESPACE_PATTERN.sub(" ", normalized).strip()
     if not normalized:
         return False
     return any(pattern.search(normalized) for pattern in WEB_INJECTION_PATTERNS)

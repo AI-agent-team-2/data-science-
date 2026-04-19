@@ -51,6 +51,7 @@ DEFAULT_MAX_LOOKUP_CONTEXT_ITEMS: Final[int] = 5
 DEFAULT_MAX_WEB_CONTEXT_ITEMS: Final[int] = 5
 DEFAULT_WEB_MIN_SOURCES: Final[int] = 2
 DEFAULT_INVOKE_MAX_WORKERS: Final[int] = 8
+DEFAULT_INVOKE_MAX_QUEUE: Final[int] = 64
 
 # ========== Rate limiting ==========
 DEFAULT_RATE_LIMIT_REQUESTS: Final[int] = 10
@@ -140,7 +141,7 @@ class Settings:
     history_ttl_days: int = DEFAULT_HISTORY_TTL_DAYS
 
     web_cache_enabled: bool = _get_env_bool("WEB_CACHE_ENABLED", DEFAULT_WEB_CACHE_ENABLED)
-    web_cache_ttl_hours: int = DEFAULT_WEB_CACHE_TTL_HOURS
+    web_cache_ttl_hours: int = _get_env_int("WEB_CACHE_TTL_HOURS", DEFAULT_WEB_CACHE_TTL_HOURS)
     web_search_max_results: int = DEFAULT_WEB_SEARCH_MAX_RESULTS
 
     enable_web_search: bool = _get_env_bool("ENABLE_WEB_SEARCH", DEFAULT_ENABLE_WEB_SEARCH)
@@ -158,6 +159,15 @@ class Settings:
     model_timeout_sec: int = DEFAULT_MODEL_TIMEOUT_SEC
     model_max_retries: int = _get_env_int("MODEL_MAX_RETRIES", DEFAULT_MODEL_MAX_RETRIES)
     invoke_max_workers: int = _get_env_int("INVOKE_MAX_WORKERS", DEFAULT_INVOKE_MAX_WORKERS)
+    invoke_max_queue: int = _get_env_int("INVOKE_MAX_QUEUE", DEFAULT_INVOKE_MAX_QUEUE)
+
+    # Опциональные override'ы для отдельных пулов внешних вызовов.
+    # Если не заданы, пулы делят общий INVOKE_MAX_WORKERS.
+    invoke_model_max_workers: int = _get_env_int("INVOKE_MODEL_MAX_WORKERS", 0)
+    invoke_tool_max_workers: int = _get_env_int("INVOKE_TOOL_MAX_WORKERS", 0)
+    # Для очередей используем -1 как "не задано", чтобы можно было явно поставить 0.
+    invoke_model_max_queue: int = _get_env_int("INVOKE_MODEL_MAX_QUEUE", -1)
+    invoke_tool_max_queue: int = _get_env_int("INVOKE_TOOL_MAX_QUEUE", -1)
 
     # ========== Circuit breaker (LLM API) ==========
     model_circuit_breaker_enabled: bool = _get_env_bool(

@@ -34,6 +34,7 @@ from app.routing.sources import ToolName, should_use_web_source
 from app.tools.product_lookup import product_lookup
 from app.tools.rag_search import rag_search
 from app.tools.web_search import web_search
+from app.observability import format_log_fields, merge_log_fields
 
 logger = logging.getLogger(__name__)
 
@@ -86,9 +87,15 @@ def build_context(
     source_order: list[ToolName],
     invoke_tool: InvokeToolFn,
     config: RunnableConfig | None = None,
+    log_fields: dict[str, str] | None = None,
 ) -> ContextBuildResult:
     """Подбирает контекст из доступных источников по приоритету."""
-    logger.debug("build_context start: query=%r source_order=%s", query, source_order)
+    logger.info(
+        "%s build_context start: source_order=%s",
+        format_log_fields(log_fields),
+        source_order,
+        extra=merge_log_fields(log_fields, used_source="none", fallback_reason=""),
+    )
     failed_sources: list[str] = []
     attempted_sources: list[str] = []
     source_status_map: dict[str, str] = {}
@@ -96,19 +103,19 @@ def build_context(
         web_mode = "primary" if index == 0 else "fallback"
 
         if source == "lookup" and not settings.enable_product_lookup:
-            logger.debug("build_context skip source=%s: disabled", source)
+            logger.info("%s build_context skip source=%s: disabled", format_log_fields(log_fields), source)
             source_status_map[source] = "disabled"
             continue
         if source == "rag" and not settings.enable_rag:
-            logger.debug("build_context skip source=%s: disabled", source)
+            logger.info("%s build_context skip source=%s: disabled", format_log_fields(log_fields), source)
             source_status_map[source] = "disabled"
             continue
         if source == "web" and not settings.enable_web_search:
-            logger.debug("build_context skip source=%s: disabled", source)
+            logger.info("%s build_context skip source=%s: disabled", format_log_fields(log_fields), source)
             source_status_map[source] = "disabled"
             continue
         if source == "web" and not should_use_web_source(query=query, web_mode=web_mode):
-            logger.debug("build_context skip source=%s: not allowed for query", source)
+            logger.info("%s build_context skip source=%s: not allowed for query", format_log_fields(log_fields), source)
             source_status_map[source] = "skipped"
             continue
 
@@ -119,9 +126,11 @@ def build_context(
             web_mode=web_mode,
             invoke_tool=invoke_tool,
             config=config,
+            log_fields=log_fields,
         )
-        logger.debug(
-            "build_context source=%s used_source=%s has_context=%s terminal=%s used_web=%s",
+        logger.info(
+            "%s build_context source=%s used_source=%s has_context=%s terminal=%s used_web=%s",
+            format_log_fields(log_fields),
             source,
             result.used_source,
             bool(result.context_text),
@@ -167,10 +176,33 @@ def build_context(
                     source_status_map=source_status_map,
                     fallback_reason=fallback_reason,
                 )
+
+            final_fields = merge_log_fields(
+                log_fields,
+                used_source=result.used_source,
+                fallback_reason=fallback_reason,
+            )
+            logger.info(
+                "%s build_context selected: attempted=%s failed=%s",
+                format_log_fields(final_fields),
+                attempted_sources,
+                failed_sources,
+                extra=final_fields,
+            )
             return result
 
     if failed_sources:
-        logger.warning("build_context finished with source failures: %s", failed_sources)
+        failure_fields = merge_log_fields(
+            log_fields,
+            used_source="none",
+            fallback_reason="all_attempted_sources_failed",
+        )
+        logger.warning(
+            "%s build_context finished with source failures: %s",
+            format_log_fields(failure_fields),
+            failed_sources,
+            extra=failure_fields,
+        )
         return ContextBuildResult(
             context_text="",
             web_urls=[],
@@ -183,6 +215,15 @@ def build_context(
             fallback_reason="all_attempted_sources_failed",
         )
     if attempted_sources or source_status_map:
+        fallback_reason = "no_source_produced_context" if attempted_sources else "no_source_attempted"
+        final_fields = merge_log_fields(log_fields, used_source="none", fallback_reason=fallback_reason)
+        logger.info(
+            "%s build_context finished without context: attempted=%s status_map=%s",
+            format_log_fields(final_fields),
+            attempted_sources,
+            source_status_map,
+            extra=final_fields,
+        )
         return ContextBuildResult(
             context_text="",
             web_urls=[],
@@ -192,7 +233,7 @@ def build_context(
             failed_sources=[],
             attempted_sources=attempted_sources,
             source_status_map=source_status_map,
-            fallback_reason="no_source_produced_context" if attempted_sources else "no_source_attempted",
+            fallback_reason=fallback_reason,
         )
     return EMPTY_CONTEXT_RESULT
 
@@ -217,19 +258,21 @@ def _context_from_source(
     web_mode: str,
     invoke_tool: InvokeToolFn,
     config: RunnableConfig | None = None,
+    log_fields: dict[str, str] | None = None,
 ) -> ContextBuildResult:
     """Строит контекст из указанного источника данных."""
     if source == "lookup":
-        return _context_from_lookup(query, invoke_tool=invoke_tool, config=config)
+        return _context_from_lookup(query, invoke_tool=invoke_tool, config=config, log_fields=log_fields)
     if source == "rag":
-        return _context_from_rag(query, invoke_tool=invoke_tool, config=config)
-    return _context_from_web(query, mode=web_mode, invoke_tool=invoke_tool, config=config)
+        return _context_from_rag(query, invoke_tool=invoke_tool, config=config, log_fields=log_fields)
+    return _context_from_web(query, mode=web_mode, invoke_tool=invoke_tool, config=config, log_fields=log_fields)
 
 
 def _context_from_lookup(
     query: str,
     invoke_tool: InvokeToolFn,
     config: RunnableConfig | None = None,
+    log_fields: dict[str, str] | None = None,
 ) -> ContextBuildResult:
     """Пытается получить контекст из базы товаров (LOOKUP)."""
     execution = invoke_tool(
@@ -239,11 +282,20 @@ def _context_from_lookup(
         config,
     )
     if execution.status == "failed":
-        logger.warning("LOOKUP failed: %s %s", execution.error_type, execution.error_message)
+        logger.warning(
+            "%s LOOKUP failed: %s %s",
+            format_log_fields(log_fields),
+            execution.error_type,
+            execution.error_message,
+        )
         return ContextBuildResult("", [], False, "lookup", failed_sources=["lookup"])
     payload = execution.payload
     if str(payload.get("status") or "") == "failed" or str(payload.get("error") or "").strip():
-        logger.warning("LOOKUP returned failed payload: %s", payload.get("error") or payload.get("note") or "")
+        logger.warning(
+            "%s LOOKUP returned failed payload: %s",
+            format_log_fields(log_fields),
+            payload.get("error") or payload.get("note") or "",
+        )
         return ContextBuildResult("", [], False, "lookup", failed_sources=["lookup"])
     mode = str(payload.get("mode", "")).strip()
     items = _extract_results(payload)
@@ -287,6 +339,7 @@ def _context_from_rag(
     query: str,
     invoke_tool: InvokeToolFn,
     config: RunnableConfig | None = None,
+    log_fields: dict[str, str] | None = None,
 ) -> ContextBuildResult:
     """Пытается получить контекст из RAG-базы знаний."""
     execution = invoke_tool(
@@ -296,11 +349,20 @@ def _context_from_rag(
         config,
     )
     if execution.status == "failed":
-        logger.warning("RAG failed: %s %s", execution.error_type, execution.error_message)
+        logger.warning(
+            "%s RAG failed: %s %s",
+            format_log_fields(log_fields),
+            execution.error_type,
+            execution.error_message,
+        )
         return ContextBuildResult("", [], False, "rag", failed_sources=["rag"])
     payload = execution.payload
     if str(payload.get("status") or "") == "failed" or str(payload.get("error") or "").strip():
-        logger.warning("RAG returned failed payload: %s", payload.get("error") or payload.get("note") or "")
+        logger.warning(
+            "%s RAG returned failed payload: %s",
+            format_log_fields(log_fields),
+            payload.get("error") or payload.get("note") or "",
+        )
         return ContextBuildResult("", [], False, "rag", failed_sources=["rag"])
     items = _extract_results(payload)
     if not _is_rag_useful(items):
@@ -319,6 +381,7 @@ def _context_from_web(
     mode: str,
     invoke_tool: InvokeToolFn,
     config: RunnableConfig | None = None,
+    log_fields: dict[str, str] | None = None,
 ) -> ContextBuildResult:
     """Пытается получить контекст из web-поиска."""
     enhanced_query = enhance_search_query(query, mode)
@@ -329,11 +392,20 @@ def _context_from_web(
         config,
     )
     if execution.status == "failed":
-        logger.warning("WEB failed: %s %s", execution.error_type, execution.error_message)
+        logger.warning(
+            "%s WEB failed: %s %s",
+            format_log_fields(log_fields),
+            execution.error_type,
+            execution.error_message,
+        )
         return ContextBuildResult("", [], False, "web", failed_sources=["web"])
     payload = execution.payload
     if str(payload.get("status") or "") == "failed" or str(payload.get("error") or "").strip():
-        logger.warning("WEB returned failed payload: %s", payload.get("error") or payload.get("note") or "")
+        logger.warning(
+            "%s WEB returned failed payload: %s",
+            format_log_fields(log_fields),
+            payload.get("error") or payload.get("note") or "",
+        )
         return ContextBuildResult("", [], False, "web", failed_sources=["web"])
     items = _filter_safe_web_items(_extract_results(payload))
     items = _filter_trusted_web_items(items)
