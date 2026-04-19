@@ -70,3 +70,11 @@ LANGFUSE_ENABLED=false
    - убедитесь, что tools вызываются через `.invoke(..., config=...)`.
 3. Нет usage/tokens:
    - проверьте, что провайдер модели возвращает usage metadata.
+
+## Runtime logs
+
+В application logs (stdout) используется единый набор полей:
+- `session_hash` — `hash_user_id(user_id)`;
+- `intent` — короткая метка (`domain|offtopic|smalltalk|identity`);
+- `used_source` — итоговый источник контекста (`lookup|rag|web|none`);
+- `fallback_reason` — причина фоллбэка/пустого результата.

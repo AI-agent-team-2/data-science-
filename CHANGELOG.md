@@ -2,6 +2,19 @@
 
 Формат файла основан на принципах [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/).
 
+## [10] - 2026-04-19
+
+### Безопасность и устойчивость
+- Усилен prompt-injection hardening для user query и web snippets (включая zero-width/обфускацию), добавлены тест-кейсы.
+- Web cache: атомарная запись + защита от гонок на файловом кэше.
+
+### RAG / ChromaDB
+- Ingest больше не использует приватные поля коллекции Chroma (`collection._embedding_function`); используется публичный API.
+- Зафиксирована стратегия апгрейда ChromaDB в документации.
+
+### Observability / Logs
+- Унифицированы поля runtime-логов (`session_hash`, `intent`, `used_source`, `fallback_reason`) и уровни (`info/warn/error`).
+
 ## [9] - 2026-04-08
 
 ### Устойчивость LLM API

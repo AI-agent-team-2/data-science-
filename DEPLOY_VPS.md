@@ -12,6 +12,7 @@
 - State volumes:
   - `san_bot_chroma`
   - `san_bot_history`
+  - `san_bot_web_cache`
 
 Важно: поддерживается только Docker-контур.
 Старые сценарии через `systemd`, `.venv` и ручной `deploy.sh` считаются legacy и не должны использоваться параллельно с контейнером.
@@ -47,6 +48,8 @@ WEB_ALLOWED_ORIGINS=http://<VPS_IP>:8000
 EMBEDDING_API_KEY=
 EMBEDDING_BASE_URL=
 TAVILY_API_KEY=
+WEB_CACHE_ENABLED=true
+WEB_CACHE_TTL_HOURS=24
 MODEL_MAX_RETRIES=2
 MODEL_CIRCUIT_BREAKER_ENABLED=true
 MODEL_CIRCUIT_BREAKER_FAILURE_THRESHOLD=5
