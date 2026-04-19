@@ -143,19 +143,30 @@ jobs:
             $COMPOSE_CMD -f "$COMPOSE_FILE" up -d san-bot san-bot-web san-bot-proxy
 
             HEALTHY=0
-            for _ in $(seq 1 18); do
+            MAX_ATTEMPTS=120
+            SLEEP_SEC=5
+            for i in $(seq 1 "$MAX_ATTEMPTS"); do
               STATUS="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}running{{end}}' san-bot 2>/dev/null || echo missing)"
               STATUS_WEB="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}running{{end}}' san-bot-web 2>/dev/null || echo missing)"
               STATUS_PROXY="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}running{{end}}' san-bot-proxy 2>/dev/null || echo missing)"
+              echo "[$i/$MAX_ATTEMPTS] san-bot=$STATUS san-bot-web=$STATUS_WEB san-bot-proxy=$STATUS_PROXY"
               if [ \( "$STATUS" = "healthy" -o "$STATUS" = "running" \) -a \( "$STATUS_WEB" = "healthy" -o "$STATUS_WEB" = "running" \) -a \( "$STATUS_PROXY" = "healthy" -o "$STATUS_PROXY" = "running" \) ]; then
                 HEALTHY=1
                 break
               fi
-              sleep 5
+              sleep "$SLEEP_SEC"
             done
 
             if [ "$HEALTHY" -ne 1 ]; then
               echo "Health-check failed; attempting rollback."
+              echo "----- docker inspect health (san-bot) -----"
+              docker inspect san-bot --format '{{json .State.Health}}' 2>/dev/null || true
+              echo "----- docker inspect health (san-bot-web) -----"
+              docker inspect san-bot-web --format '{{json .State.Health}}' 2>/dev/null || true
+              echo "----- docker compose logs (san-bot) -----"
+              $COMPOSE_CMD -f "$COMPOSE_FILE" logs --tail=200 san-bot 2>/dev/null || true
+              echo "----- docker compose logs (san-bot-web) -----"
+              $COMPOSE_CMD -f "$COMPOSE_FILE" logs --tail=200 san-bot-web 2>/dev/null || true
               if [ -f .previous_image_tag ]; then
                 export BOT_IMAGE="$(cat .previous_image_tag)"
                 $COMPOSE_CMD -f "$COMPOSE_FILE" up -d san-bot san-bot-web san-bot-proxy
