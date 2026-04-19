@@ -74,6 +74,8 @@ python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
+`chromadb` намеренно зафиксирован по версии в `requirements.txt`. При апгрейде ChromaDB ориентируйтесь на changelog/миграции, прогоняйте ingestion и smoke-тест retrieval; в коде не используются приватные поля коллекции (например, `collection._embedding_function`).
+
 ## Настройка окружения
 
 ```bash

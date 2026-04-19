@@ -40,6 +40,13 @@ docker volume inspect san_bot_san_bot_history
 docker volume inspect san_bot_san_bot_web_cache
 ```
 
+## Апгрейд ChromaDB
+
+Версия `chromadb` зафиксирована в `requirements.txt`. При апгрейде:
+- проверьте release notes / миграции;
+- сделайте backup volume `san_bot_san_bot_chroma`;
+- перезапустите контейнеры и прогоните ingestion (или переиндексацию), затем smoke-проверку `rag_search`/`product_lookup`.
+
 ## Web cache (.web_cache)
 
 Файловый кэш web-поиска хранится в `/app/.web_cache` внутри контейнера и смонтирован в volume `san_bot_web_cache` (см. `docker-compose.yml`). TTL настраивается переменной `WEB_CACHE_TTL_HOURS` (по умолчанию 24). Отключить кэш: `WEB_CACHE_ENABLED=false`.
