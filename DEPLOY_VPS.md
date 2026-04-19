@@ -97,6 +97,9 @@ LANGFUSE_HOST=https://cloud.langfuse.com
 - при `STARTUP_INDEX_MODE=always` ingest будет запускаться на каждом старте;
 - для production по умолчанию рекомендуется `if_empty`.
 
+Замечание по таймауту health-check:
+- pipeline ждёт до ~10 минут, пока `san-bot` и `san-bot-web` перейдут в `healthy` (на пустой базе ingestion может занять несколько минут).
+
 ## Локальные команды диагностики на VPS
 
 ```bash
