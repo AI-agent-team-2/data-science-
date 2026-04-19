@@ -308,12 +308,6 @@ def _handle_text_message(message: Message) -> None:
 
     user_id = str(message.from_user.id)
 
-    # Rate limiting
-    allowed, wait_seconds = rate_limiter.is_allowed(user_id)
-    if not allowed:
-        bot.reply_to(message, f"⏳ Слишком много запросов. Подождите {wait_seconds} секунд.")
-        return
-
     session_user_id = str(message.from_user.id)
     logger.debug("Обработка сообщения Telegram для сессии=%s", hash_user_id(session_user_id))
     mode_override = _pop_mode_override(session_user_id)
@@ -378,6 +372,11 @@ def photo_handler(message: Message) -> None:
     allowed, wait_seconds = rate_limiter.is_allowed(user_id)
     if not allowed:
         bot.reply_to(message, f"⏳ Слишком много запросов. Подождите {wait_seconds} секунд.")
+        return
+
+    # Token budget check
+    if not token_manager.has_budget(user_id):
+        bot.reply_to(message, "Исчерпан лимит токенов для вашей сессии. Пожалуйста, обратитесь в поддержку.")
         return
 
     try:
