@@ -32,6 +32,8 @@ from app.history_store import load_messages, save_turn
 from app.observability.rate_limiter import rate_limiter
 from app.observability.token_usage import token_manager
 from app.observability import (
+    build_log_fields,
+    format_log_fields,
     get_langchain_callback_handler,
     hash_user_id,
 )
@@ -98,6 +100,8 @@ def _run_agent_pipeline(payload: dict[str, Any], config: RunnableConfig | None =
 
     query = user_text.strip()
     safe_query, guard_action, risk_flags = apply_guard(query)
+    intent = detect_intent(safe_query)
+    log_fields = build_log_fields(session_hash=hashed_user, intent=intent)
 
     # 1. Rate Limit Check
     allowed, wait_time = rate_limiter.is_allowed(session_id)
@@ -164,7 +168,7 @@ def _run_agent_pipeline(payload: dict[str, Any], config: RunnableConfig | None =
 
     history_messages = to_langchain_messages(load_messages(session_id=session_id))
     dialogue_context = build_dialogue_memory_summary(history_messages)
-    context = build_context(safe_query, source_order, invoke_tool=invoke_tool, config=config)
+    context = build_context(safe_query, source_order, invoke_tool=invoke_tool, config=config, log_fields=log_fields)
     if not context.context_text:
         if context.terminal_response:
             return _finalize_response(
@@ -216,7 +220,19 @@ def _run_agent_pipeline(payload: dict[str, Any], config: RunnableConfig | None =
         pool="model",
     )
     if response.status != "ok":
-        logger.warning("model_invoke failed: %s %s", response.error_type, response.error_message)
+        failed_fields = build_log_fields(
+            session_hash=hashed_user,
+            intent=intent,
+            used_source=context.used_source,
+            fallback_reason=context.fallback_reason,
+        )
+        logger.error(
+            "%s model_invoke failed: %s %s",
+            format_log_fields(failed_fields),
+            response.error_type,
+            response.error_message,
+            extra=failed_fields,
+        )
         return _finalize_response(
             session_id=session_id,
             user_text=user_text,
