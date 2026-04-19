@@ -141,7 +141,7 @@ class Settings:
     history_ttl_days: int = DEFAULT_HISTORY_TTL_DAYS
 
     web_cache_enabled: bool = _get_env_bool("WEB_CACHE_ENABLED", DEFAULT_WEB_CACHE_ENABLED)
-    web_cache_ttl_hours: int = DEFAULT_WEB_CACHE_TTL_HOURS
+    web_cache_ttl_hours: int = _get_env_int("WEB_CACHE_TTL_HOURS", DEFAULT_WEB_CACHE_TTL_HOURS)
     web_search_max_results: int = DEFAULT_WEB_SEARCH_MAX_RESULTS
 
     enable_web_search: bool = _get_env_bool("ENABLE_WEB_SEARCH", DEFAULT_ENABLE_WEB_SEARCH)

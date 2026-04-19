@@ -11,6 +11,7 @@ services:
     volumes:
       - san_bot_chroma:/app/chroma_db
       - san_bot_history:/app/history
+      - san_bot_web_cache:/app/.web_cache
 
   san-bot-web:
     container_name: san-bot-web
@@ -27,6 +28,7 @@ services:
     volumes:
       - san_bot_chroma:/app/chroma_db
       - san_bot_history:/app/history
+      - san_bot_web_cache:/app/.web_cache
 
   san-bot-proxy:
     container_name: san-bot-proxy
@@ -50,3 +52,4 @@ services:
 volumes:
   san_bot_chroma:
   san_bot_history:
+  san_bot_web_cache:

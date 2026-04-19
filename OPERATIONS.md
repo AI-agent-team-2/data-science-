@@ -37,6 +37,25 @@ docker compose restart san-bot san-bot-web san-bot-proxy
 docker volume ls | grep san_bot
 docker volume inspect san_bot_san_bot_chroma
 docker volume inspect san_bot_san_bot_history
+docker volume inspect san_bot_san_bot_web_cache
+```
+
+## Web cache (.web_cache)
+
+Файловый кэш web-поиска хранится в `/app/.web_cache` внутри контейнера и смонтирован в volume `san_bot_web_cache` (см. `docker-compose.yml`). TTL настраивается переменной `WEB_CACHE_TTL_HOURS` (по умолчанию 24). Отключить кэш: `WEB_CACHE_ENABLED=false`.
+
+Очистка кэша (без удаления volumes):
+
+```bash
+docker exec -i san-bot sh -lc 'rm -rf /app/.web_cache/*'
+docker exec -i san-bot-web sh -lc 'rm -rf /app/.web_cache/*'
+```
+
+Полное удаление volume (после остановки сервисов):
+
+```bash
+docker compose down
+docker volume rm san_bot_san_bot_web_cache
 ```
 
 Проверка readiness индекса изнутри контейнера:
