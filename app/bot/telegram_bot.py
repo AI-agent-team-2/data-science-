@@ -306,7 +306,7 @@ def _handle_text_message(message: Message) -> None:
         _handle_unknown_command(message)
         return
 
-    user_id = str(message.from_user.id)
+    #user_id = str(message.from_user.id)
 
     session_user_id = str(message.from_user.id)
     logger.debug("Обработка сообщения Telegram для сессии=%s", hash_user_id(session_user_id))
