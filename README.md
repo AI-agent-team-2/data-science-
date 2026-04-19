@@ -209,6 +209,7 @@ docker compose down
 Состояние сохраняется в Docker volumes:
 - `san_bot_chroma` (ChromaDB)
 - `san_bot_history` (SQLite history)
+- `san_bot_web_cache` (web search cache)
 
 ## Observability (Langfuse)
 
@@ -226,6 +227,7 @@ docker compose down
 
 - Базовые вопросы для ручной проверки: `TEST.txt`.
 - Структурированные eval-кейсы: `tests/evals/cases.jsonl`.
+- Локальный прогон тестов: `pytest -q` (CI прогоняет `unittest discover`).
 - Автоматизированный прогон eval-кейсов:
 
 ```bash
