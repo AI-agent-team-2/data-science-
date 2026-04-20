@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
 from app.utils.sku import extract_sku_candidates, is_russian_identifier
 
@@ -48,7 +49,6 @@ OFFTOPIC_OR_RUDE_MARKERS: tuple[str, ...] = (
 )
 
 SANITARY_KEYWORDS: tuple[str, ...] = (
-    "унитаз",
     "ванна",
     "смеситель",
     "душ",
@@ -57,7 +57,6 @@ SANITARY_KEYWORDS: tuple[str, ...] = (
     "труба",
     "фитинг",
     "кран",
-    "бойлер",
     "сантехника",
     "санфаянс",
     "кранбукс",
@@ -78,6 +77,36 @@ SANITARY_KEYWORDS: tuple[str, ...] = (
     "давлен",
 )
 
+
+def _load_rag_domain_markers() -> tuple[str, ...]:
+    """
+    Загружает дополнительные domain-маркеры, извлеченные из RAG корпуса.
+
+    Файл генерируется скриптом `scripts/generate_domain_keywords.py` и хранится в `data/domain_keywords_ru.txt`.
+    """
+    try:
+        project_root = Path(__file__).resolve().parents[2]
+        path = project_root / "data" / "domain_keywords_ru.txt"
+        if not path.exists():
+            return ()
+
+        markers: list[str] = []
+        for raw_line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+            line = raw_line.strip().lower()
+            if not line or line.startswith("#"):
+                continue
+            if len(line) < 4:
+                continue
+            markers.append(line)
+
+        # De-dup while preserving order.
+        return tuple(dict.fromkeys(markers))
+    except Exception:
+        return ()
+
+
+RAG_DOMAIN_MARKERS: tuple[str, ...] = _load_rag_domain_markers()
+
 TECHNICAL_MARKERS: tuple[str, ...] = (
     "диаметр",
     "мм",
@@ -91,7 +120,7 @@ TECHNICAL_MARKERS: tuple[str, ...] = (
     "mpa",
 )
 
-DOMAIN_MARKERS: tuple[str, ...] = SANITARY_KEYWORDS + (
+DOMAIN_MARKERS: tuple[str, ...] = tuple(dict.fromkeys(SANITARY_KEYWORDS + RAG_DOMAIN_MARKERS)) + (
     "ondo",
     "stm",
     "optima",
