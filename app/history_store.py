@@ -7,6 +7,7 @@ from threading import Lock
 from typing import TypeAlias
 
 from app.config import settings
+from app.observability.sanitize import sanitize_text
 
 logger = logging.getLogger(__name__)
 
@@ -71,13 +72,18 @@ def ensure_db_initialized() -> None:
 def save_turn(session_id: str, user_text: str, assistant_text: str) -> None:
     """Сохраняет один шаг диалога и запускает очистку устаревших записей."""
     ensure_db_initialized()
+    
+    # Минимизация данных: санитизация перед записью
+    clean_user_text = sanitize_text(user_text)
+    clean_assistant_text = sanitize_text(assistant_text)
+
     try:
         connection = get_connection()
         try:
             cursor = connection.cursor()
             cursor.execute(
                 "INSERT INTO history (session_id, user_text, assistant_text) VALUES (?, ?, ?)",
-                (session_id, user_text, assistant_text),
+                (session_id, clean_user_text, clean_assistant_text),
             )
             connection.commit()
         finally:
@@ -207,4 +213,3 @@ def _cleanup_old(session_id: str) -> None:
             connection.close()
     except Exception:
         logger.exception("Не удалось удалить устаревшую историю для session_id=%s", session_id)
-

@@ -14,6 +14,7 @@ from app.config import settings
 from app.history_store import clear_history
 from app.observability import get_langchain_callback_handler, hash_user_id
 from app.observability.rate_limiter import rate_limiter
+from app.observability.token_usage import token_manager
 from app.graph import get_model, model_circuit_breaker
 from app.rag.health import get_index_health
 from app.run_agent import run_agent
@@ -306,14 +307,6 @@ def _handle_text_message(message: Message) -> None:
         _handle_unknown_command(message)
         return
 
-    user_id = str(message.from_user.id)
-
-    # Rate limiting
-    allowed, wait_seconds = rate_limiter.is_allowed(user_id)
-    if not allowed:
-        bot.reply_to(message, f"⏳ Слишком много запросов. Подождите {wait_seconds} секунд.")
-        return
-
     session_user_id = str(message.from_user.id)
     logger.debug("Обработка сообщения Telegram для сессии=%s", hash_user_id(session_user_id))
     mode_override = _pop_mode_override(session_user_id)
@@ -378,6 +371,11 @@ def photo_handler(message: Message) -> None:
     allowed, wait_seconds = rate_limiter.is_allowed(user_id)
     if not allowed:
         bot.reply_to(message, f"⏳ Слишком много запросов. Подождите {wait_seconds} секунд.")
+        return
+
+    # Token budget check
+    if not token_manager.has_budget(user_id):
+        bot.reply_to(message, "Исчерпан лимит токенов для вашей сессии. Пожалуйста, обратитесь в поддержку.")
         return
 
     try:
