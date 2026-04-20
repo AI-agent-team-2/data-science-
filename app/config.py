@@ -66,6 +66,7 @@ DEFAULT_INVOKE_MAX_QUEUE: Final[int] = 64
 # ========== Rate limiting ==========
 DEFAULT_RATE_LIMIT_REQUESTS: Final[int] = 10
 DEFAULT_RATE_LIMIT_WINDOW_SEC: Final[int] = 60
+DEFAULT_MAX_INPUT_TEXT_LEN: Final[int] = 1000
 DEFAULT_RATE_LIMIT_MAX_USERS: Final[int] = 50000
 DEFAULT_RATE_LIMIT_USER_TTL_SEC: Final[int] = 24 * 60 * 60
 DEFAULT_RATE_LIMIT_PRUNE_EVERY: Final[int] = 200
@@ -220,6 +221,7 @@ class Settings:
     # ========== Rate limiting ==========
     rate_limit_requests: int = _get_env_int("RATE_LIMIT_REQUESTS", DEFAULT_RATE_LIMIT_REQUESTS)
     rate_limit_window_sec: int = _get_env_int("RATE_LIMIT_WINDOW_SEC", DEFAULT_RATE_LIMIT_WINDOW_SEC)
+    max_input_text_len: int = _get_env_int("MAX_INPUT_TEXT_LEN", DEFAULT_MAX_INPUT_TEXT_LEN)
     rate_limit_max_users: int = _get_env_int("RATE_LIMIT_MAX_USERS", DEFAULT_RATE_LIMIT_MAX_USERS)
     rate_limit_user_ttl_sec: int = _get_env_int("RATE_LIMIT_USER_TTL_SEC", DEFAULT_RATE_LIMIT_USER_TTL_SEC)
     rate_limit_prune_every: int = _get_env_int("RATE_LIMIT_PRUNE_EVERY", DEFAULT_RATE_LIMIT_PRUNE_EVERY)

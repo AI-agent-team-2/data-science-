@@ -273,6 +273,13 @@ def _run_agent_pipeline(payload: dict[str, Any], config: RunnableConfig | None =
         context_block=context.context_text,
         dialogue_context=dialogue_context,
     )
+    
+    # итог. корректировка запроса, чтобы избежать переполнения контекстного окна или чрезмерных затрат
+    # допускается большее значение для последнего запроса (context + history), e.g. 4x input limit
+    max_prompt_len = settings.max_input_text_len * 10 
+    if len(final_prompt) > max_prompt_len:
+        final_prompt = f"{final_prompt[:max_prompt_len]}... [prompt truncated]"
+
     model_input = [SystemMessage(content=SYSTEM_PROMPT), *history_messages, HumanMessage(content=final_prompt)]
 
     effective_model_config = child_config(config, "model_invoke") or {}
