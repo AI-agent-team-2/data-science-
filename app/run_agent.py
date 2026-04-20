@@ -46,8 +46,43 @@ from app.routing import (
     is_smalltalk,
     resolve_source_order,
 )
+from app.guardrails import ai_domain_check, ai_input_policy_check, ai_output_policy_check, redact_pii
 
 logger = logging.getLogger(__name__)
+
+
+HARD_POLICY_CATEGORIES: set[str] = {
+    "self_harm",
+    "privacy",
+    "doxxing",
+    "weapons",
+    "violence",
+    "illegal",
+    "sexual",
+    "fraud",
+}
+
+
+def _should_enforce_policy(decision_categories: list[str], confidence: float) -> bool:
+    if any(cat in HARD_POLICY_CATEGORIES for cat in decision_categories):
+        return True
+    return float(confidence) >= float(settings.ai_guard_enforce_min_confidence)
+
+
+def _policy_refusal_text() -> str:
+    return (
+        "Не могу помочь с этим запросом. "
+        "Я могу помочь по сантехническим товарам и отоплению: подбор, характеристики, совместимость, артикулы."
+    )
+
+
+def _self_harm_safe_reply() -> str:
+    return (
+        "Мне жаль, что вам сейчас тяжело. Я не могу помогать с причинением вреда себе.\n\n"
+        "Если вы в опасности прямо сейчас или есть риск, пожалуйста, обратитесь за срочной помощью "
+        "в вашем регионе (экстренные службы) или к близкому человеку рядом.\n\n"
+        "Если хотите, вы можете рассказать, что происходит, и я постараюсь поддержать и помочь найти безопасные шаги."
+    )
 
 
 def run_agent(user_text: str, user_id: str = "unknown", *, source_order_override: list[str] | None = None) -> str:
@@ -130,6 +165,36 @@ def _run_agent_pipeline(payload: dict[str, Any], config: RunnableConfig | None =
             ),
         )
 
+    # 3. AI Guard (input policy)
+    input_guard = ai_input_policy_check(safe_query, user_id=session_id)
+    if input_guard is not None:
+        logger.info(
+            "%s ai_guard input: decision=%s categories=%s conf=%.2f reason=%s",
+            format_log_fields(log_fields),
+            input_guard.decision,
+            input_guard.categories,
+            input_guard.confidence,
+            sanitize_text(input_guard.reason_short),
+            extra=log_fields,
+        )
+        if settings.resolved_ai_guard_mode == "enforce" and _should_enforce_policy(
+            input_guard.categories, input_guard.confidence
+        ):
+            if input_guard.decision == "safe_reply":
+                return _finalize_response(
+                    session_id=session_id,
+                    user_text=user_text,
+                    raw_assistant_text=input_guard.safe_reply or _self_harm_safe_reply(),
+                )
+            if input_guard.decision == "rewrite" and input_guard.rewrite_query:
+                safe_query = input_guard.rewrite_query.strip()
+            if input_guard.decision == "block":
+                return _finalize_response(
+                    session_id=session_id,
+                    user_text=user_text,
+                    raw_assistant_text=_policy_refusal_text(),
+                )
+
     if is_identity_or_capability_query(safe_query):
         return _finalize_response(
             session_id=session_id,
@@ -160,11 +225,32 @@ def _run_agent_pipeline(payload: dict[str, Any], config: RunnableConfig | None =
         )
 
     if not is_domain_query(safe_query.lower()):
-        return _finalize_response(
-            session_id=session_id,
-            user_text=user_text,
-            raw_assistant_text=domain_redirect_response(),
-        )
+        domain_guard = ai_domain_check(safe_query, user_id=session_id)
+        if domain_guard is not None:
+            logger.info(
+                "%s ai_guard domain: decision=%s categories=%s conf=%.2f reason=%s",
+                format_log_fields(log_fields),
+                domain_guard.decision,
+                domain_guard.categories,
+                domain_guard.confidence,
+                sanitize_text(domain_guard.reason_short),
+                extra=log_fields,
+            )
+            if settings.resolved_ai_guard_mode == "enforce" and domain_guard.decision == "allow":
+                # Proceed as domain query
+                pass
+            else:
+                return _finalize_response(
+                    session_id=session_id,
+                    user_text=user_text,
+                    raw_assistant_text=domain_redirect_response(),
+                )
+        else:
+            return _finalize_response(
+                session_id=session_id,
+                user_text=user_text,
+                raw_assistant_text=domain_redirect_response(),
+            )
 
     history_messages = to_langchain_messages(load_messages(session_id=session_id))
     dialogue_context = build_dialogue_memory_summary(history_messages)
@@ -243,6 +329,36 @@ def _run_agent_pipeline(payload: dict[str, Any], config: RunnableConfig | None =
     assistant_text = prepare_user_answer(raw_assistant_text)
     if context.used_web:
         assistant_text = ensure_sources_block(assistant_text, context.web_urls)
+
+    # Output PII redaction (public bot)
+    pii = redact_pii(assistant_text)
+    if pii.redacted:
+        logger.info("%s output_pii_redacted=true", format_log_fields(log_fields), extra=log_fields)
+        assistant_text = pii.text
+
+    # 4. AI Guard (output policy) — triggered for risk/web/policy paths
+    should_check_output = bool(context.used_web or risk_flags or (input_guard is not None and input_guard.decision != "allow"))
+    if should_check_output:
+        output_guard = ai_output_policy_check(safe_query, assistant_text, user_id=session_id)
+        if output_guard is not None:
+            logger.info(
+                "%s ai_guard output: decision=%s categories=%s conf=%.2f reason=%s",
+                format_log_fields(log_fields),
+                output_guard.decision,
+                output_guard.categories,
+                output_guard.confidence,
+                sanitize_text(output_guard.reason_short),
+                extra=log_fields,
+            )
+            if settings.resolved_ai_guard_mode == "enforce" and _should_enforce_policy(
+                output_guard.categories, output_guard.confidence
+            ):
+                if output_guard.decision == "redact" and output_guard.redacted_text:
+                    assistant_text = output_guard.redacted_text
+                elif output_guard.decision in {"rephrase_safe", "safe_reply"} and output_guard.safe_reply:
+                    assistant_text = output_guard.safe_reply
+                elif output_guard.decision == "block":
+                    assistant_text = _policy_refusal_text()
 
     return _save_and_return(session_id=session_id, user_text=user_text, assistant_text=assistant_text)
 
