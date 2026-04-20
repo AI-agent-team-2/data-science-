@@ -30,6 +30,16 @@ DEFAULT_ENABLE_RAG: Final[bool] = True
 DEFAULT_ENABLE_PRODUCT_LOOKUP: Final[bool] = True
 DEFAULT_STARTUP_INDEX_MODE: Final[str] = "if_empty"
 
+# ========== AI Guard defaults ==========
+DEFAULT_AI_GUARD_MODE: Final[str] = "off"  # off|shadow|enforce
+DEFAULT_AI_GUARD_TIMEOUT_SEC: Final[int] = 4
+DEFAULT_AI_GUARD_CACHE_TTL_SEC: Final[int] = 20 * 60
+DEFAULT_AI_GUARD_INPUT_ENABLED: Final[bool] = True
+DEFAULT_AI_GUARD_OUTPUT_ENABLED: Final[bool] = True
+DEFAULT_AI_GUARD_DOMAIN_ENABLED: Final[bool] = True
+DEFAULT_AI_GUARD_ENFORCE_MIN_CONFIDENCE: Final[float] = 0.75
+DEFAULT_AI_GUARD_MAX_OUTPUT_CHARS: Final[int] = 600
+
 # ========== Новые константы для таймаутов и порогов ==========
 DEFAULT_TOOL_TIMEOUT_SEC: Final[int] = 20
 DEFAULT_MODEL_TIMEOUT_SEC: Final[int] = 45
@@ -234,6 +244,20 @@ class Settings:
     )
     web_trusted_domains: list[str] = field(default_factory=lambda: _get_env_list("WEB_TRUSTED_DOMAINS", []))
 
+    # ========== AI Guard (policy/domain) ==========
+    ai_guard_mode: str = _get_env_str("AI_GUARD_MODE", DEFAULT_AI_GUARD_MODE).lower()
+    ai_guard_model_name: str = _get_env_str("AI_GUARD_MODEL_NAME")
+    ai_guard_timeout_sec: int = _get_env_int("AI_GUARD_TIMEOUT_SEC", DEFAULT_AI_GUARD_TIMEOUT_SEC)
+    ai_guard_cache_ttl_sec: int = _get_env_int("AI_GUARD_CACHE_TTL_SEC", DEFAULT_AI_GUARD_CACHE_TTL_SEC)
+    ai_guard_input_enabled: bool = _get_env_bool("AI_GUARD_INPUT_ENABLED", DEFAULT_AI_GUARD_INPUT_ENABLED)
+    ai_guard_output_enabled: bool = _get_env_bool("AI_GUARD_OUTPUT_ENABLED", DEFAULT_AI_GUARD_OUTPUT_ENABLED)
+    ai_guard_domain_enabled: bool = _get_env_bool("AI_GUARD_DOMAIN_ENABLED", DEFAULT_AI_GUARD_DOMAIN_ENABLED)
+    ai_guard_enforce_min_confidence: float = _get_env_float(
+        "AI_GUARD_ENFORCE_MIN_CONFIDENCE",
+        DEFAULT_AI_GUARD_ENFORCE_MIN_CONFIDENCE,
+    )
+    ai_guard_max_output_chars: int = _get_env_int("AI_GUARD_MAX_OUTPUT_CHARS", DEFAULT_AI_GUARD_MAX_OUTPUT_CHARS)
+
     @property
     def resolved_model_provider(self) -> str:
         """Возвращает поддерживаемый провайдер LLM."""
@@ -287,6 +311,19 @@ class Settings:
         if self.startup_index_mode in SUPPORTED_STARTUP_INDEX_MODES:
             return self.startup_index_mode
         return DEFAULT_STARTUP_INDEX_MODE
+
+    @property
+    def resolved_ai_guard_mode(self) -> str:
+        """Возвращает валидный режим AI guard."""
+        value = (self.ai_guard_mode or "").strip().lower()
+        if value in {"off", "shadow", "enforce"}:
+            return value
+        return DEFAULT_AI_GUARD_MODE
+
+    @property
+    def resolved_ai_guard_model_name(self) -> str:
+        """Возвращает модель для AI guard (по умолчанию — текущая модель чата)."""
+        return self.ai_guard_model_name or self.resolved_model_name
 
 
 settings = Settings()

@@ -127,7 +127,13 @@ class TokenTrackingCallbackHandler(BaseCallbackHandler):
                 logger.warning("Could not find token usage in LLM response for %s", user_id)
 
 
-def create_chat_model(user_id: str = "unknown") -> ChatOpenAI:
+def create_chat_model(
+    user_id: str = "unknown",
+    *,
+    model_name: str | None = None,
+    timeout_sec: int | None = None,
+    max_retries: int | None = None,
+) -> ChatOpenAI:
     """
     Создает основной LLM-клиент приложения.
 
@@ -137,12 +143,12 @@ def create_chat_model(user_id: str = "unknown") -> ChatOpenAI:
         Инициализированный клиент чата.
     """
     return ChatOpenAI(
-        model=settings.resolved_model_name,
+        model=model_name or settings.resolved_model_name,
         temperature=0,
         api_key=settings.resolved_openai_api_key,
         base_url=settings.resolved_openai_base_url,
-        timeout=max(1, settings.model_timeout_sec),
-        max_retries=max(0, settings.model_max_retries),
+        timeout=max(1, int(timeout_sec or settings.model_timeout_sec)),
+        max_retries=max(0, int(max_retries if max_retries is not None else settings.model_max_retries)),
         callbacks=[TokenTrackingCallbackHandler()],
     )
 
@@ -165,6 +171,27 @@ def get_model(user_id: str = "unknown") -> ChatOpenAI:
         if _model is None:
             _model = create_chat_model(user_id=user_id)
         return _model
+
+
+_guard_model: ChatOpenAI | None = None
+_guard_model_lock: Lock = Lock()
+
+
+def get_guard_model(user_id: str = "unknown") -> ChatOpenAI:
+    """Возвращает singleton LLM-клиент для AI guard."""
+    global _guard_model
+    if _guard_model is not None:
+        return _guard_model
+
+    with _guard_model_lock:
+        if _guard_model is None:
+            _guard_model = create_chat_model(
+                user_id=user_id,
+                model_name=settings.resolved_ai_guard_model_name,
+                timeout_sec=max(1, int(settings.ai_guard_timeout_sec)),
+                max_retries=0,
+            )
+        return _guard_model
 
 
 def create_model_circuit_breaker() -> CircuitBreaker:

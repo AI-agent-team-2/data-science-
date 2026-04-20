@@ -86,3 +86,4 @@ def known_domain_constraint_response(query: str) -> str:
             "Для регулирования используйте штатные регулирующие элементы контура."
         )
     return ""
+

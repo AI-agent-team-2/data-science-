@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.agent.guards import apply_guard, detect_prompt_injection
+from app.guards.prompt_injection import apply_guard, detect_prompt_injection
 
 
 def test_user_query_injection_is_detected_for_russian_phrasing() -> None:
@@ -20,4 +20,3 @@ def test_apply_guard_blocks_injection_query() -> None:
     assert safe_query
     assert action == "block"
     assert "prompt_injection" in flags
-
