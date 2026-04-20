@@ -29,8 +29,8 @@ def extract_ai_text(message: Any) -> str:
 def ensure_sources_block(answer: str, urls: list[str], max_urls: int = 5) -> str:
     """Нормализует блок `Источники` на основе реальных URL из WEB-контекста."""
     base = TRUNCATED_SOURCES_BLOCK_PATTERN.sub("", str(answer or "").rstrip())
-    checked_at = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    lines = ["", f"Проверено: {checked_at} (UTC)", "Источники:"]
+    checked_at = datetime.now().strftime("%Y-%m-%d")
+    lines = ["", f"Проверено: {checked_at}", "Источники:"]
     if urls:
         for url in urls[:max_urls]:
             lines.append(f"- {url}")
