@@ -91,6 +91,8 @@ LANGFUSE_HOST=https://cloud.langfuse.com
    - `docker compose up -d san-bot san-bot-web san-bot-proxy`
 4. Post-deploy health-check контейнера.
 5. Rollback на предыдущий image tag при неуспешном health-check.
+6. Post-deploy cleanup на VPS:
+   - prune неиспользуемых Docker images (старые sha-теги после каждого deploy).
 
 Замечание по indexing:
 - при `STARTUP_INDEX_MODE=if_empty` контейнер сам выполнит ingest только на пустой базе;
@@ -110,6 +112,31 @@ docker compose logs --tail=100 san-bot-web
 docker compose logs --tail=100 san-bot-proxy
 docker inspect san-bot --format '{{json .State.Health}}'
 docker inspect san-bot-web --format '{{json .State.Health}}'
+```
+
+## Как не забивать диск на VPS
+
+Симптом: `git fetch` / `docker pull` падают с `No space left on device`, хотя диск кажется “достаточно большим”.
+Причина: каждый deploy публикует новый image с тегом commit SHA, и на VPS постепенно копятся десятки старых образов.
+
+Что уже сделано в проекте:
+
+- В `docker-compose.yml` включена ротация Docker логов (`max-size`/`max-file`) для сервисов `san-bot`, `san-bot-web`, `san-bot-proxy`.
+- В CI/CD deploy-скрипте добавлен auto-cleanup неиспользуемых образов после успешного deploy.
+
+Если нужно освободить место вручную на VPS:
+
+```bash
+docker image prune -af
+docker builder prune -af
+df -hT
+```
+
+Если место ушло в Docker логи (обычно `/var/lib/docker/containers/*/*-json.log`):
+
+```bash
+sudo find /var/lib/docker/containers -name '*-json.log' -type f -exec sh -c ': > "$1"' _ {} \;
+df -hT
 ```
 
 ## Rollback вручную

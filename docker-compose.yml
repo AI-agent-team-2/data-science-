@@ -8,6 +8,11 @@ services:
     env_file:
       - ${BOT_ENV_FILE:-.env}
     restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
     volumes:
       - san_bot_chroma:/app/chroma_db
       - san_bot_history:/app/history
@@ -23,6 +28,11 @@ services:
       - ${BOT_ENV_FILE:-.env}
     command: ["python", "-m", "uvicorn", "web.api:app", "--host", "0.0.0.0", "--port", "8000"]
     restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
     expose:
       - "8000"
     volumes:
@@ -40,6 +50,11 @@ services:
     ports:
       - "8000:80"
     restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
     volumes:
       - ./deploy/nginx/default.conf.template:/etc/nginx/templates/default.conf.template:ro
     command:
