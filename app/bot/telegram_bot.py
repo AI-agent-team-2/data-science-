@@ -256,7 +256,13 @@ def _recognize_photo(image_bytes: bytes, *, user_id: str) -> str:
         raise RuntimeError(f"vision_invoke_failed:{result.error_type}:{result.error_message}")
 
     response = result.value
-    return str(getattr(response, "content", "")).strip()
+    description = str(getattr(response, "content", "")).strip()
+    
+    # Trim description if it's too long
+    if len(description) > settings.max_input_text_len:
+        description = f"{description[:settings.max_input_text_len]}... [truncated]"
+        
+    return description
 
 
 def _find_similar_products(description: str, limit: int = 3) -> list[dict]:
@@ -301,6 +307,15 @@ def _handle_text_message(message: Message) -> None:
     text = str(message.text or "").strip()
     if not text:
         bot.reply_to(message, "Пожалуйста, отправьте текстовый запрос.")
+        return
+
+    if len(text) > settings.max_input_text_len:
+        bot.reply_to(
+            message,
+            f"⚠️ Ваш запрос слишком длинный ({len(text)} симв.). "
+            f"Максимальная длина: {settings.max_input_text_len} симв. "
+            "Пожалуйста, сократите его."
+        )
         return
 
     if text.startswith("/"):
