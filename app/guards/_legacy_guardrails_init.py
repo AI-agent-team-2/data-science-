@@ -1,14 +1,11 @@
 from __future__ import annotations
 
-# Backward-compatible re-exports.
-# Prefer importing from `app.guards` going forward.
-
-from app.guards import (  # noqa: F401
+from app.guards.ai_guard import (
     ai_domain_check,
     ai_input_policy_check,
     ai_output_policy_check,
-    redact_pii,
 )
+from app.guards.pii import redact_pii
 
 __all__ = [
     "ai_domain_check",
@@ -16,4 +13,3 @@ __all__ = [
     "ai_output_policy_check",
     "redact_pii",
 ]
-

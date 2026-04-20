@@ -1,4 +1,4 @@
-from app.agent.guards import apply_guard, detect_prompt_injection, known_domain_constraint_response, rewrite_suspicious_query
+from app.guards.prompt_injection import apply_guard, detect_prompt_injection, known_domain_constraint_response, rewrite_suspicious_query
 from app.agent.invoke import InvocationResult, child_config, invoke_tool, invoke_with_timeout
 from app.agent.memory import build_dialogue_memory_summary, to_langchain_messages
 from app.agent.response import prepare_user_answer

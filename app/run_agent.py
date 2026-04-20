@@ -6,7 +6,7 @@ from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig, RunnableLambda
 
-from app.agent.guards import apply_guard, known_domain_constraint_response
+from app.guards.prompt_injection import apply_guard, known_domain_constraint_response
 from app.agent.invoke import (
     child_config,
     invoke_tool,
@@ -46,7 +46,7 @@ from app.routing import (
     is_smalltalk,
     resolve_source_order,
 )
-from app.guardrails import ai_domain_check, ai_input_policy_check, ai_output_policy_check, redact_pii
+from app.guards import ai_domain_check, ai_input_policy_check, ai_output_policy_check, redact_pii
 
 logger = logging.getLogger(__name__)
 
