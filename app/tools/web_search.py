@@ -16,6 +16,23 @@ from langchain_core.tools import tool
 from app.config import settings
 from app.tools.response_utils import build_tool_payload, error_payload
 
+from app.config import settings
+
+def filter_by_trusted_domains(results: list[dict]) -> list[dict]:
+    """Фильтрует результаты поиска по доверенным доменам."""
+    if not settings.web_trusted_domains_enabled:
+        return results
+    
+    trusted = settings.web_trusted_domains
+    filtered = [r for r in results if any(domain in r.get("url", "") for domain in trusted)]
+    
+    # Если после фильтрации осталось меньше минимального количества источников,
+    # возвращаем все результаты (fallback)
+    if len(filtered) < settings.web_min_sources:
+        return results
+    
+    return filtered
+
 logger = logging.getLogger(__name__)
 
 CACHE_DIR: Final[Path] = Path(__file__).resolve().parents[2] / ".web_cache"
@@ -342,4 +359,8 @@ def web_search(query: str, max_results: int = 5) -> dict[str, Any]:
             _save_to_cache(cache_key, result)
     except Exception:
         logger.exception("Не удалось разобрать ответ web_search для кэширования")
+    
+    if isinstance(result, dict) and "results" in result:
+        result["results"] = filter_by_trusted_domains(result["results"])
+    
     return _coerce_web_payload(result)

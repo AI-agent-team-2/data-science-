@@ -25,6 +25,11 @@ from app.config import settings
 from app.run_agent import run_agent
 from app.history_store import clear_history, load_turns
 
+from app.startup_checks import check_env_vars
+
+# Проверка переменных окружения перед запуском
+check_env_vars(for_web=True)
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 

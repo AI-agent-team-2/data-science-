@@ -210,6 +210,12 @@ def is_domain_query(lowered_query: str) -> bool:
     """Проверяет, что запрос относится к товарам/техтематике проекта."""
     if has_sku_signal(lowered_query):
         return True
+    
+    # Вопросительные слова — не редиректим
+    question_words = ["что", "как", "какой", "где", "когда", "почему", "зачем", "сколько"]
+    if any(word in lowered_query for word in question_words):
+        return True
+    
     return any(marker in lowered_query for marker in DOMAIN_MARKERS)
 
 

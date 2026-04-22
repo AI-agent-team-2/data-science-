@@ -20,6 +20,11 @@ from app.rag.health import get_index_health
 from app.run_agent import run_agent
 from app.vision import prepare_image_for_vision
 
+from app.startup_checks import check_env_vars
+
+# Проверка переменных окружения перед запуском
+check_env_vars(for_web=False)
+
 logger = logging.getLogger(__name__)
 
 BOT_VERSION: Final[str] = "2.0.0"
@@ -138,8 +143,10 @@ def _safe_error_text(exc: Exception, max_len: int = MAX_STATUS_ERROR_LEN) -> str
     return f"{text[: max_len - 3]}..."
 
 
-def _format_status_text() -> str:
+def _format_status_text(session_id: str) -> str:
     """Формирует текст статуса бота с проверкой доступности RAG-хранилища."""
+    from app.history_store import get_last_sources
+    
     rag_status: str
     try:
         health = get_index_health()
@@ -150,6 +157,10 @@ def _format_status_text() -> str:
     except Exception as exc:
         logger.exception("Не удалось инициализировать RAG-ретривер")
         rag_status = f"❌ ({_safe_error_text(exc)})"
+    
+    # Получаем последние источники
+    last_sources = get_last_sources(session_id, limit=5)
+    sources_str = ", ".join(last_sources) if last_sources else "нет данных"
 
     return (
         "\n📊 *Статус бота*\n\n"
@@ -157,10 +168,13 @@ def _format_status_text() -> str:
         f"*LLM:* {settings.resolved_model_name}\n"
         f"*RAG:* {rag_status}\n"
         f"*Веб-поиск:* {'✅' if settings.enable_web_search else '❌'}\n"
+        f"*Trusted domains:* {'✅' if settings.web_trusted_domains_enabled else '❌'}\n"
+        f"*Trusted domains count:* {len(settings.web_trusted_domains)}\n"
         f"*История:* {'✅' if settings.history_db_path else '❌'}\n"
         f"*Распознавание фото:* ✅ (Vision LLM)\n"
         f"*Rate limiting:* ✅ ({settings.rate_limit_requests} запросов/{settings.rate_limit_window_sec} сек)\n\n"
         f"*Команды:* {', '.join('/' + cmd for cmd in KNOWN_COMMANDS)}\n"
+        f"*Последние источники:* {sources_str}\n"
     )
 
 
@@ -358,7 +372,8 @@ def clear_handler(message: Message) -> None:
 @bot.message_handler(commands=["status"])
 def status_handler(message: Message) -> None:
     """Показывает текущий статус бота и подключенных подсистем."""
-    bot.reply_to(message, _format_status_text(), parse_mode="Markdown")
+    session_id = str(message.from_user.id)
+    bot.reply_to(message, _format_status_text(session_id), parse_mode="Markdown")
 
 
 @bot.message_handler(commands=["id"])

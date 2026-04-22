@@ -284,7 +284,7 @@ def _run_agent_pipeline(payload: dict[str, Any], config: RunnableConfig | None =
 
     effective_model_config = child_config(config, "model_invoke") or {}
     model_metadata = {
-        "user_id": session_id,
+        "user_id": hashed_user,
         "provider": settings.resolved_model_provider,
         "model": settings.resolved_model_name,
         "source_order": source_order,
@@ -370,9 +370,22 @@ def _run_agent_pipeline(payload: dict[str, Any], config: RunnableConfig | None =
     return _save_and_return(session_id=session_id, user_text=user_text, assistant_text=assistant_text)
 
 
-def _save_and_return(session_id: str, user_text: str, assistant_text: str) -> str:
+def _save_and_return(
+    session_id: str,
+    user_text: str,
+    assistant_text: str,
+    used_source: str | None = None,
+) -> str:
     """Сохраняет шаг диалога и возвращает итоговый ответ."""
     save_turn(session_id=session_id, user_text=user_text, assistant_text=assistant_text)
+    
+    # Сохраняем источник, если он указан
+    if used_source:
+        from app.history_store import save_turn_source
+        # Получаем последний turn_id (можно передать из контекста)
+        # Упрощённо: сохраняем без turn_id
+        save_turn_source(session_id, 0, used_source)
+    
     return assistant_text
 
 

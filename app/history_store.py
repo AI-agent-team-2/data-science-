@@ -25,6 +25,18 @@ CREATE TABLE IF NOT EXISTS history (
 
 CREATE_SESSION_INDEX_SQL = "CREATE INDEX IF NOT EXISTS idx_session_id ON history(session_id)"
 
+CREATE_SOURCES_TABLE_SQL = """
+CREATE TABLE IF NOT EXISTS conversation_sources (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    turn_id INTEGER NOT NULL,
+    used_source TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+)
+"""
+
+CREATE_SOURCES_INDEX_SQL = "CREATE INDEX IF NOT EXISTS idx_sources_session_id ON conversation_sources(session_id)"
+
 _db_init_lock: Lock = Lock()
 _db_initialized = False
 
@@ -48,6 +60,8 @@ def init_db() -> bool:
             cursor = connection.cursor()
             cursor.execute(CREATE_HISTORY_TABLE_SQL)
             cursor.execute(CREATE_SESSION_INDEX_SQL)
+            cursor.execute(CREATE_SOURCES_TABLE_SQL)
+            cursor.execute(CREATE_SOURCES_INDEX_SQL)
             connection.commit()
             return True
         finally:
@@ -69,14 +83,20 @@ def ensure_db_initialized() -> None:
         _db_initialized = init_db()
 
 
-def save_turn(session_id: str, user_text: str, assistant_text: str) -> None:
-    """Сохраняет один шаг диалога и запускает очистку устаревших записей."""
+def save_turn(session_id: str, user_text: str, assistant_text: str) -> int:
+    """
+    Сохраняет один шаг диалога и запускает очистку устаревших записей.
+    
+    Returns:
+        int: ID сохранённого сообщения (turn_id)
+    """
     ensure_db_initialized()
     
     # Минимизация данных: санитизация перед записью
     clean_user_text = sanitize_text(user_text)
     clean_assistant_text = sanitize_text(assistant_text)
 
+    turn_id = 0
     try:
         connection = get_connection()
         try:
@@ -85,14 +105,37 @@ def save_turn(session_id: str, user_text: str, assistant_text: str) -> None:
                 "INSERT INTO history (session_id, user_text, assistant_text) VALUES (?, ?, ?)",
                 (session_id, clean_user_text, clean_assistant_text),
             )
+            turn_id = cursor.lastrowid
             connection.commit()
         finally:
             connection.close()
     except Exception:
         logger.exception("Не удалось сохранить шаг истории для session_id=%s", session_id)
-        return
+        return 0
 
     _cleanup_old(session_id=session_id)
+    return turn_id
+
+
+def save_turn_source(session_id: str, turn_id: int, used_source: str) -> None:
+    """Сохраняет источник, использованный для ответа."""
+    ensure_db_initialized()
+    if not turn_id or not used_source:
+        return
+    
+    try:
+        connection = get_connection()
+        try:
+            cursor = connection.cursor()
+            cursor.execute(
+                "INSERT INTO conversation_sources (session_id, turn_id, used_source) VALUES (?, ?, ?)",
+                (session_id, turn_id, used_source),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+    except Exception:
+        logger.exception("Failed to save turn source for session_id=%s", session_id)
 
 
 def load_messages(session_id: str, limit: int | None = None) -> list[HistoryMessage]:
@@ -180,6 +223,36 @@ def load_turns(session_id: str, limit: int | None = None) -> list[dict[str, str]
     return turns
 
 
+def get_last_sources(session_id: str, limit: int = 5) -> list[str]:
+    """
+    Возвращает последние использованные источники для сессии.
+    
+    Returns:
+        list[str]: Список источников (lookup, rag, web)
+    """
+    ensure_db_initialized()
+    
+    try:
+        connection = get_connection()
+        try:
+            cursor = connection.cursor()
+            cursor.execute(
+                """
+                SELECT used_source FROM conversation_sources
+                WHERE session_id = ?
+                ORDER BY id DESC LIMIT ?
+                """,
+                (session_id, limit),
+            )
+            rows = cursor.fetchall()
+            return [str(row["used_source"]) for row in rows if row["used_source"]]
+        finally:
+            connection.close()
+    except Exception:
+        logger.exception("Failed to get last sources for session_id=%s", session_id)
+        return []
+
+
 def clear_history(session_id: str) -> None:
     """Очищает историю диалога конкретной сессии."""
     ensure_db_initialized()
@@ -188,6 +261,7 @@ def clear_history(session_id: str) -> None:
         try:
             cursor = connection.cursor()
             cursor.execute("DELETE FROM history WHERE session_id = ?", (session_id,))
+            cursor.execute("DELETE FROM conversation_sources WHERE session_id = ?", (session_id,))
             connection.commit()
         finally:
             connection.close()
@@ -206,6 +280,10 @@ def _cleanup_old(session_id: str) -> None:
             cursor = connection.cursor()
             cursor.execute(
                 "DELETE FROM history WHERE session_id = ? AND created_at < datetime('now', ?)",
+                (session_id, f"-{ttl_days} days"),
+            )
+            cursor.execute(
+                "DELETE FROM conversation_sources WHERE session_id = ? AND created_at < datetime('now', ?)",
                 (session_id, f"-{ttl_days} days"),
             )
             connection.commit()

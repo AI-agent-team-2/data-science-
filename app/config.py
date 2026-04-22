@@ -260,6 +260,8 @@ class Settings:
     )
     ai_guard_max_output_chars: int = _get_env_int("AI_GUARD_MAX_OUTPUT_CHARS", DEFAULT_AI_GUARD_MAX_OUTPUT_CHARS)
 
+    web_trusted_domains_enabled: bool = True
+
     @property
     def resolved_model_provider(self) -> str:
         """Возвращает поддерживаемый провайдер LLM."""
