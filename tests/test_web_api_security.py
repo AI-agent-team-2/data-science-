@@ -19,6 +19,7 @@ def _fresh_import(module_name: str):
 
 
 def _load_api_app():
+    os.environ["OPENAI_API_KEY"] = "test-key"
     os.environ["WEB_API_KEY"] = "test-key"
     os.environ["WEB_ALLOWED_ORIGINS"] = "http://allowed.example"
 
