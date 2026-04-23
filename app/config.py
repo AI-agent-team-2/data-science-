@@ -28,6 +28,7 @@ DEFAULT_WEB_SEARCH_MAX_RESULTS: Final[int] = 5
 DEFAULT_ENABLE_WEB_SEARCH: Final[bool] = True
 DEFAULT_ENABLE_RAG: Final[bool] = True
 DEFAULT_ENABLE_PRODUCT_LOOKUP: Final[bool] = True
+DEFAULT_WEB_TRUSTED_DOMAINS_ENABLED: Final[bool] = True
 DEFAULT_STARTUP_INDEX_MODE: Final[str] = "if_empty"
 
 # ========== AI Guard defaults ==========
@@ -260,7 +261,10 @@ class Settings:
     )
     ai_guard_max_output_chars: int = _get_env_int("AI_GUARD_MAX_OUTPUT_CHARS", DEFAULT_AI_GUARD_MAX_OUTPUT_CHARS)
 
-    web_trusted_domains_enabled: bool = True
+    web_trusted_domains_enabled: bool = _get_env_bool(
+        "WEB_TRUSTED_DOMAINS_ENABLED",
+        DEFAULT_WEB_TRUSTED_DOMAINS_ENABLED,
+    )
 
     @property
     def resolved_model_provider(self) -> str:

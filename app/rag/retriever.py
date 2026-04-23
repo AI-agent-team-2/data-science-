@@ -8,6 +8,7 @@ from typing import Any, Optional
 import chromadb
 
 from app.config import settings
+from app.observability import sanitize_text
 from app.rag.embeddings import create_embedding_function
 from app.rag.sku_index import load_sku_index, sku_index_path
 from app.utils.sku import canonical_sku, extract_sku_candidates
@@ -80,7 +81,7 @@ class ChromaRetriever:
         try:
             result = self.collection.query(query_texts=[query], n_results=n_results)
         except Exception:
-            logger.exception("Ошибка запроса к Chroma для query=%s", query)
+            logger.exception("Ошибка запроса к Chroma для query=%s", sanitize_text(query))
             return []
 
         documents = result.get("documents", [[]])[0]
@@ -181,7 +182,7 @@ class ProductRetriever:
         try:
             result = self.collection.query(query_texts=[query], n_results=max(top_n * 3, top_n))
         except Exception:
-            logger.exception("Ошибка semantic-поиска по product-коллекции для query=%s", query)
+            logger.exception("Ошибка semantic-поиска по product-коллекции для query=%s", sanitize_text(query))
             return []
 
         documents = result.get("documents", [[]])[0]
