@@ -15,6 +15,7 @@ class VisionInvokeConfigTests(unittest.TestCase):
             self.skipTest("telebot is not installed")
 
         os.environ["TELEGRAM_TOKEN"] = "123:ABC"
+        os.environ["OPENAI_API_KEY"] = "test-key"
 
         with patch("telebot.TeleBot") as _mock_bot_cls:
             if "app.bot.telegram_bot" in sys.modules:
