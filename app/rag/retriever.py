@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import os  # импорт os для проверки существования файла
+import os
 import logging
 import re
 from typing import Any, Optional
@@ -8,9 +8,10 @@ from typing import Any, Optional
 import chromadb
 
 from app.config import settings
+from app.observability import sanitize_text
 from app.rag.embeddings import create_embedding_function
 from app.rag.sku_index import load_sku_index, sku_index_path
-from app.utils.sku import canonical_sku, extract_sku_candidates
+from app.utils.sku import extract_sku_candidates
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +81,7 @@ class ChromaRetriever:
         try:
             result = self.collection.query(query_texts=[query], n_results=n_results)
         except Exception:
-            logger.exception("Ошибка запроса к Chroma для query=%s", query)
+            logger.exception("Ошибка запроса к Chroma для query=%s", sanitize_text(query))
             return []
 
         documents = result.get("documents", [[]])[0]
@@ -181,7 +182,7 @@ class ProductRetriever:
         try:
             result = self.collection.query(query_texts=[query], n_results=max(top_n * 3, top_n))
         except Exception:
-            logger.exception("Ошибка semantic-поиска по product-коллекции для query=%s", query)
+            logger.exception("Ошибка semantic-поиска по product-коллекции для query=%s", sanitize_text(query))
             return []
 
         documents = result.get("documents", [[]])[0]
@@ -214,23 +215,6 @@ class ProductRetriever:
 
         ranked = sorted(deduped.values(), key=lambda item: float(item.get("score", 0.0)), reverse=True)
         return ranked[:top_n]
-
-    def _extract_item_skus(self, metadata: dict[str, Any]) -> set[str]:
-        """Извлекает normalized SKU из metadata карточки."""
-        values: list[str] = []
-
-        raw_articles_norm = metadata.get("articles_norm")
-        if isinstance(raw_articles_norm, str):
-            values.extend(_split_csv_values(raw_articles_norm))
-
-        raw_articles = metadata.get("articles")
-        if isinstance(raw_articles, str):
-            values.extend(_split_csv_values(raw_articles))
-        elif isinstance(raw_articles, list):
-            values.extend(str(value) for value in raw_articles)
-
-        normalized = {canonical_sku(value) for value in values}
-        return {value for value in normalized if value}
 
     def _serialize_item(self, metadata: dict[str, Any], score: float) -> dict[str, Any]:
         """Приводит metadata карточки к единому runtime-формату product_lookup."""

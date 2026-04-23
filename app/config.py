@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass, field
 from typing import Final
@@ -7,6 +8,7 @@ from typing import Final
 from dotenv import load_dotenv
 
 load_dotenv()
+logger = logging.getLogger(__name__)
 
 DEFAULT_PROVIDER: Final[str] = "openrouter"
 DEFAULT_OPENROUTER_BASE_URL: Final[str] = "https://openrouter.ai/api/v1"
@@ -28,6 +30,7 @@ DEFAULT_WEB_SEARCH_MAX_RESULTS: Final[int] = 5
 DEFAULT_ENABLE_WEB_SEARCH: Final[bool] = True
 DEFAULT_ENABLE_RAG: Final[bool] = True
 DEFAULT_ENABLE_PRODUCT_LOOKUP: Final[bool] = True
+DEFAULT_WEB_TRUSTED_DOMAINS_ENABLED: Final[bool] = True
 DEFAULT_STARTUP_INDEX_MODE: Final[str] = "if_empty"
 
 # ========== AI Guard defaults ==========
@@ -91,7 +94,14 @@ def _get_env_str(name: str, default: str = "") -> str:
 def _get_env_bool(name: str, default: bool) -> bool:
     """Преобразует переменную окружения в bool (`true/false`, `1/0`, `yes/no`)."""
     raw_value = _get_env_str(name, "true" if default else "false").lower()
-    return raw_value in {"1", "true", "yes", "y", "on"}
+    truthy = {"1", "true", "yes", "y", "on"}
+    falsy = {"0", "false", "no", "n", "off"}
+    if raw_value in truthy:
+        return True
+    if raw_value in falsy:
+        return False
+    logger.warning("Invalid boolean env %s=%r; using default=%s", name, raw_value, default)
+    return default
 
 
 def _get_env_int(name: str, default: int) -> int:
@@ -102,6 +112,7 @@ def _get_env_int(name: str, default: int) -> int:
     try:
         return int(raw_value)
     except ValueError:
+        logger.warning("Invalid integer env %s=%r; using default=%s", name, raw_value, default)
         return default
 
 
@@ -113,6 +124,7 @@ def _get_env_float(name: str, default: float) -> float:
     try:
         return float(raw_value.replace(",", "."))
     except ValueError:
+        logger.warning("Invalid float env %s=%r; using default=%s", name, raw_value, default)
         return default
 
 
@@ -260,7 +272,10 @@ class Settings:
     )
     ai_guard_max_output_chars: int = _get_env_int("AI_GUARD_MAX_OUTPUT_CHARS", DEFAULT_AI_GUARD_MAX_OUTPUT_CHARS)
 
-    web_trusted_domains_enabled: bool = True
+    web_trusted_domains_enabled: bool = _get_env_bool(
+        "WEB_TRUSTED_DOMAINS_ENABLED",
+        DEFAULT_WEB_TRUSTED_DOMAINS_ENABLED,
+    )
 
     @property
     def resolved_model_provider(self) -> str:

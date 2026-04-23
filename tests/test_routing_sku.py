@@ -12,6 +12,12 @@ from app.routing import (
 
 
 class RoutingSkuTests(unittest.TestCase):
+    def test_generic_question_without_domain_markers_is_not_domain(self) -> None:
+        query = "как дела в целом"
+        self.assertFalse(is_domain_query(query))
+        self.assertFalse(should_prefer_web(query))
+        self.assertFalse(should_prefer_lookup(query))
+
     def test_sku_query_prefers_lookup(self) -> None:
         query = "Что за товар OGBKP 001?"
         self.assertTrue(should_prefer_lookup(query))

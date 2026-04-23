@@ -5,6 +5,7 @@ import sys
 import unittest
 from importlib import import_module
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 
 def _fresh_import(module_name: str):
@@ -43,6 +44,22 @@ class HistoryStoreOrderTests(unittest.TestCase):
             self.assertEqual(len(turns), 3)
             self.assertTrue(turns[0]["timestamp"])
             self.assertEqual([t["user"] for t in turns], ["u1", "u2", "u3"])
+
+    def test_cleanup_is_not_called_on_every_save(self) -> None:
+        with TemporaryDirectory() as tmp:
+            db_path = os.path.join(tmp, "history.db")
+            os.environ["HISTORY_DB_PATH"] = db_path
+
+            _fresh_import("app.config")
+            store = _fresh_import("app.history_store")
+
+            with patch.object(store, "_cleanup_old") as mock_cleanup:
+                for index in range(49):
+                    store.save_turn("s2", f"u{index}", f"a{index}")
+                self.assertEqual(mock_cleanup.call_count, 0)
+
+                store.save_turn("s2", "u50", "a50")
+                self.assertEqual(mock_cleanup.call_count, 1)
 
 
 if __name__ == "__main__":

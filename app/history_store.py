@@ -39,6 +39,17 @@ CREATE_SOURCES_INDEX_SQL = "CREATE INDEX IF NOT EXISTS idx_sources_session_id ON
 
 _db_init_lock: Lock = Lock()
 _db_initialized = False
+_cleanup_lock: Lock = Lock()
+_save_ops = 0
+_cleanup_every = 50
+
+
+def _should_run_cleanup() -> bool:
+    """Ограничивает частоту cleanup, чтобы не делать DELETE на каждый save."""
+    global _save_ops
+    with _cleanup_lock:
+        _save_ops += 1
+        return _save_ops % _cleanup_every == 0
 
 
 def get_connection() -> sqlite3.Connection:
@@ -113,7 +124,8 @@ def save_turn(session_id: str, user_text: str, assistant_text: str) -> int:
         logger.exception("Не удалось сохранить шаг истории для session_id=%s", session_id)
         return 0
 
-    _cleanup_old(session_id=session_id)
+    if _should_run_cleanup():
+        _cleanup_old(session_id=session_id)
     return turn_id
 
 

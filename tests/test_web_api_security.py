@@ -40,15 +40,22 @@ class WebApiSecurityTests(unittest.TestCase):
         self.assertEqual(resp.json().get("status"), "ok")
 
     def test_chat_is_public(self) -> None:
-        with patch("web.api.run_agent", return_value="OK"):
+        with patch("web.api.run_agent", return_value="OK") as mock_run_agent:
             resp = self.client.post(
                 "/api/chat",
                 json={"message": "hi", "session_id": "s1"},
+                headers={
+                    "X-Forwarded-For": "203.0.113.10",
+                    "User-Agent": "sanbot-test-agent",
+                },
             )
         self.assertEqual(resp.status_code, 200)
         payload = resp.json()
         self.assertEqual(payload.get("reply"), "OK")
         self.assertEqual(payload.get("session_id"), "s1")
+        _args, kwargs = mock_run_agent.call_args
+        self.assertIn("user_id", kwargs)
+        self.assertNotEqual(kwargs["user_id"], "s1")
 
     def test_history_requires_api_key(self) -> None:
         resp = self.client.get("/api/history", params={"session_id": "s1"})

@@ -10,27 +10,31 @@ import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Final
+from urllib.parse import urlparse
 
 from langchain_core.tools import tool
 
 from app.config import settings
 from app.tools.response_utils import build_tool_payload, error_payload
 
-from app.config import settings
-
 def filter_by_trusted_domains(results: list[dict]) -> list[dict]:
     """Фильтрует результаты поиска по доверенным доменам."""
     if not settings.web_trusted_domains_enabled:
         return results
-    
-    trusted = settings.web_trusted_domains
-    filtered = [r for r in results if any(domain in r.get("url", "") for domain in trusted)]
-    
-    # Если после фильтрации осталось меньше минимального количества источников,
-    # возвращаем все результаты (fallback)
-    if len(filtered) < settings.web_min_sources:
+
+    trusted = [domain.lower().strip() for domain in settings.web_trusted_domains if domain.strip()]
+    if not trusted:
         return results
-    
+
+    filtered: list[dict] = []
+    for item in results:
+        raw_url = str(item.get("url", "")).strip()
+        if not raw_url:
+            continue
+        host = (urlparse(raw_url).hostname or "").lower()
+        if any(host == domain or host.endswith(f".{domain}") for domain in trusted):
+            filtered.append(item)
+
     return filtered
 
 logger = logging.getLogger(__name__)
