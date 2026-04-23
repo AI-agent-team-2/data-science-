@@ -36,6 +36,7 @@ from app.observability import (
     format_log_fields,
     get_langchain_callback_handler,
     hash_user_id,
+    sanitize_text,
 )
 from app.prompts import SYSTEM_PROMPT
 from app.routing import (
@@ -261,6 +262,7 @@ def _run_agent_pipeline(payload: dict[str, Any], config: RunnableConfig | None =
                 session_id=session_id,
                 user_text=user_text,
                 raw_assistant_text=context.terminal_response,
+                used_source=context.used_source,
             )
         return _finalize_response(
             session_id=session_id,
@@ -284,7 +286,7 @@ def _run_agent_pipeline(payload: dict[str, Any], config: RunnableConfig | None =
 
     effective_model_config = child_config(config, "model_invoke") or {}
     model_metadata = {
-        "user_id": hashed_user,
+        "user_id": session_id,
         "provider": settings.resolved_model_provider,
         "model": settings.resolved_model_name,
         "source_order": source_order,
@@ -330,6 +332,7 @@ def _run_agent_pipeline(payload: dict[str, Any], config: RunnableConfig | None =
             session_id=session_id,
             user_text=user_text,
             raw_assistant_text=tool_failure_response(),
+            used_source=context.used_source,
         )
 
     raw_assistant_text = extract_ai_text(response.value)
@@ -367,7 +370,12 @@ def _run_agent_pipeline(payload: dict[str, Any], config: RunnableConfig | None =
                 elif output_guard.decision == "block":
                     assistant_text = _policy_refusal_text()
 
-    return _save_and_return(session_id=session_id, user_text=user_text, assistant_text=assistant_text)
+    return _save_and_return(
+        session_id=session_id,
+        user_text=user_text,
+        assistant_text=assistant_text,
+        used_source=context.used_source,
+    )
 
 
 def _save_and_return(
@@ -377,14 +385,12 @@ def _save_and_return(
     used_source: str | None = None,
 ) -> str:
     """Сохраняет шаг диалога и возвращает итоговый ответ."""
-    save_turn(session_id=session_id, user_text=user_text, assistant_text=assistant_text)
+    turn_id = save_turn(session_id=session_id, user_text=user_text, assistant_text=assistant_text)
     
-    # Сохраняем источник, если он указан
-    if used_source:
+    # Сохраняем источник только если есть валидный turn_id.
+    if used_source and isinstance(turn_id, int) and turn_id > 0:
         from app.history_store import save_turn_source
-        # Получаем последний turn_id (можно передать из контекста)
-        # Упрощённо: сохраняем без turn_id
-        save_turn_source(session_id, 0, used_source)
+        save_turn_source(session_id, turn_id, used_source)
     
     return assistant_text
 
@@ -393,7 +399,14 @@ def _finalize_response(
     session_id: str,
     user_text: str,
     raw_assistant_text: str,
+    *,
+    used_source: str | None = None,
 ) -> str:
     """Подготавливает и сохраняет итоговый ответ пользователю."""
     assistant_text = prepare_user_answer(raw_assistant_text)
-    return _save_and_return(session_id=session_id, user_text=user_text, assistant_text=assistant_text)
+    return _save_and_return(
+        session_id=session_id,
+        user_text=user_text,
+        assistant_text=assistant_text,
+        used_source=used_source,
+    )

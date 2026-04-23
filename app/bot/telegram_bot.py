@@ -22,9 +22,6 @@ from app.vision import prepare_image_for_vision
 
 from app.startup_checks import check_env_vars
 
-# Проверка переменных окружения перед запуском
-check_env_vars(for_web=False)
-
 logger = logging.getLogger(__name__)
 
 BOT_VERSION: Final[str] = "2.0.0"
@@ -470,6 +467,7 @@ def text_handler(message: Message) -> None:
 
 
 if __name__ == "__main__":
+    check_env_vars(for_web=False)
     logging.basicConfig(level=logging.INFO)
     logger.info("Запуск SAN Bot v%s", BOT_VERSION)
     logger.info("Доступные команды: %s", KNOWN_COMMANDS)
