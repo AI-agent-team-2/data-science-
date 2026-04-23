@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import os  # импорт os для проверки существования файла
 import logging
 import re
-from typing import Any
+from typing import Any, Dict, List, Optional
 
 import chromadb
 
@@ -103,11 +104,16 @@ class ChromaRetriever:
 class ProductRetriever:
     """Ретривер карточек товаров из отдельной product-level коллекции Chroma."""
 
-    def __init__(self, collection_name: str | None = None) -> None:
+    def __init__(self, collection_name: Optional[str] = None) -> None: 
         self.client = chromadb.PersistentClient(path=settings.chroma_path)
         self.embedding_function = create_embedding_function()
         self.collection_name = collection_name or f"{settings.collection_name}{PRODUCT_COLLECTION_SUFFIX}"
-        self._sku_index = load_sku_index()
+        # Проверка наличия sku_index.json
+        self.index_missing = not os.path.exists(sku_index_path()) 
+        if self.index_missing:
+            logger.warning("SKU index file is missing: %s", sku_index_path())
+
+        self._sku_index = load_sku_index() if not self.index_missing else {} 
         self.collection = _load_collection(
             client=self.client,
             collection_name=self.collection_name,
@@ -126,35 +132,17 @@ class ProductRetriever:
         if not query_skus:
             return []
 
+        # Если индекса нет — не делаем полный scan, а деградируем
+        if self.index_missing:
+            logger.warning("SKU index is missing or empty (metric: index_missing). Skipping full scan.")
+            return self.semantic_search(query, limit)  #используем семантический поиск 
+
         indexed_matches = self._find_exact_sku_matches_from_index(query_skus)
         if indexed_matches:
             return indexed_matches[: max(1, int(limit))]
 
-        try:
-            snapshot = self.collection.get(include=["metadatas"])
-        except Exception:
-            logger.exception("Ошибка чтения product-коллекции для exact SKU поиска")
-            return []
-
-        metadatas = snapshot.get("metadatas") or []
-        matches: list[dict[str, Any]] = []
-
-        for metadata in metadatas:
-            if not isinstance(metadata, dict):
-                continue
-
-            item_skus = self._extract_item_skus(metadata)
-            matched = sorted(query_skus.intersection(item_skus))
-            if not matched:
-                continue
-
-            score = self._exact_sku_base_score + self._exact_sku_per_match_score * len(matched)
-            item = self._serialize_item(metadata=metadata, score=score)
-            item["matched_skus"] = matched
-            matches.append(item)
-
-        matches.sort(key=lambda item: float(item.get("score", 0.0)), reverse=True)
-        return matches[: max(1, int(limit))]
+        logger.info("No exact SKU matches found for query: %s", query)
+        return []
 
     def _find_exact_sku_matches_from_index(self, query_skus: set[str]) -> list[dict[str, Any]]:
         """Использует локальный SKU-индекс вместо полного scan product metadata."""
