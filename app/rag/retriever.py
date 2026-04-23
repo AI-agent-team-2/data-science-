@@ -3,13 +3,13 @@ from __future__ import annotations
 import os  # импорт os для проверки существования файла
 import logging
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 import chromadb
 
 from app.config import settings
 from app.rag.embeddings import create_embedding_function
-from app.rag.sku_index import load_sku_index
+from app.rag.sku_index import load_sku_index, sku_index_path
 from app.utils.sku import canonical_sku, extract_sku_candidates
 
 logger = logging.getLogger(__name__)
