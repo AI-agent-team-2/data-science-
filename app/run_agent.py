@@ -286,7 +286,7 @@ def _run_agent_pipeline(payload: dict[str, Any], config: RunnableConfig | None =
 
     effective_model_config = child_config(config, "model_invoke") or {}
     model_metadata = {
-        "user_id": session_id,
+        "user_id": hashed_user,
         "provider": settings.resolved_model_provider,
         "model": settings.resolved_model_name,
         "source_order": source_order,
@@ -389,8 +389,12 @@ def _save_and_return(
     
     # Сохраняем источник только если есть валидный turn_id.
     if used_source and isinstance(turn_id, int) and turn_id > 0:
-        from app.history_store import save_turn_source
-        save_turn_source(session_id, turn_id, used_source)
+        try:
+            from app.history_store import save_turn_source
+            save_turn_source(session_id, turn_id, used_source)
+        except Exception:
+            # Игнорируем ошибки (таблица может отсутствовать в старой БД)
+            logger.debug("Failed to save turn source (table may not exist)", exc_info=True)
     
     return assistant_text
 
