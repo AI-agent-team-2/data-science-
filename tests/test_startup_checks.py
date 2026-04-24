@@ -25,6 +25,16 @@ class StartupChecksTests(unittest.TestCase):
                 check_env_vars(for_web=False)
         self.assertIn("OPENAI_API_KEY or OPENROUTER_API_KEY", str(exc.exception))
 
+    def test_raises_runtime_error_when_web_api_key_missing_for_web_mode(self) -> None:
+        env = {
+            "TELEGRAM_TOKEN": "123:ABC",
+            "OPENROUTER_API_KEY": "or-test",
+        }
+        with patch.dict(os.environ, env, clear=True):
+            with self.assertRaises(RuntimeError) as exc:
+                check_env_vars(for_web=True)
+        self.assertIn("WEB_API_KEY", str(exc.exception))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -89,6 +89,9 @@ cp .env.example .env
 ```env
 TELEGRAM_TOKEN=
 OPENAI_API_KEY=
+# или
+OPENROUTER_API_KEY=
+WEB_API_KEY=
 ```
 
 Рекомендуемые (зависят от окружения):
@@ -103,7 +106,7 @@ MODEL_MAX_RETRIES=2
 WEB_API_KEY=
 WEB_ALLOWED_ORIGINS=http://localhost:8000,http://127.0.0.1:8000
 WEB_TRUSTED_DOMAINS_ENABLED=true
-WEB_TRUSTED_DOMAINS=
+WEB_TRUSTED_DOMAINS=leroymerlin.ru,petrovich.ru,akson.ru,santehnika-online.ru
 ```
 
 Опционально:

@@ -34,6 +34,9 @@ class VisionInvokeConfigTests(unittest.TestCase):
         _args, kwargs = fake_model.invoke.call_args
         self.assertIn("config", kwargs)
         self.assertIsInstance(kwargs["config"], dict)
+        metadata = kwargs["config"].get("metadata") or {}
+        self.assertEqual(metadata.get("trace_user_id"), metadata.get("user_id"))
+        self.assertNotEqual(metadata.get("user_id"), "u1")
 
 
 if __name__ == "__main__":

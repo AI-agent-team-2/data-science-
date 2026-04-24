@@ -18,7 +18,7 @@ from app.observability.token_usage import token_manager
 from app.graph import get_model, model_circuit_breaker
 from app.rag.health import get_index_health
 from app.run_agent import run_agent
-from app.vision import prepare_image_for_vision
+from app.vision import MAX_PHOTO_SIZE_BYTES, MAX_PHOTO_SIZE_MB, prepare_image_for_vision
 
 from app.startup_checks import check_env_vars
 
@@ -69,6 +69,9 @@ PHOTO_ERROR_TEXT: Final[str] = (
     "- сфотографировать деталь крупнее\n"
     "- сделать фото при хорошем освещении\n"
     "- добавить текстовое описание к фото"
+)
+PHOTO_TOO_LARGE_TEXT: Final[str] = (
+    f"❌ Фото слишком большое. Максимальный размер: {MAX_PHOTO_SIZE_MB}MB."
 )
 
 # Vision LLM промпт
@@ -240,7 +243,7 @@ def _recognize_photo(image_bytes: bytes, *, user_id: str) -> str:
         "callbacks": [callback_handler] if callback_handler is not None else [],
         "run_name": "vision_request",
         "metadata": {
-            "user_id": user_id,
+            "user_id": hashed_user,
             "trace_session_id": hashed_user,
             "trace_user_id": hashed_user,
             "trace_tags": ["telegram", "san-bot", "vision"],
@@ -411,6 +414,16 @@ def photo_handler(message: Message) -> None:
         # Получить самое большое фото
         photo = message.photo[-1]
         file_info = bot.get_file(photo.file_id)
+        file_size = int(getattr(file_info, "file_size", 0) or 0)
+        if file_size > MAX_PHOTO_SIZE_BYTES:
+            logger.warning(
+                "Photo rejected: user=%s size=%s max=%s",
+                hash_user_id(user_id),
+                file_size,
+                MAX_PHOTO_SIZE_BYTES,
+            )
+            bot.reply_to(message, PHOTO_TOO_LARGE_TEXT)
+            return
         downloaded = bot.download_file(file_info.file_path)
 
         # Распознать через Vision LLM

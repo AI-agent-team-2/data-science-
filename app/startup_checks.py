@@ -11,8 +11,8 @@ REQUIRED_ENV_VARS: Final[dict[str, str]] = {
 # LLM ключ (можно через OPENAI_API_KEY или OPENROUTER_API_KEY)
 LLM_KEY_VARS: Final[list[str]] = ["OPENAI_API_KEY", "OPENROUTER_API_KEY"]
 
-# Опциональные для веб-интерфейса (только предупреждение, не блокируем)
-WEB_OPTIONAL_ENV_VARS: Final[dict[str, str]] = {
+# Обязательные для веб-интерфейса
+WEB_REQUIRED_ENV_VARS: Final[dict[str, str]] = {
     "WEB_API_KEY": "Web API key for authentication",
 }
 
@@ -22,7 +22,7 @@ def check_env_vars(for_web: bool = False) -> None:
     Проверяет наличие обязательных переменных окружения.
     
     Args:
-        for_web: Если True, дополнительно предупреждает о WEB_API_KEY.
+        for_web: Если True, WEB_API_KEY становится обязательным.
     """
     # В CI окружении пропускаем проверку
     if os.getenv("CI") == "true":
@@ -42,9 +42,9 @@ def check_env_vars(for_web: bool = False) -> None:
         missing.append(f"LLM API key ({' or '.join(LLM_KEY_VARS)})")
     
     if for_web:
-        for var, description in WEB_OPTIONAL_ENV_VARS.items():
+        for var, description in WEB_REQUIRED_ENV_VARS.items():
             if not os.getenv(var):
-                print(f"WARN: Optional env var not set: {var} ({description}) - some endpoints will be protected")
+                missing.append(f"{var} ({description})")
     
     if missing:
         print("ERROR: Missing required environment variables:")
