@@ -16,14 +16,15 @@ from deepteam.frameworks import OWASPTop10
 from deepeval.models import DeepEvalBaseLLM
 from openai import OpenAI
 
-# Определяем корень проекта динамически (поднимаемся на 3 уровня вверх)
-# run.py → lab1_owasp_top10 → labs → phase2_deepteam → data-science-
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-sys.path.insert(0, str(PROJECT_ROOT))
+# Определяем корень репозитория динамически.
+# run.py → lab1_owasp_top10 → labs → phase2 → evals → repo_root
+REPO_ROOT = Path(__file__).resolve().parents[4]
+PHASE2_DIR = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT))
 
 from app.run_agent import run_agent
 
-load_dotenv(PROJECT_ROOT / ".env")
+load_dotenv(REPO_ROOT / ".env")
 
 
 # =========================================================
@@ -142,22 +143,16 @@ else:
 if __name__ == "__main__":
     args = build_arg_parser().parse_args()
 
-    api_key_env = os.getenv("OPENROUTER_API_KEY_ENV", "").strip()
-    api_key = (
-        (os.getenv(api_key_env) if api_key_env else None)
-        or os.getenv("OPENROUTER_API_KEY")
-        or os.getenv("OPENAI_API_KEY")
-    )
+    api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
     if not api_key:
         raise SystemExit(
-            "Ошибка: не задан API key. Укажите OPENROUTER_API_KEY или OPENAI_API_KEY "
-            "(или задайте имя переменной через OPENROUTER_API_KEY_ENV)."
+            "Ошибка: OPENROUTER_API_KEY (или OPENAI_API_KEY) не задан (например, в .env или в GitHub Secrets)."
         )
 
     print("=" * 60)
     print("DeepTeam: OWASP LLM Top-10 Red Teaming")
     print("=" * 60)
-    print(f"Project root: {PROJECT_ROOT}")
+    print(f"Repo root: {REPO_ROOT}")
     print(f"Target model:   {args.target_model}")
     print(f"Attacker model: {args.attacker_model}")
     print(f"Judge model:    {args.judge_model}")
@@ -209,7 +204,7 @@ if __name__ == "__main__":
         print(f"Pass rate: {risk_assessment.pass_rate:.1%}")
 
     # ─── Сохранение отчёта ────────────────────────────────────────────────────
-    report_dir = PROJECT_ROOT / "phase2_deepteam" / "reports"
+    report_dir = PHASE2_DIR / "reports"
     report_dir.mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     report_path = report_dir / f"owasp_{timestamp}.json"

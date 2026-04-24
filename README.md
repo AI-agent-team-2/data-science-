@@ -74,6 +74,8 @@ python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
+`chromadb` намеренно зафиксирован по версии в `requirements.txt`. При апгрейде ChromaDB ориентируйтесь на changelog/миграции, прогоняйте ingestion и smoke-тест retrieval; в коде не используются приватные поля коллекции (например, `collection._embedding_function`).
+
 ## Настройка окружения
 
 ```bash
@@ -100,6 +102,7 @@ HISTORY_DB_PATH=./history.db
 MODEL_MAX_RETRIES=2
 WEB_API_KEY=
 WEB_ALLOWED_ORIGINS=http://localhost:8000,http://127.0.0.1:8000
+WEB_TRUSTED_DOMAINS_ENABLED=true
 WEB_TRUSTED_DOMAINS=
 ```
 
@@ -109,6 +112,8 @@ WEB_TRUSTED_DOMAINS=
 EMBEDDING_API_KEY=
 EMBEDDING_BASE_URL=
 TAVILY_API_KEY=
+WEB_CACHE_ENABLED=true
+WEB_CACHE_TTL_HOURS=24
 STARTUP_INDEX_MODE=if_empty
 MODEL_CIRCUIT_BREAKER_ENABLED=true
 MODEL_CIRCUIT_BREAKER_FAILURE_THRESHOLD=5
@@ -120,7 +125,10 @@ LANGFUSE_SECRET_KEY=
 LANGFUSE_HOST=https://cloud.langfuse.com
 ```
 
-Для web API (`/api/chat`, `/api/history`, `/api/clear`) обязателен заголовок:
+Файловый кэш web-поиска хранится в `.web_cache/` (локально) и в `/app/.web_cache` внутри контейнера.
+TTL по умолчанию — 24 часа (`WEB_CACHE_TTL_HOURS`). Очистка: удалить директорию `.web_cache/` или удалить Docker volume `san_bot_web_cache`.
+
+Админские web API эндпоинты (`/api/history`, `/api/clear`) требуют заголовок:
 
 ```http
 X-API-Key: <WEB_API_KEY>
@@ -129,13 +137,11 @@ X-API-Key: <WEB_API_KEY>
 В production рекомендуется проксировать web через `san-bot-proxy` (nginx), который
 отдает web UI и проксирует `/api/*` на `san-bot-web`.
 
-По умолчанию web API защищен заголовком `X-API-Key`. Для удобства публичного web UI
-прокси может подставлять `X-API-Key` к `/api/*` автоматически, чтобы пользователям
-не приходилось вводить ключ вручную.
+Публичные эндпоинты чата (`/api/chat`, `/api/chat-stream`) не требуют `X-API-Key` — это
+нужно для сценария «любой может открыть UI и пользоваться ботом без паролей».
 
-Важно: в таком режиме web-интерфейс становится публичной точкой входа к LLM, поэтому
-обязательно держите rate limiting включенным и по возможности ограничьте доступ к web UI
-(например, basic auth/VPN/IP allowlist), если не планируете полностью публичный доступ.
+Важно: не подставляйте `X-API-Key` прокси-сервером на все `/api/*`, иначе любые посетители
+UI смогут дергать админские эндпоинты.
 
 ## Подготовка RAG (ингест)
 
@@ -204,6 +210,7 @@ docker compose down
 Состояние сохраняется в Docker volumes:
 - `san_bot_chroma` (ChromaDB)
 - `san_bot_history` (SQLite history)
+- `san_bot_web_cache` (web search cache)
 
 ## Observability (Langfuse)
 
@@ -221,6 +228,7 @@ docker compose down
 
 - Базовые вопросы для ручной проверки: `TEST.txt`.
 - Структурированные eval-кейсы: `tests/evals/cases.jsonl`.
+- Локальный прогон тестов: `pytest -q` (CI прогоняет `unittest discover`).
 - Автоматизированный прогон eval-кейсов:
 
 ```bash
@@ -228,6 +236,11 @@ python tests/evals/run_eval.py
 ```
 
 Отчет сохраняется в `artifacts/eval_report.json`.
+- Phase 1 (dataset evals / Inspect AI): `evals/phase1/README.md` (статические датасеты, скачивание и локальный прогон).
+- Phase 2 (dynamic security / DeepTeam): `evals/phase2/README.md` (OWASP LLM Top-10 red teaming по `run_agent()`).
+- GitHub Actions (ручной запуск):
+  - `Dataset Tests` (`.github/workflows/phase1-evals.yml`) — требует `OPENAI_API_KEY`, сохраняет артефакт `phase1-reports`.
+  - `Dynamic Security Tests` (`.github/workflows/dynamic-security.yml`) — требует `OPENAI_API_KEY`, сохраняет артефакт `deepteam-reports`.
 - Для локальной проверки импорта:
 
 ```bash

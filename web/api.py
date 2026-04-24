@@ -15,7 +15,7 @@ from pathlib import Path
 # Добавляем корень проекта в sys.path, чтобы импорт `app.*` работал
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -24,6 +24,9 @@ from pydantic import BaseModel, Field
 from app.config import settings
 from app.run_agent import run_agent
 from app.history_store import clear_history, load_turns
+from app.observability import hash_user_id
+
+from app.startup_checks import check_env_vars
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -58,6 +61,12 @@ app = FastAPI(
     version="2.0.0",
 )
 
+
+@app.on_event("startup")
+def _validate_startup_env() -> None:
+    """Проверяет обязательные env на старте приложения, не на import-time."""
+    check_env_vars(for_web=True)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.web_allowed_origins,
@@ -83,6 +92,16 @@ def _require_api_key(x_api_key: str | None = Header(default=None, alias="X-API-K
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or missing API key",
         )
+
+
+def _resolve_client_identity(request: Request) -> str:
+    """Возвращает server-side identity клиента для лимитов и token budget."""
+    xff = request.headers.get("x-forwarded-for", "")
+    client_ip = xff.split(",")[0].strip() if xff else ""
+    if not client_ip:
+        client_ip = request.client.host if request.client is not None else "unknown"
+    user_agent = request.headers.get("user-agent", "").strip().lower()
+    return hash_user_id(f"web:{client_ip}:{user_agent}")
 
 
 @app.get("/api/health")
@@ -112,7 +131,7 @@ def get_history(
 
 
 @app.post("/api/chat", response_model=ChatResponse)
-def chat(req: ChatRequest, _auth: None = Depends(_require_api_key)):
+def chat(req: ChatRequest, request: Request):
     """
     Отправить сообщение боту и получить ответ.
 
@@ -120,9 +139,11 @@ def chat(req: ChatRequest, _auth: None = Depends(_require_api_key)):
     автоматически выполняет его в пуле потоков — это корректно для
     блокирующего вызова `run_agent()`.
     """
-    logger.info("POST /api/chat  session=%s  len=%d", req.session_id, len(req.message))
+    client_id = _resolve_client_identity(request)
+    logger.info("POST /api/chat  session=%s client=%s len=%d", req.session_id, client_id, len(req.message))
     try:
-        reply = run_agent(req.message, user_id=req.session_id)
+        # Не доверяем client-provided session_id как identity для лимитов/бюджета.
+        reply = run_agent(req.message, user_id=client_id)
     except Exception as exc:
         logger.exception("run_agent failed")
         raise HTTPException(status_code=500, detail="Ошибка обработки запроса") from exc
@@ -130,13 +151,14 @@ def chat(req: ChatRequest, _auth: None = Depends(_require_api_key)):
 
 
 @app.post("/api/chat-stream")
-async def chat_stream(req: ChatRequest, _auth: None = Depends(_require_api_key)):
+async def chat_stream(req: ChatRequest, request: Request):
     """
     Отправить сообщение боту и получить ответ в режиме стриминга (по частям).
     
     Ответ возвращается порциями по 3-5 символов, что создаёт эффект "печатания".
     """
-    logger.info("POST /api/chat-stream  session=%s  len=%d", req.session_id, len(req.message))
+    client_id = _resolve_client_identity(request)
+    logger.info("POST /api/chat-stream  session=%s client=%s len=%d", req.session_id, client_id, len(req.message))
     
     async def generate():
         try:
@@ -147,7 +169,7 @@ async def chat_stream(req: ChatRequest, _auth: None = Depends(_require_api_key))
                 None, 
                 run_agent, 
                 req.message, 
-                req.session_id
+                client_id
             )
             
             # Отправляем ответ порциями (по 3-5 символов)

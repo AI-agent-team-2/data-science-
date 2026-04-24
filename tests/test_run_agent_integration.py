@@ -6,10 +6,20 @@ from unittest.mock import MagicMock, patch
 from langchain_core.messages import AIMessage
 
 from app.agent.invoke import InvocationResult
-from app.run_agent import run_agent
+from app.run_agent import _save_and_return, run_agent
 
 
 class RunAgentIntegrationTests(unittest.TestCase):
+    @patch("app.history_store.save_turn_source")
+    @patch("app.run_agent.save_turn", return_value=42)
+    def test_save_and_return_persists_used_source_with_real_turn_id(
+        self,
+        _mock_save_turn: MagicMock,
+        mock_save_turn_source: MagicMock,
+    ) -> None:
+        _save_and_return("u1", "q", "a", used_source="rag")
+        mock_save_turn_source.assert_called_once_with("u1", 42, "rag")
+
     @patch("app.run_agent.save_turn")
     @patch("app.run_agent.invoke_with_timeout")
     @patch("app.run_agent.build_context")

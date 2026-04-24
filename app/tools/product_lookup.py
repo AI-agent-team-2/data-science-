@@ -5,6 +5,7 @@ from typing import Any, Final, TypedDict
 
 from langchain_core.tools import tool
 
+from app.observability import sanitize_text
 from app.rag.retriever import ProductRetriever
 from app.tools.response_utils import build_tool_payload, empty_results_payload, error_payload
 
@@ -83,10 +84,10 @@ def product_lookup(query: str, limit: int = 5) -> dict[str, Any]:
 
     top_n = _clamp_limit(limit)
     mode = "semantic"
-    retriever = _get_retriever()
-    query_skus = retriever.extract_query_skus(normalized_query)
 
     try:
+        retriever = _get_retriever()
+        query_skus = retriever.extract_query_skus(normalized_query)
         if query_skus:
             exact_matches = retriever.find_exact_sku_matches(query=normalized_query, limit=top_n)
             if exact_matches:
@@ -118,7 +119,7 @@ def product_lookup(query: str, limit: int = 5) -> dict[str, Any]:
             mode=mode,
         )
     except Exception as exc:
-        logger.exception("Ошибка product_lookup для запроса: %s", normalized_query)
+        logger.exception("Ошибка product_lookup для запроса: %s", sanitize_text(normalized_query))
         return error_payload(
             query=normalized_query,
             note="Внутренняя ошибка поиска. Попробуйте повторить запрос позже.",

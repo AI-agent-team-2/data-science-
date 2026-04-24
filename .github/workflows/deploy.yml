@@ -102,6 +102,46 @@ jobs:
             APP_DIR="${APP_DIR:-/opt/san_bot}"
             BOT_ENV_FILE="${BOT_ENV_FILE:-/etc/san-bot/san-bot.env}"
 
+            if [ ! -d "$APP_DIR" ]; then
+              echo "APP_DIR does not exist: $APP_DIR"
+              exit 1
+            fi
+
+            disk_use_pct() {
+              # percent integer for the filesystem that contains the given path
+              df -P "$1" | awk 'NR==2 {gsub("%","",$5); print $5}'
+            }
+
+            cleanup_docker_unused() {
+              echo "----- docker cleanup: prune unused images/build cache -----"
+              docker image prune -af || true
+              docker builder prune -af || true
+            }
+
+            truncate_docker_json_logs() {
+              echo "----- docker cleanup: truncate container json logs -----"
+              find /var/lib/docker/containers -name '*-json.log' -type f -exec sh -c ': > "$1"' _ {} \; 2>/dev/null || true
+            }
+
+            maybe_cleanup_before_git() {
+              USEP="$(disk_use_pct "$APP_DIR")"
+              echo "Disk usage (fs containing APP_DIR): ${USEP}%"
+              if [ "${USEP}" -ge 95 ]; then
+                echo "Disk usage is high (${USEP}%). Running cleanup before git/docker pull..."
+                cleanup_docker_unused
+                truncate_docker_json_logs
+                USEP2="$(disk_use_pct "$APP_DIR")"
+                echo "Disk usage after cleanup: ${USEP2}%"
+                if [ "${USEP2}" -ge 98 ]; then
+                  echo "Still not enough free space; aborting deploy to avoid partial git/docker writes."
+                  df -hT || true
+                  exit 1
+                fi
+              fi
+            }
+
+            maybe_cleanup_before_git
+
             cd "$APP_DIR"
             if [ -d .git ]; then
               git fetch origin main
@@ -143,19 +183,30 @@ jobs:
             $COMPOSE_CMD -f "$COMPOSE_FILE" up -d san-bot san-bot-web san-bot-proxy
 
             HEALTHY=0
-            for _ in $(seq 1 18); do
+            MAX_ATTEMPTS=120
+            SLEEP_SEC=5
+            for i in $(seq 1 "$MAX_ATTEMPTS"); do
               STATUS="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}running{{end}}' san-bot 2>/dev/null || echo missing)"
               STATUS_WEB="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}running{{end}}' san-bot-web 2>/dev/null || echo missing)"
               STATUS_PROXY="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}running{{end}}' san-bot-proxy 2>/dev/null || echo missing)"
+              echo "[$i/$MAX_ATTEMPTS] san-bot=$STATUS san-bot-web=$STATUS_WEB san-bot-proxy=$STATUS_PROXY"
               if [ \( "$STATUS" = "healthy" -o "$STATUS" = "running" \) -a \( "$STATUS_WEB" = "healthy" -o "$STATUS_WEB" = "running" \) -a \( "$STATUS_PROXY" = "healthy" -o "$STATUS_PROXY" = "running" \) ]; then
                 HEALTHY=1
                 break
               fi
-              sleep 5
+              sleep "$SLEEP_SEC"
             done
 
             if [ "$HEALTHY" -ne 1 ]; then
               echo "Health-check failed; attempting rollback."
+              echo "----- docker inspect health (san-bot) -----"
+              docker inspect san-bot --format '{{json .State.Health}}' 2>/dev/null || true
+              echo "----- docker inspect health (san-bot-web) -----"
+              docker inspect san-bot-web --format '{{json .State.Health}}' 2>/dev/null || true
+              echo "----- docker compose logs (san-bot) -----"
+              $COMPOSE_CMD -f "$COMPOSE_FILE" logs --tail=200 san-bot 2>/dev/null || true
+              echo "----- docker compose logs (san-bot-web) -----"
+              $COMPOSE_CMD -f "$COMPOSE_FILE" logs --tail=200 san-bot-web 2>/dev/null || true
               if [ -f .previous_image_tag ]; then
                 export BOT_IMAGE="$(cat .previous_image_tag)"
                 $COMPOSE_CMD -f "$COMPOSE_FILE" up -d san-bot san-bot-web san-bot-proxy
@@ -166,6 +217,9 @@ jobs:
 
             echo "$BOT_IMAGE" > .deployed_image_tag
             $COMPOSE_CMD -f "$COMPOSE_FILE" ps
+
+            # Prevent disk fill-up: each deploy pulls a new sha-tagged image; old images become unused.
+            cleanup_docker_unused
         env:
           BOT_IMAGE: ${{ needs.build-and-publish.outputs.image_ref }}
           APP_DIR: ${{ secrets.VPS_APP_DIR }}

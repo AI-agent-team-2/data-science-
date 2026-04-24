@@ -1,0 +1,79 @@
+name: "Phase 1: Static Evaluation (Dataset Snapshot)"
+
+on:
+  workflow_dispatch:
+    inputs:
+      dataset:
+        description: "Какой датасет прогнать"
+        required: true
+        type: choice
+        options:
+          - advbench
+          - xstest
+          - toxicchat
+          - do_not_answer
+          - aya_redteaming
+          - wildjailbreak
+      limit:
+        description: "Лимит примеров (0 = без лимита)"
+        required: false
+        default: "50"
+      judge_model:
+        description: "Judge модель (OpenRouter id)"
+        required: false
+        default: "openai/gpt-4o-mini"
+
+jobs:
+  phase1:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r evals/phase1/requirements.txt
+      
+      - name: Build Chroma index (RAG + Lookup)
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          CHROMA_OPENAI_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          EMBEDDING_MODEL_NAME: "openai/text-embedding-3-small"
+          CHROMA_PATH: "./chroma_db"
+        run: |
+          python -m app.rag.ingest
+
+      - name: Download selected dataset
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HUGGINGFACE_HUB_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          python evals/phase1/datasets/download_datasets.py "${{ inputs.dataset }}"
+
+      - name: Run Phase 1 eval
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          RATE_LIMIT_REQUESTS: "1000000"
+          RATE_LIMIT_WINDOW_SEC: "1"
+        run: |
+          python evals/phase1/run_phase1_eval.py --dataset "${{ inputs.dataset }}" --limit "${{ inputs.limit }}" --judge-model "${{ inputs.judge_model }}"
+
+      - name: Check metrics against thresholds
+        run: |
+          python evals/phase1/check_metrics.py --dataset "${{ inputs.dataset }}"
+
+      - name: Upload reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: phase1-reports
+          path: evals/phase1/reports/

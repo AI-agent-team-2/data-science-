@@ -4,19 +4,86 @@ import hashlib
 import json
 import logging
 import os
+import random
+import tempfile
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Final
+from urllib.parse import urlparse
 
 from langchain_core.tools import tool
 
 from app.config import settings
 from app.tools.response_utils import build_tool_payload, error_payload
 
+def filter_by_trusted_domains(results: list[dict]) -> list[dict]:
+    """Фильтрует результаты поиска по доверенным доменам."""
+    if not settings.web_trusted_domains_enabled:
+        return results
+
+    trusted = [domain.lower().strip() for domain in settings.web_trusted_domains if domain.strip()]
+    if not trusted:
+        return results
+
+    filtered: list[dict] = []
+    for item in results:
+        raw_url = str(item.get("url", "")).strip()
+        if not raw_url:
+            continue
+        host = (urlparse(raw_url).hostname or "").lower()
+        if any(host == domain or host.endswith(f".{domain}") for domain in trusted):
+            filtered.append(item)
+
+    return filtered
+
 logger = logging.getLogger(__name__)
 
 CACHE_DIR: Final[Path] = Path(__file__).resolve().parents[2] / ".web_cache"
 MAX_RESULTS_HARD_LIMIT: Final[int] = 10
+
+
+def _acquire_lock(lock_file: Path, timeout_sec: float = 2.0, stale_after_sec: float = 60.0) -> int | None:
+    """Пытается атомарно захватить lock-файл (межпроцессный).
+
+    Возвращает fd на lock-файл (его нужно закрыть), либо None если захватить не удалось.
+    """
+    deadline = time.monotonic() + max(0.0, timeout_sec)
+    while True:
+        try:
+            fd = os.open(str(lock_file), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            try:
+                os.write(fd, f"pid={os.getpid()} ts={datetime.now().isoformat()}\n".encode("utf-8"))
+            except Exception:
+                pass
+            return fd
+        except FileExistsError:
+            try:
+                stat = lock_file.stat()
+                if time.time() - stat.st_mtime > stale_after_sec:
+                    lock_file.unlink(missing_ok=True)
+                    continue
+            except Exception:
+                pass
+
+            if time.monotonic() >= deadline:
+                return None
+            time.sleep(0.01 + random.random() * 0.03)
+        except Exception:
+            return None
+
+
+def _release_lock(lock_file: Path, fd: int | None) -> None:
+    if fd is None:
+        return
+    try:
+        os.close(fd)
+    except Exception:
+        pass
+    try:
+        lock_file.unlink(missing_ok=True)
+    except Exception:
+        pass
 
 
 def _coerce_web_payload(payload: dict[str, Any], provider: str = "") -> dict[str, Any]:
@@ -86,15 +153,48 @@ def _save_to_cache(key: str, result: dict[str, Any]) -> None:
 
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     cache_file = CACHE_DIR / f"{key}.json"
+    lock_file = CACHE_DIR / f"{key}.lock"
     payload = {
         "cached_at": datetime.now().isoformat(),
         "result": result,
     }
 
     try:
-        cache_file.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        serialized = json.dumps(payload, ensure_ascii=False, indent=2)
+    except Exception:
+        logger.exception("Не удалось сериализовать WEB-кэш для %s", cache_file)
+        return
+
+    lock_fd: int | None = None
+    tmp_path: str | None = None
+    try:
+        lock_fd = _acquire_lock(lock_file)
+        if lock_fd is None:
+            return
+
+        fd, tmp_path = tempfile.mkstemp(prefix=f"{key}.", suffix=".tmp", dir=str(CACHE_DIR))
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as tmp:
+                tmp.write(serialized)
+                tmp.flush()
+                os.fsync(tmp.fileno())
+        except Exception:
+            try:
+                os.close(fd)
+            except Exception:
+                pass
+            raise
+
+        os.replace(tmp_path, cache_file)
     except Exception:
         logger.exception("Не удалось сохранить кэш WEB-поиска в %s", cache_file)
+    finally:
+        if tmp_path:
+            try:
+                Path(tmp_path).unlink(missing_ok=True)
+            except Exception:
+                pass
+        _release_lock(lock_file, lock_fd)
 
 
 def _normalize_results(query: str, items: list[dict[str, Any]], provider: str) -> dict[str, Any]:
@@ -263,4 +363,8 @@ def web_search(query: str, max_results: int = 5) -> dict[str, Any]:
             _save_to_cache(cache_key, result)
     except Exception:
         logger.exception("Не удалось разобрать ответ web_search для кэширования")
+    
+    if isinstance(result, dict) and "results" in result:
+        result["results"] = filter_by_trusted_domains(result["results"])
+    
     return _coerce_web_payload(result)

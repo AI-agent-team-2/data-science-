@@ -14,10 +14,13 @@ from app.config import settings
 from app.history_store import clear_history
 from app.observability import get_langchain_callback_handler, hash_user_id
 from app.observability.rate_limiter import rate_limiter
+from app.observability.token_usage import token_manager
 from app.graph import get_model, model_circuit_breaker
 from app.rag.health import get_index_health
 from app.run_agent import run_agent
 from app.vision import prepare_image_for_vision
+
+from app.startup_checks import check_env_vars
 
 logger = logging.getLogger(__name__)
 
@@ -137,8 +140,10 @@ def _safe_error_text(exc: Exception, max_len: int = MAX_STATUS_ERROR_LEN) -> str
     return f"{text[: max_len - 3]}..."
 
 
-def _format_status_text() -> str:
+def _format_status_text(session_id: str) -> str:
     """Формирует текст статуса бота с проверкой доступности RAG-хранилища."""
+    from app.history_store import get_last_sources
+    
     rag_status: str
     try:
         health = get_index_health()
@@ -149,6 +154,10 @@ def _format_status_text() -> str:
     except Exception as exc:
         logger.exception("Не удалось инициализировать RAG-ретривер")
         rag_status = f"❌ ({_safe_error_text(exc)})"
+    
+    # Получаем последние источники
+    last_sources = get_last_sources(session_id, limit=5)
+    sources_str = ", ".join(last_sources) if last_sources else "нет данных"
 
     return (
         "\n📊 *Статус бота*\n\n"
@@ -156,10 +165,13 @@ def _format_status_text() -> str:
         f"*LLM:* {settings.resolved_model_name}\n"
         f"*RAG:* {rag_status}\n"
         f"*Веб-поиск:* {'✅' if settings.enable_web_search else '❌'}\n"
+        f"*Trusted domains:* {'✅' if settings.web_trusted_domains_enabled else '❌'}\n"
+        f"*Trusted domains count:* {len(settings.web_trusted_domains)}\n"
         f"*История:* {'✅' if settings.history_db_path else '❌'}\n"
         f"*Распознавание фото:* ✅ (Vision LLM)\n"
         f"*Rate limiting:* ✅ ({settings.rate_limit_requests} запросов/{settings.rate_limit_window_sec} сек)\n\n"
         f"*Команды:* {', '.join('/' + cmd for cmd in KNOWN_COMMANDS)}\n"
+        f"*Последние источники:* {sources_str}\n"
     )
 
 
@@ -249,12 +261,19 @@ def _recognize_photo(image_bytes: bytes, *, user_id: str) -> str:
         ],
         timeout_sec=settings.model_timeout_sec,
         breaker=model_circuit_breaker,
+        pool="model",
     )
     if result.status != "ok":
         raise RuntimeError(f"vision_invoke_failed:{result.error_type}:{result.error_message}")
 
     response = result.value
-    return str(getattr(response, "content", "")).strip()
+    description = str(getattr(response, "content", "")).strip()
+    
+    # Trim description if it's too long
+    if len(description) > settings.max_input_text_len:
+        description = f"{description[:settings.max_input_text_len]}... [truncated]"
+        
+    return description
 
 
 def _find_similar_products(description: str, limit: int = 3) -> list[dict]:
@@ -301,16 +320,17 @@ def _handle_text_message(message: Message) -> None:
         bot.reply_to(message, "Пожалуйста, отправьте текстовый запрос.")
         return
 
-    if text.startswith("/"):
-        _handle_unknown_command(message)
+    if len(text) > settings.max_input_text_len:
+        bot.reply_to(
+            message,
+            f"⚠️ Ваш запрос слишком длинный ({len(text)} симв.). "
+            f"Максимальная длина: {settings.max_input_text_len} симв. "
+            "Пожалуйста, сократите его."
+        )
         return
 
-    user_id = str(message.from_user.id)
-
-    # Rate limiting
-    allowed, wait_seconds = rate_limiter.is_allowed(user_id)
-    if not allowed:
-        bot.reply_to(message, f"⏳ Слишком много запросов. Подождите {wait_seconds} секунд.")
+    if text.startswith("/"):
+        _handle_unknown_command(message)
         return
 
     session_user_id = str(message.from_user.id)
@@ -349,7 +369,8 @@ def clear_handler(message: Message) -> None:
 @bot.message_handler(commands=["status"])
 def status_handler(message: Message) -> None:
     """Показывает текущий статус бота и подключенных подсистем."""
-    bot.reply_to(message, _format_status_text(), parse_mode="Markdown")
+    session_id = str(message.from_user.id)
+    bot.reply_to(message, _format_status_text(session_id), parse_mode="Markdown")
 
 
 @bot.message_handler(commands=["id"])
@@ -377,6 +398,11 @@ def photo_handler(message: Message) -> None:
     allowed, wait_seconds = rate_limiter.is_allowed(user_id)
     if not allowed:
         bot.reply_to(message, f"⏳ Слишком много запросов. Подождите {wait_seconds} секунд.")
+        return
+
+    # Token budget check
+    if not token_manager.has_budget(user_id):
+        bot.reply_to(message, "Исчерпан лимит токенов для вашей сессии. Пожалуйста, обратитесь в поддержку.")
         return
 
     try:
@@ -441,6 +467,7 @@ def text_handler(message: Message) -> None:
 
 
 if __name__ == "__main__":
+    check_env_vars(for_web=False)
     logging.basicConfig(level=logging.INFO)
     logger.info("Запуск SAN Bot v%s", BOT_VERSION)
     logger.info("Доступные команды: %s", KNOWN_COMMANDS)

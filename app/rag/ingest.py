@@ -385,9 +385,7 @@ def _get_or_create_collection(client: chromadb.PersistentClient, collection_name
     embedding_function = create_embedding_function()
 
     try:
-        collection = client.get_collection(name=collection_name)
-        collection._embedding_function = embedding_function
-        return collection
+        return client.get_collection(name=collection_name, embedding_function=embedding_function)
     except Exception:
         logger.info("Коллекция '%s' не найдена. Создаю новую.", collection_name)
         return client.create_collection(

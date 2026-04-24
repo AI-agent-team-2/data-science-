@@ -1,7 +1,16 @@
-name: Dynamic Security Tests
+name: "Phase 2: Dynamic Security Evaluation (Runtime)"
 
 on:
   workflow_dispatch:  # запуск только вручную
+    inputs:
+      attacks_per_type:
+        description: "Атак на уязвимость (attacks_per_type)"
+        required: false
+        default: "3"
+      max_concurrent:
+        description: "Параллельных запросов (max_concurrent)"
+        required: false
+        default: "1"
 
 jobs:
   deepteam:
@@ -20,22 +29,33 @@ jobs:
           pip install -r requirements.txt
           pip install deepeval deepteam
       
+      - name: Build Chroma index (RAG + Lookup)
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          CHROMA_OPENAI_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          EMBEDDING_MODEL_NAME: "openai/text-embedding-3-small"
+          CHROMA_PATH: "./chroma_db"
+        run: |
+          python -m app.rag.ingest
+      
       - name: Run DeepTeam test
         env:
-          # Поддерживаем оба имени переменной, чтобы совпадало с `.env.example`
-          # и чтобы workflow работал, даже если в репозитории задан только один secret.
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY || secrets.OPENROUTER_API_KEY }}
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY || secrets.OPENAI_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          RATE_LIMIT_REQUESTS: "1000000"
+          RATE_LIMIT_WINDOW_SEC: "1"
         run: |
-          cd phase2_deepteam/labs/lab1_owasp_top10
-          python run.py --attacks-per-type 3 --max-concurrent 1
+          cd evals/phase2/labs/lab1_owasp_top10
+          python run.py --attacks-per-type "${{ inputs.attacks_per_type }}" --max-concurrent "${{ inputs.max_concurrent }}"
       
       - name: Check metrics against thresholds
         run: |
-          python phase2_deepteam/check_metrics.py
+          python evals/phase2/check_metrics.py
       
       - name: Upload reports
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: deepteam-reports
-          path: phase2_deepteam/reports/
+          path: evals/phase2/reports/

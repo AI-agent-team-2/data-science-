@@ -29,6 +29,16 @@ history.db
 # Local reports
 artifacts/
 
+# Phase 1 / Phase 2 eval artifacts (keep templates/scripts, ignore outputs)
+evals/phase1/datasets/*/
+evals/phase1/labs/**/logs/
+evals/phase1/labs/**/output/
+evals/phase1/reports/*
+!evals/phase1/reports/.gitkeep
+evals/phase2/reports/
+**/.deepteam/
+evals/**/__pycache__/
+
 # OS / IDE
 .DS_Store
 Thumbs.db

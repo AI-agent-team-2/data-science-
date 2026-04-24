@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass, field
 from typing import Final
@@ -7,6 +8,7 @@ from typing import Final
 from dotenv import load_dotenv
 
 load_dotenv()
+logger = logging.getLogger(__name__)
 
 DEFAULT_PROVIDER: Final[str] = "openrouter"
 DEFAULT_OPENROUTER_BASE_URL: Final[str] = "https://openrouter.ai/api/v1"
@@ -28,7 +30,18 @@ DEFAULT_WEB_SEARCH_MAX_RESULTS: Final[int] = 5
 DEFAULT_ENABLE_WEB_SEARCH: Final[bool] = True
 DEFAULT_ENABLE_RAG: Final[bool] = True
 DEFAULT_ENABLE_PRODUCT_LOOKUP: Final[bool] = True
+DEFAULT_WEB_TRUSTED_DOMAINS_ENABLED: Final[bool] = True
 DEFAULT_STARTUP_INDEX_MODE: Final[str] = "if_empty"
+
+# ========== AI Guard defaults ==========
+DEFAULT_AI_GUARD_MODE: Final[str] = "off"  # off|shadow|enforce
+DEFAULT_AI_GUARD_TIMEOUT_SEC: Final[int] = 4
+DEFAULT_AI_GUARD_CACHE_TTL_SEC: Final[int] = 20 * 60
+DEFAULT_AI_GUARD_INPUT_ENABLED: Final[bool] = True
+DEFAULT_AI_GUARD_OUTPUT_ENABLED: Final[bool] = True
+DEFAULT_AI_GUARD_DOMAIN_ENABLED: Final[bool] = True
+DEFAULT_AI_GUARD_ENFORCE_MIN_CONFIDENCE: Final[float] = 0.75
+DEFAULT_AI_GUARD_MAX_OUTPUT_CHARS: Final[int] = 600
 
 # ========== Новые константы для таймаутов и порогов ==========
 DEFAULT_TOOL_TIMEOUT_SEC: Final[int] = 20
@@ -51,10 +64,12 @@ DEFAULT_MAX_LOOKUP_CONTEXT_ITEMS: Final[int] = 5
 DEFAULT_MAX_WEB_CONTEXT_ITEMS: Final[int] = 5
 DEFAULT_WEB_MIN_SOURCES: Final[int] = 2
 DEFAULT_INVOKE_MAX_WORKERS: Final[int] = 8
+DEFAULT_INVOKE_MAX_QUEUE: Final[int] = 64
 
 # ========== Rate limiting ==========
 DEFAULT_RATE_LIMIT_REQUESTS: Final[int] = 10
 DEFAULT_RATE_LIMIT_WINDOW_SEC: Final[int] = 60
+DEFAULT_MAX_INPUT_TEXT_LEN: Final[int] = 1000
 DEFAULT_RATE_LIMIT_MAX_USERS: Final[int] = 50000
 DEFAULT_RATE_LIMIT_USER_TTL_SEC: Final[int] = 24 * 60 * 60
 DEFAULT_RATE_LIMIT_PRUNE_EVERY: Final[int] = 200
@@ -79,7 +94,14 @@ def _get_env_str(name: str, default: str = "") -> str:
 def _get_env_bool(name: str, default: bool) -> bool:
     """Преобразует переменную окружения в bool (`true/false`, `1/0`, `yes/no`)."""
     raw_value = _get_env_str(name, "true" if default else "false").lower()
-    return raw_value in {"1", "true", "yes", "y", "on"}
+    truthy = {"1", "true", "yes", "y", "on"}
+    falsy = {"0", "false", "no", "n", "off"}
+    if raw_value in truthy:
+        return True
+    if raw_value in falsy:
+        return False
+    logger.warning("Invalid boolean env %s=%r; using default=%s", name, raw_value, default)
+    return default
 
 
 def _get_env_int(name: str, default: int) -> int:
@@ -90,6 +112,7 @@ def _get_env_int(name: str, default: int) -> int:
     try:
         return int(raw_value)
     except ValueError:
+        logger.warning("Invalid integer env %s=%r; using default=%s", name, raw_value, default)
         return default
 
 
@@ -101,6 +124,7 @@ def _get_env_float(name: str, default: float) -> float:
     try:
         return float(raw_value.replace(",", "."))
     except ValueError:
+        logger.warning("Invalid float env %s=%r; using default=%s", name, raw_value, default)
         return default
 
 
@@ -118,11 +142,11 @@ class Settings:
     """Конфигурация приложения, загружаемая из `.env` и переменных окружения."""
 
     model_provider: str = _get_env_str("MODEL_PROVIDER", DEFAULT_PROVIDER).lower()
-    openai_api_key: str = _get_env_str("OPENAI_API_KEY")
+    openai_api_key: str = _get_env_str("OPENAI_API_KEY") or _get_env_str("OPENROUTER_API_KEY")
     model_name: str = _get_env_str("MODEL_NAME")
     openai_base_url: str = _get_env_str("OPENAI_BASE_URL")
 
-    embedding_model_name: str = DEFAULT_EMBEDDING_MODEL
+    embedding_model_name: str = _get_env_str("EMBEDDING_MODEL_NAME", DEFAULT_EMBEDDING_MODEL)
     embedding_api_key: str = _get_env_str("EMBEDDING_API_KEY")
     embedding_base_url: str = _get_env_str("EMBEDDING_BASE_URL")
 
@@ -139,13 +163,13 @@ class Settings:
     history_max_messages: int = DEFAULT_HISTORY_MAX_MESSAGES
     history_ttl_days: int = DEFAULT_HISTORY_TTL_DAYS
 
-    web_cache_enabled: bool = DEFAULT_WEB_CACHE_ENABLED
-    web_cache_ttl_hours: int = DEFAULT_WEB_CACHE_TTL_HOURS
+    web_cache_enabled: bool = _get_env_bool("WEB_CACHE_ENABLED", DEFAULT_WEB_CACHE_ENABLED)
+    web_cache_ttl_hours: int = _get_env_int("WEB_CACHE_TTL_HOURS", DEFAULT_WEB_CACHE_TTL_HOURS)
     web_search_max_results: int = DEFAULT_WEB_SEARCH_MAX_RESULTS
 
-    enable_web_search: bool = DEFAULT_ENABLE_WEB_SEARCH
-    enable_rag: bool = DEFAULT_ENABLE_RAG
-    enable_product_lookup: bool = DEFAULT_ENABLE_PRODUCT_LOOKUP
+    enable_web_search: bool = _get_env_bool("ENABLE_WEB_SEARCH", DEFAULT_ENABLE_WEB_SEARCH)
+    enable_rag: bool = _get_env_bool("ENABLE_RAG", DEFAULT_ENABLE_RAG)
+    enable_product_lookup: bool = _get_env_bool("ENABLE_PRODUCT_LOOKUP", DEFAULT_ENABLE_PRODUCT_LOOKUP)
     startup_index_mode: str = _get_env_str("STARTUP_INDEX_MODE", DEFAULT_STARTUP_INDEX_MODE).lower()
 
     langfuse_public_key: str = _get_env_str("LANGFUSE_PUBLIC_KEY")
@@ -158,6 +182,15 @@ class Settings:
     model_timeout_sec: int = DEFAULT_MODEL_TIMEOUT_SEC
     model_max_retries: int = _get_env_int("MODEL_MAX_RETRIES", DEFAULT_MODEL_MAX_RETRIES)
     invoke_max_workers: int = _get_env_int("INVOKE_MAX_WORKERS", DEFAULT_INVOKE_MAX_WORKERS)
+    invoke_max_queue: int = _get_env_int("INVOKE_MAX_QUEUE", DEFAULT_INVOKE_MAX_QUEUE)
+
+    # Опциональные override'ы для отдельных пулов внешних вызовов.
+    # Если не заданы, пулы делят общий INVOKE_MAX_WORKERS.
+    invoke_model_max_workers: int = _get_env_int("INVOKE_MODEL_MAX_WORKERS", 0)
+    invoke_tool_max_workers: int = _get_env_int("INVOKE_TOOL_MAX_WORKERS", 0)
+    # Для очередей используем -1 как "не задано", чтобы можно было явно поставить 0.
+    invoke_model_max_queue: int = _get_env_int("INVOKE_MODEL_MAX_QUEUE", -1)
+    invoke_tool_max_queue: int = _get_env_int("INVOKE_TOOL_MAX_QUEUE", -1)
 
     # ========== Circuit breaker (LLM API) ==========
     model_circuit_breaker_enabled: bool = _get_env_bool(
@@ -200,6 +233,7 @@ class Settings:
     # ========== Rate limiting ==========
     rate_limit_requests: int = _get_env_int("RATE_LIMIT_REQUESTS", DEFAULT_RATE_LIMIT_REQUESTS)
     rate_limit_window_sec: int = _get_env_int("RATE_LIMIT_WINDOW_SEC", DEFAULT_RATE_LIMIT_WINDOW_SEC)
+    max_input_text_len: int = _get_env_int("MAX_INPUT_TEXT_LEN", DEFAULT_MAX_INPUT_TEXT_LEN)
     rate_limit_max_users: int = _get_env_int("RATE_LIMIT_MAX_USERS", DEFAULT_RATE_LIMIT_MAX_USERS)
     rate_limit_user_ttl_sec: int = _get_env_int("RATE_LIMIT_USER_TTL_SEC", DEFAULT_RATE_LIMIT_USER_TTL_SEC)
     rate_limit_prune_every: int = _get_env_int("RATE_LIMIT_PRUNE_EVERY", DEFAULT_RATE_LIMIT_PRUNE_EVERY)
@@ -223,6 +257,25 @@ class Settings:
         )
     )
     web_trusted_domains: list[str] = field(default_factory=lambda: _get_env_list("WEB_TRUSTED_DOMAINS", []))
+
+    # ========== AI Guard (policy/domain) ==========
+    ai_guard_mode: str = _get_env_str("AI_GUARD_MODE", DEFAULT_AI_GUARD_MODE).lower()
+    ai_guard_model_name: str = _get_env_str("AI_GUARD_MODEL_NAME")
+    ai_guard_timeout_sec: int = _get_env_int("AI_GUARD_TIMEOUT_SEC", DEFAULT_AI_GUARD_TIMEOUT_SEC)
+    ai_guard_cache_ttl_sec: int = _get_env_int("AI_GUARD_CACHE_TTL_SEC", DEFAULT_AI_GUARD_CACHE_TTL_SEC)
+    ai_guard_input_enabled: bool = _get_env_bool("AI_GUARD_INPUT_ENABLED", DEFAULT_AI_GUARD_INPUT_ENABLED)
+    ai_guard_output_enabled: bool = _get_env_bool("AI_GUARD_OUTPUT_ENABLED", DEFAULT_AI_GUARD_OUTPUT_ENABLED)
+    ai_guard_domain_enabled: bool = _get_env_bool("AI_GUARD_DOMAIN_ENABLED", DEFAULT_AI_GUARD_DOMAIN_ENABLED)
+    ai_guard_enforce_min_confidence: float = _get_env_float(
+        "AI_GUARD_ENFORCE_MIN_CONFIDENCE",
+        DEFAULT_AI_GUARD_ENFORCE_MIN_CONFIDENCE,
+    )
+    ai_guard_max_output_chars: int = _get_env_int("AI_GUARD_MAX_OUTPUT_CHARS", DEFAULT_AI_GUARD_MAX_OUTPUT_CHARS)
+
+    web_trusted_domains_enabled: bool = _get_env_bool(
+        "WEB_TRUSTED_DOMAINS_ENABLED",
+        DEFAULT_WEB_TRUSTED_DOMAINS_ENABLED,
+    )
 
     @property
     def resolved_model_provider(self) -> str:
@@ -277,6 +330,19 @@ class Settings:
         if self.startup_index_mode in SUPPORTED_STARTUP_INDEX_MODES:
             return self.startup_index_mode
         return DEFAULT_STARTUP_INDEX_MODE
+
+    @property
+    def resolved_ai_guard_mode(self) -> str:
+        """Возвращает валидный режим AI guard."""
+        value = (self.ai_guard_mode or "").strip().lower()
+        if value in {"off", "shadow", "enforce"}:
+            return value
+        return DEFAULT_AI_GUARD_MODE
+
+    @property
+    def resolved_ai_guard_model_name(self) -> str:
+        """Возвращает модель для AI guard (по умолчанию — текущая модель чата)."""
+        return self.ai_guard_model_name or self.resolved_model_name
 
 
 settings = Settings()

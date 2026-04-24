@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
 TRUNCATED_SOURCES_BLOCK_PATTERN = re.compile(
@@ -29,8 +29,8 @@ def extract_ai_text(message: Any) -> str:
 def ensure_sources_block(answer: str, urls: list[str], max_urls: int = 5) -> str:
     """Нормализует блок `Источники` на основе реальных URL из WEB-контекста."""
     base = TRUNCATED_SOURCES_BLOCK_PATTERN.sub("", str(answer or "").rstrip())
-    checked_at = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    lines = ["", f"Проверено: {checked_at} (UTC)", "Источники:"]
+    checked_at = datetime.now().strftime("%Y-%m-%d")
+    lines = ["", f"Проверено: {checked_at}", "Источники:"]
     if urls:
         for url in urls[:max_urls]:
             lines.append(f"- {url}")
@@ -84,6 +84,7 @@ def tool_failure_response() -> str:
 def domain_redirect_response() -> str:
     """Мягко возвращает диалог в домен бота, не уводя в посторонние темы."""
     return (
+        "Не могу помочь с этим запросом. "
         "Я помогаю по сантехническим товарам и отоплению. "
         "Напишите, пожалуйста, что именно нужно: бренд, артикул или задачу "
         "(например, подобрать насос, коллектор, редуктор, трубу или сервопривод)."

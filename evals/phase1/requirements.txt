@@ -1,0 +1,6 @@
+inspect-ai
+openai
+datasets
+pandas
+requests
+python-dotenv

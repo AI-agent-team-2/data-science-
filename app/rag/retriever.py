@@ -1,15 +1,17 @@
 from __future__ import annotations
 
+import os
 import logging
 import re
-from typing import Any
+from typing import Any, Optional
 
 import chromadb
 
 from app.config import settings
+from app.observability import sanitize_text
 from app.rag.embeddings import create_embedding_function
-from app.rag.sku_index import load_sku_index
-from app.utils.sku import canonical_sku, extract_sku_candidates
+from app.rag.sku_index import load_sku_index, sku_index_path
+from app.utils.sku import extract_sku_candidates
 
 logger = logging.getLogger(__name__)
 
@@ -37,14 +39,25 @@ def _load_collection(
     collection_name: str,
     embedding_function: Any,
 ) -> Any:
-    """Загружает существующую коллекцию и не маскирует отсутствие индекса."""
+    """Загружает коллекцию; при отсутствии создает пустую (без падения в runtime)."""
     try:
         collection = client.get_collection(
             name=collection_name,
             embedding_function=embedding_function,
         )
-    except Exception as exc:
-        raise RuntimeError(f"Chroma collection '{collection_name}' is missing or unavailable") from exc
+    except Exception:
+        logger.warning(
+            "Chroma collection '%s' is missing; creating empty collection at %s",
+            collection_name,
+            settings.chroma_path,
+        )
+        try:
+            collection = client.get_or_create_collection(
+                name=collection_name,
+                embedding_function=embedding_function,
+            )
+        except Exception as exc2:
+            raise RuntimeError(f"Chroma collection '{collection_name}' is missing or unavailable") from exc2
     return collection
 
 
@@ -68,7 +81,7 @@ class ChromaRetriever:
         try:
             result = self.collection.query(query_texts=[query], n_results=n_results)
         except Exception:
-            logger.exception("Ошибка запроса к Chroma для query=%s", query)
+            logger.exception("Ошибка запроса к Chroma для query=%s", sanitize_text(query))
             return []
 
         documents = result.get("documents", [[]])[0]
@@ -92,11 +105,16 @@ class ChromaRetriever:
 class ProductRetriever:
     """Ретривер карточек товаров из отдельной product-level коллекции Chroma."""
 
-    def __init__(self, collection_name: str | None = None) -> None:
+    def __init__(self, collection_name: Optional[str] = None) -> None: 
         self.client = chromadb.PersistentClient(path=settings.chroma_path)
         self.embedding_function = create_embedding_function()
         self.collection_name = collection_name or f"{settings.collection_name}{PRODUCT_COLLECTION_SUFFIX}"
-        self._sku_index = load_sku_index()
+        # Проверка наличия sku_index.json
+        self.index_missing = not os.path.exists(sku_index_path()) 
+        if self.index_missing:
+            logger.warning("SKU index file is missing: %s", sku_index_path())
+
+        self._sku_index = load_sku_index() if not self.index_missing else {} 
         self.collection = _load_collection(
             client=self.client,
             collection_name=self.collection_name,
@@ -115,35 +133,17 @@ class ProductRetriever:
         if not query_skus:
             return []
 
+        # Если индекса нет — не делаем полный scan, а деградируем
+        if self.index_missing:
+            logger.warning("SKU index is missing or empty (metric: index_missing). Skipping full scan.")
+            return self.semantic_search(query, limit)  #используем семантический поиск 
+
         indexed_matches = self._find_exact_sku_matches_from_index(query_skus)
         if indexed_matches:
             return indexed_matches[: max(1, int(limit))]
 
-        try:
-            snapshot = self.collection.get(include=["metadatas"])
-        except Exception:
-            logger.exception("Ошибка чтения product-коллекции для exact SKU поиска")
-            return []
-
-        metadatas = snapshot.get("metadatas") or []
-        matches: list[dict[str, Any]] = []
-
-        for metadata in metadatas:
-            if not isinstance(metadata, dict):
-                continue
-
-            item_skus = self._extract_item_skus(metadata)
-            matched = sorted(query_skus.intersection(item_skus))
-            if not matched:
-                continue
-
-            score = self._exact_sku_base_score + self._exact_sku_per_match_score * len(matched)
-            item = self._serialize_item(metadata=metadata, score=score)
-            item["matched_skus"] = matched
-            matches.append(item)
-
-        matches.sort(key=lambda item: float(item.get("score", 0.0)), reverse=True)
-        return matches[: max(1, int(limit))]
+        logger.info("No exact SKU matches found for query: %s", query)
+        return []
 
     def _find_exact_sku_matches_from_index(self, query_skus: set[str]) -> list[dict[str, Any]]:
         """Использует локальный SKU-индекс вместо полного scan product metadata."""
@@ -182,7 +182,7 @@ class ProductRetriever:
         try:
             result = self.collection.query(query_texts=[query], n_results=max(top_n * 3, top_n))
         except Exception:
-            logger.exception("Ошибка semantic-поиска по product-коллекции для query=%s", query)
+            logger.exception("Ошибка semantic-поиска по product-коллекции для query=%s", sanitize_text(query))
             return []
 
         documents = result.get("documents", [[]])[0]
@@ -215,23 +215,6 @@ class ProductRetriever:
 
         ranked = sorted(deduped.values(), key=lambda item: float(item.get("score", 0.0)), reverse=True)
         return ranked[:top_n]
-
-    def _extract_item_skus(self, metadata: dict[str, Any]) -> set[str]:
-        """Извлекает normalized SKU из metadata карточки."""
-        values: list[str] = []
-
-        raw_articles_norm = metadata.get("articles_norm")
-        if isinstance(raw_articles_norm, str):
-            values.extend(_split_csv_values(raw_articles_norm))
-
-        raw_articles = metadata.get("articles")
-        if isinstance(raw_articles, str):
-            values.extend(_split_csv_values(raw_articles))
-        elif isinstance(raw_articles, list):
-            values.extend(str(value) for value in raw_articles)
-
-        normalized = {canonical_sku(value) for value in values}
-        return {value for value in normalized if value}
 
     def _serialize_item(self, metadata: dict[str, Any], score: float) -> dict[str, Any]:
         """Приводит metadata карточки к единому runtime-формату product_lookup."""

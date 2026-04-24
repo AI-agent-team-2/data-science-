@@ -12,6 +12,7 @@
 - State volumes:
   - `san_bot_chroma`
   - `san_bot_history`
+  - `san_bot_web_cache`
 
 Важно: поддерживается только Docker-контур.
 Старые сценарии через `systemd`, `.venv` и ручной `deploy.sh` считаются legacy и не должны использоваться параллельно с контейнером.
@@ -47,6 +48,8 @@ WEB_ALLOWED_ORIGINS=http://<VPS_IP>:8000
 EMBEDDING_API_KEY=
 EMBEDDING_BASE_URL=
 TAVILY_API_KEY=
+WEB_CACHE_ENABLED=true
+WEB_CACHE_TTL_HOURS=24
 MODEL_MAX_RETRIES=2
 MODEL_CIRCUIT_BREAKER_ENABLED=true
 MODEL_CIRCUIT_BREAKER_FAILURE_THRESHOLD=5
@@ -88,11 +91,16 @@ LANGFUSE_HOST=https://cloud.langfuse.com
    - `docker compose up -d san-bot san-bot-web san-bot-proxy`
 4. Post-deploy health-check контейнера.
 5. Rollback на предыдущий image tag при неуспешном health-check.
+6. Post-deploy cleanup на VPS:
+   - prune неиспользуемых Docker images (старые sha-теги после каждого deploy).
 
 Замечание по indexing:
 - при `STARTUP_INDEX_MODE=if_empty` контейнер сам выполнит ingest только на пустой базе;
 - при `STARTUP_INDEX_MODE=always` ingest будет запускаться на каждом старте;
 - для production по умолчанию рекомендуется `if_empty`.
+
+Замечание по таймауту health-check:
+- pipeline ждёт до ~10 минут, пока `san-bot` и `san-bot-web` перейдут в `healthy` (на пустой базе ingestion может занять несколько минут).
 
 ## Локальные команды диагностики на VPS
 
@@ -104,6 +112,31 @@ docker compose logs --tail=100 san-bot-web
 docker compose logs --tail=100 san-bot-proxy
 docker inspect san-bot --format '{{json .State.Health}}'
 docker inspect san-bot-web --format '{{json .State.Health}}'
+```
+
+## Как не забивать диск на VPS
+
+Симптом: `git fetch` / `docker pull` падают с `No space left on device`, хотя диск кажется “достаточно большим”.
+Причина: каждый deploy публикует новый image с тегом commit SHA, и на VPS постепенно копятся десятки старых образов.
+
+Что уже сделано в проекте:
+
+- В `docker-compose.yml` включена ротация Docker логов (`max-size`/`max-file`) для сервисов `san-bot`, `san-bot-web`, `san-bot-proxy`.
+- В CI/CD deploy-скрипте добавлен auto-cleanup неиспользуемых образов после успешного deploy.
+
+Если нужно освободить место вручную на VPS:
+
+```bash
+docker image prune -af
+docker builder prune -af
+df -hT
+```
+
+Если место ушло в Docker логи (обычно `/var/lib/docker/containers/*/*-json.log`):
+
+```bash
+sudo find /var/lib/docker/containers -name '*-json.log' -type f -exec sh -c ': > "$1"' _ {} \;
+df -hT
 ```
 
 ## Rollback вручную
