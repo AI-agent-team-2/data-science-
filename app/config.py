@@ -32,6 +32,8 @@ DEFAULT_ENABLE_RAG: Final[bool] = True
 DEFAULT_ENABLE_PRODUCT_LOOKUP: Final[bool] = True
 DEFAULT_WEB_TRUSTED_DOMAINS_ENABLED: Final[bool] = True
 DEFAULT_STARTUP_INDEX_MODE: Final[str] = "if_empty"
+DEFAULT_EVENT_LOG_POSTGRES_ENABLED: Final[bool] = False
+DEFAULT_EVENT_LOG_POSTGRES_TABLE: Final[str] = "san_bot_events"
 
 # ========== AI Guard defaults ==========
 DEFAULT_AI_GUARD_MODE: Final[str] = "off"  # off|shadow|enforce
@@ -176,6 +178,15 @@ class Settings:
     langfuse_secret_key: str = _get_env_str("LANGFUSE_SECRET_KEY")
     langfuse_host: str = _get_env_str("LANGFUSE_HOST", DEFAULT_LANGFUSE_HOST)
     langfuse_enabled: bool = _get_env_bool("LANGFUSE_ENABLED", False)
+    event_log_postgres_enabled: bool = _get_env_bool(
+        "EVENT_LOG_POSTGRES_ENABLED",
+        DEFAULT_EVENT_LOG_POSTGRES_ENABLED,
+    )
+    event_log_postgres_dsn: str = _get_env_str("EVENT_LOG_POSTGRES_DSN")
+    event_log_postgres_table: str = _get_env_str(
+        "EVENT_LOG_POSTGRES_TABLE",
+        DEFAULT_EVENT_LOG_POSTGRES_TABLE,
+    )
 
     # ========== Timeouts ==========
     tool_timeout_sec: int = DEFAULT_TOOL_TIMEOUT_SEC

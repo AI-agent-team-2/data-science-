@@ -33,6 +33,7 @@ from app.observability.rate_limiter import rate_limiter
 from app.observability.token_usage import token_manager
 from app.observability import (
     build_log_fields,
+    emit_event,
     format_log_fields,
     get_langchain_callback_handler,
     hash_user_id,
@@ -138,10 +139,12 @@ def _run_agent_pipeline(payload: dict[str, Any], config: RunnableConfig | None =
     safe_query, guard_action, risk_flags = apply_guard(query)
     intent = detect_intent(safe_query)
     log_fields = build_log_fields(session_hash=hashed_user, intent=intent)
+    emit_event("agent_pipeline_started", log_fields=log_fields, source_order=source_order)
 
     # 1. Rate Limit Check
     allowed, wait_time = rate_limiter.is_allowed(session_id)
     if not allowed:
+        emit_event("agent_rate_limited", log_fields=log_fields, wait_time_sec=wait_time)
         return _finalize_response(
             session_id=session_id,
             user_text=user_text,
@@ -150,6 +153,7 @@ def _run_agent_pipeline(payload: dict[str, Any], config: RunnableConfig | None =
 
     # 2. Token Budget Check
     if not token_manager.has_budget(session_id):
+        emit_event("agent_token_budget_exceeded", log_fields=log_fields)
         return _finalize_response(
             session_id=session_id,
             user_text=user_text,
@@ -157,6 +161,7 @@ def _run_agent_pipeline(payload: dict[str, Any], config: RunnableConfig | None =
         )
 
     if guard_action == "block":
+        emit_event("agent_blocked_by_guard", log_fields=log_fields, guard_action=guard_action)
         return _finalize_response(
             session_id=session_id,
             user_text=user_text,
@@ -197,6 +202,7 @@ def _run_agent_pipeline(payload: dict[str, Any], config: RunnableConfig | None =
                 )
 
     if is_identity_or_capability_query(safe_query):
+        emit_event("agent_short_circuit_scope", log_fields=log_fields)
         return _finalize_response(
             session_id=session_id,
             user_text=user_text,
@@ -204,6 +210,7 @@ def _run_agent_pipeline(payload: dict[str, Any], config: RunnableConfig | None =
         )
 
     if is_smalltalk(safe_query):
+        emit_event("agent_short_circuit_smalltalk", log_fields=log_fields)
         return _finalize_response(
             session_id=session_id,
             user_text=user_text,
@@ -211,6 +218,7 @@ def _run_agent_pipeline(payload: dict[str, Any], config: RunnableConfig | None =
         )
 
     if is_noise_query(safe_query) or is_offtopic_or_rude_query(safe_query):
+        emit_event("agent_short_circuit_offtopic", log_fields=log_fields)
         return _finalize_response(
             session_id=session_id,
             user_text=user_text,
@@ -219,6 +227,7 @@ def _run_agent_pipeline(payload: dict[str, Any], config: RunnableConfig | None =
 
     constraint_response = known_domain_constraint_response(safe_query)
     if constraint_response:
+        emit_event("agent_short_circuit_domain_constraint", log_fields=log_fields)
         return _finalize_response(
             session_id=session_id,
             user_text=user_text,
@@ -328,6 +337,12 @@ def _run_agent_pipeline(payload: dict[str, Any], config: RunnableConfig | None =
             response.error_message,
             extra=failed_fields,
         )
+        emit_event(
+            "agent_model_invoke_failed",
+            log_fields=failed_fields,
+            error_type=response.error_type,
+            error_message=response.error_message,
+        )
         return _finalize_response(
             session_id=session_id,
             user_text=user_text,
@@ -370,6 +385,16 @@ def _run_agent_pipeline(payload: dict[str, Any], config: RunnableConfig | None =
                 elif output_guard.decision == "block":
                     assistant_text = _policy_refusal_text()
 
+    emit_event(
+        "agent_pipeline_completed",
+        log_fields=build_log_fields(
+            session_hash=hashed_user,
+            intent=intent,
+            used_source=context.used_source,
+            fallback_reason=context.fallback_reason,
+        ),
+        used_web=context.used_web,
+    )
     return _save_and_return(
         session_id=session_id,
         user_text=user_text,
