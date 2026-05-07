@@ -126,6 +126,12 @@ LANGFUSE_ENABLED=false
 LANGFUSE_PUBLIC_KEY=
 LANGFUSE_SECRET_KEY=
 LANGFUSE_HOST=https://cloud.langfuse.com
+EVENT_LOG_POSTGRES_ENABLED=false
+EVENT_LOG_POSTGRES_DSN=postgresql://san_bot_user:change_me@postgres:5432/san_bot
+EVENT_LOG_POSTGRES_TABLE=san_bot_events
+POSTGRES_DB=san_bot
+POSTGRES_USER=san_bot_user
+POSTGRES_PASSWORD=change_me
 ```
 
 Файловый кэш web-поиска хранится в `.web_cache/` (локально) и в `/app/.web_cache` внутри контейнера.

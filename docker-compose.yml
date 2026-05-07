@@ -1,4 +1,20 @@
 services:
+  postgres:
+    container_name: san-bot-postgres
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-san_bot}
+      POSTGRES_USER: ${POSTGRES_USER:-san_bot_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-san_bot_user} -d ${POSTGRES_DB:-san_bot}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - san_bot_postgres:/var/lib/postgresql/data
+
   san-bot:
     container_name: san-bot
     image: ${BOT_IMAGE:-san-bot:local}
@@ -7,6 +23,9 @@ services:
       dockerfile: Dockerfile
     env_file:
       - ${BOT_ENV_FILE:-.env}
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
     logging:
       driver: "json-file"
@@ -26,6 +45,9 @@ services:
       dockerfile: Dockerfile
     env_file:
       - ${BOT_ENV_FILE:-.env}
+    depends_on:
+      postgres:
+        condition: service_healthy
     command: ["python", "-m", "uvicorn", "web.api:app", "--host", "0.0.0.0", "--port", "8000"]
     restart: unless-stopped
     logging:
@@ -68,3 +90,4 @@ volumes:
   san_bot_chroma:
   san_bot_history:
   san_bot_web_cache:
+  san_bot_postgres:
